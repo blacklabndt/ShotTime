@@ -22,4 +22,17 @@ for(const density of ['2','2.5','3','3.5','4']){await page.locator('#target-dens
 await page.locator('#close-sheet').click();await page.reload();record=await stored(page);for(const [density,film] of set)assert.equal(record['factor.'+density+'.'+film],1);
 // Stored factors outside 0.10–10.00 load as 1.00.
 page=await open({schemaVersion:1,'source':{mode:'manual',activity:26},'factor.3.d5':0.05,'factor.3.t200':11,'factor.3.ix80':'2'});assert.ok(Object.values(await factorsAt(page)).every(v=>v===1));assert.equal(await page.evaluate(()=>activeCi),26);
-assert.deepEqual(errors,[]);await browser.close();console.log('PASS: unversioned records ignored, per-density factor and size/schedule keys, schema version, persistence, range checks and resets across five densities.');
+// Drafts restore schedules by name; stale or unknown select values fall back to defaults.
+const draft=(values,model='drafts-v2')=>({schemaVersion:1,'source':{mode:'manual',activity:26},draft:{model,values,helper:true,weld:true,calibration:true}});
+const selects=['helper-size','helper-schedule','helper-film','weld-size','weld-schedule','weld-film'];const read=page=>page.evaluate(ids=>ids.map(id=>$(id).value),selects);
+page=await open(draft({'helper-size':'8','helper-schedule':'XXH / XXS','helper-film':'t200','helper-ci':'25','weld-size':'3','weld-schedule':'80 / XH','weld-film':'mx125','weld-factor':'1.5'}));
+assert.deepEqual(await read(page),['8','XXH / XXS','t200','3','80 / XH','mx125']);assert.equal(await page.locator('#helper-ci').inputValue(),'25');assert.equal(await page.locator('#weld-factor').inputValue(),'1.5');
+page=await open(draft({'helper-size':'3','helper-schedule':'9','helper-film':'d5','weld-size':'8','weld-schedule':'bogus','weld-film':'d4','source-mode':'x'}));
+assert.deepEqual(await read(page),['3','40 / STD','ix50','8','40 / STD','d5']);assert.equal(await page.locator('#source-mode').inputValue(),'manual');
+// A blank selection shows a message instead of failing silently or saving to another pipe.
+await page.evaluate(()=>{$('helper-film').value='missing';$('helper-ci').value='26';$('helper-time').value='30';$('helper-form').requestSubmit();});assert.equal(await page.locator('#helper-error').textContent(),'Choose a pipe size, schedule, film and density. Nothing has been changed.');assert.equal(await page.locator('#helper-review').isHidden(),true);
+const before=await stored(page);await page.evaluate(()=>{$('weld-schedule').value='missing';$('weld-factor').value='2';$('weld-form').requestSubmit();});assert.equal(await page.locator('#weld-error').textContent(),'Choose a pipe size, schedule, film and density. Nothing has changed.');await page.evaluate(()=>$('weld-reset').click());
+assert.ok(!Object.keys(await stored(page)).some(k=>k.startsWith('weld.')));assert.deepEqual(Object.keys(await stored(page)).filter(k=>k.startsWith('factor.')),Object.keys(before).filter(k=>k.startsWith('factor.')));
+// Drafts from an older draft format are ignored.
+page=await open(draft({'helper-ci':'99','helper-size':'3','helper-schedule':'0'},'six-film-density-drafts-v1'));assert.equal(await page.locator('#helper-ci').inputValue(),'');
+assert.deepEqual(errors,[]);await browser.close();console.log('PASS: unversioned records ignored, per-density factor and size/schedule keys, schema version, persistence, range checks, resets across five densities and validated draft restoration.');

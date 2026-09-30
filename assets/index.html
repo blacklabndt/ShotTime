@@ -141,7 +141,10 @@ $('calibration-form').addEventListener('submit',e=>{e.preventDefault();const pen
 let helperPending=null;
 function clearHelperReview(){helperPending=null;$('helper-review').hidden=true;$('helper-error').textContent='';}
 function helperOptions(id,values){$(id).replaceChildren(...values.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
-function helperGeometry(){const size=Number($('helper-size').value), rows=CHART.techniques.filter(t=>t.size===size);helperOptions('helper-schedule',rows.map(t=>[CHART.techniques.indexOf(t),t.schedule]));const previous=$('helper-film').value;helperOptions('helper-film',Object.keys(rows[0].exposures).map(f=>[f,CHART.films[f].name]));$('helper-film').value=Object.prototype.hasOwnProperty.call(rows[0].exposures,previous)?previous:$('film-'+rows[0].group).value;clearHelperReview();}
+// Schedules are identified by name within a size, so chart edits cannot shift a saved choice onto another pipe.
+function selectedTechnique(prefix){const size=Number($(prefix+'-size').value),schedule=$(prefix+'-schedule').value;return CHART.techniques.find(t=>t.size===size&&t.schedule===schedule)||null;}
+function validSelection(t,film,density){return !!t&&Object.prototype.hasOwnProperty.call(t.exposures,film)&&C.DENSITIES.includes(density);}
+function helperGeometry(){const size=Number($('helper-size').value), rows=CHART.techniques.filter(t=>t.size===size);helperOptions('helper-schedule',rows.map(t=>[t.schedule,t.schedule]));const previous=$('helper-film').value;helperOptions('helper-film',Object.keys(rows[0].exposures).map(f=>[f,CHART.films[f].name]));$('helper-film').value=Object.prototype.hasOwnProperty.call(rows[0].exposures,previous)?previous:$('film-'+rows[0].group).value;clearHelperReview();}
 helperOptions('helper-size',sizes.map(n=>[n,n+'"']));helperGeometry();$('helper-density').value=String(targetDensity);
 $('helper-size').addEventListener('change',helperGeometry);
 $('cal-helper').querySelector('summary').addEventListener('click',()=>{if(!$('cal-helper').open){clearHelperReview();$('helper-density').value=String(targetDensity);if(!$('helper-ci').value&&activeCi!==null)$('helper-ci').value=String(activeCi);}});
@@ -149,20 +152,20 @@ $('helper-form').addEventListener('input',clearHelperReview);$('helper-form').ad
 $('helper-form').addEventListener('submit',e=>{e.preventDefault();clearHelperReview();const ci=C.parseActivity($('helper-ci').value), raw=$('helper-time').value.trim().replace(',','.');const duration=/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)?Number(raw)*Number($('helper-unit').value):NaN;
 if(ci===null||ci<.001){$('helper-error').textContent='Enter the shot’s activity from 0.001 to 999.9 Ci.';return;}
 if(!Number.isFinite(duration)||duration<=0){$('helper-error').textContent='Enter a successful exposure time greater than zero.';return;}
-const t=CHART.techniques[Number($('helper-schedule').value)],film=$('helper-film').value,density=Number($('helper-density').value);const weld=weldFactor(t,film,density),base=C.densityExposure(t,film,density)/ci,factor=duration/(base*weld);
+const t=selectedTechnique('helper'),film=$('helper-film').value,density=Number($('helper-density').value);if(!validSelection(t,film,density)){$('helper-error').textContent='Choose a pipe size, schedule, film and density. Nothing has been changed.';return;}const weld=weldFactor(t,film,density),base=C.densityExposure(t,film,density)/ci,factor=duration/(base*weld);
 if(!Number.isFinite(factor)||factor<.1||factor>10){$('helper-error').textContent='Calculated factor is outside 0.10–10.00. Check the activity, time unit, and technique. Nothing has been changed.';return;}
 const old=readSetting(factorKey(film,density),1);
 helperPending={film,density,factor};$('helper-review-text').textContent=CHART.films[film].name+' · density '+density.toFixed(1)+'\n'+t.size+'" · '+t.schedule+' · SFD '+t.sfd+'"\nShot activity: '+ci+' Ci\nUnadjusted estimate: '+base.toFixed(3)+' s\nSize/schedule factor: ×'+weld.toFixed(4)+'\nSuccessful exposure: '+duration+' s\nCurrent factor: ×'+Number(old).toFixed(4)+'\nProposed factor: ×'+factor.toFixed(4)+'\nCalculated from the unrounded estimate, dividing out this size/schedule factor but not the existing film-wide factor.';$('helper-review').hidden=false;$('helper-save').focus();});
 $('helper-save').addEventListener('click',()=>{if(!helperPending)return;const {film,density,factor}=helperPending;saveSetting(factorKey(film,density),factor);if(density===targetDensity){factors[film]=factor;$('factor-'+film).value=String(factor);render();}clearHelperReview();toast(CHART.films[film].name+' factor saved for density '+density.toFixed(1));});
 
 
-function weldSelection(){return CHART.techniques[Number($('weld-schedule').value)];}
-function showWeldFactor(){const t=weldSelection(),film=$('weld-film').value,density=Number($('weld-density').value);if(!t||!film)return;$('weld-factor').value=String(weldFactor(t,film,density));$('weld-summary').textContent='Baseline: '+C.densityExposure(t,film,density).toFixed(2)+' Ci·s at density '+density.toFixed(1)+'.'+' Film-wide factor ×'+Number(readSetting(factorKey(film,density),1)).toFixed(3);$('weld-error').textContent='';}
-function weldGeometry(){const size=Number($('weld-size').value),rows=CHART.techniques.filter(t=>t.size===size);helperOptions('weld-schedule',rows.map(t=>[CHART.techniques.indexOf(t),t.schedule]));helperOptions('weld-film',Object.keys(rows[0].exposures).map(f=>[f,CHART.films[f].name]));$('weld-film').value=$('film-'+rows[0].group).value;showWeldFactor();}
+function weldTarget(){const t=selectedTechnique('weld'),film=$('weld-film').value,density=Number($('weld-density').value);if(validSelection(t,film,density))return weldKey(t,film,density);$('weld-error').textContent='Choose a pipe size, schedule, film and density. Nothing has changed.';return null;}
+function showWeldFactor(){const t=selectedTechnique('weld'),film=$('weld-film').value,density=Number($('weld-density').value);if(!validSelection(t,film,density))return;$('weld-factor').value=String(weldFactor(t,film,density));$('weld-summary').textContent='Baseline: '+C.densityExposure(t,film,density).toFixed(2)+' Ci·s at density '+density.toFixed(1)+'.'+' Film-wide factor ×'+Number(readSetting(factorKey(film,density),1)).toFixed(3);$('weld-error').textContent='';}
+function weldGeometry(){const size=Number($('weld-size').value),rows=CHART.techniques.filter(t=>t.size===size);helperOptions('weld-schedule',rows.map(t=>[t.schedule,t.schedule]));helperOptions('weld-film',Object.keys(rows[0].exposures).map(f=>[f,CHART.films[f].name]));$('weld-film').value=$('film-'+rows[0].group).value;showWeldFactor();}
 helperOptions('weld-size',sizes.map(n=>[n,n+'"']));$('weld-density').value=String(targetDensity);weldGeometry();
 $('weld-size').addEventListener('change',weldGeometry);for(const id of ['weld-schedule','weld-film','weld-density'])$(id).addEventListener('change',showWeldFactor);
-$('weld-form').addEventListener('submit',e=>{e.preventDefault();const value=C.parseActivity($('weld-factor').value);if(value===null||value<.1||value>10){$('weld-error').textContent='Enter a factor from 0.10 to 10.00. Nothing has changed.';return;}saveSetting(weldKey(weldSelection(),$('weld-film').value,Number($('weld-density').value)),value);showWeldFactor();render();toast('Size / schedule factor saved');});
-$('weld-reset').addEventListener('click',()=>{saveSetting(weldKey(weldSelection(),$('weld-film').value,Number($('weld-density').value)),1);showWeldFactor();render();toast('Size / schedule factor reset');});
+$('weld-form').addEventListener('submit',e=>{e.preventDefault();const value=C.parseActivity($('weld-factor').value);if(value===null||value<.1||value>10){$('weld-error').textContent='Enter a factor from 0.10 to 10.00. Nothing has changed.';return;}const key=weldTarget();if(!key)return;saveSetting(key,value);showWeldFactor();render();toast('Size / schedule factor saved');});
+$('weld-reset').addEventListener('click',()=>{const key=weldTarget();if(!key)return;saveSetting(key,1);showWeldFactor();render();toast('Size / schedule factor reset');});
 
 $('reset-factors').addEventListener('click',()=>{const updates={};for(const film of Object.keys(factors)){factors[film]=1;$('factor-'+film).value='1';updates[factorKey(film)]=1;}saveSettings(updates);$('calibration-error').textContent='';render();toast('Film factors reset');});
 for(const [id,key,allowed,fallback] of [['print-size','printSize',['small','medium','large'],'medium']]){const saved=readSetting(key,fallback);$(id).value=allowed.includes(saved)?saved:fallback;$(id).addEventListener('change',()=>{saveSetting(key,$(id).value);$('results').classList.add('compact');});}
@@ -202,14 +205,16 @@ $('target-density').addEventListener('change',()=>{const n=Number($('target-dens
 const weldDraftIds=['weld-size','weld-schedule','weld-film','weld-density','weld-factor'];
 const draftIds=[...weldDraftIds,'activity','reference-ci','reference-date','source-mode','helper-size','helper-schedule','helper-film','helper-density','helper-ci','helper-time','helper-unit',...Object.keys(factors).map(f=>'factor-'+f)];
 let restoringDraft=false,draftScrollTimer;
-function captureDraft(){if(restoringDraft)return;const values={};for(const id of draftIds)values[id]=$(id).value;saveSetting('draft',{model:'six-film-density-drafts-v1',values,sourceDirty:activeCi===null,sheet:sheetOwner?sheetOwner.id:null,calibration:$('calibration-form').parentElement.open,helper:$('cal-helper').open,weld:$('weld-panel').open,scroll:scrollY,sheetScroll:$('sheet-dialog').scrollTop});}
+const DRAFT_MODEL='drafts-v2';
+// Restored select values must still be one of the current options; otherwise the default stays.
+function restoreValue(id,value){const el=$(id);if(typeof value!=='string'||el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value))return;el.value=value;}
+function captureDraft(){if(restoringDraft)return;const values={};for(const id of draftIds)values[id]=$(id).value;saveSetting('draft',{model:DRAFT_MODEL,values,sourceDirty:activeCi===null,sheet:sheetOwner?sheetOwner.id:null,calibration:$('calibration-form').parentElement.open,helper:$('cal-helper').open,weld:$('weld-panel').open,scroll:scrollY,sheetScroll:$('sheet-dialog').scrollTop});}
 const draft=readSetting('draft',null);
-if(draft&&draft.values&&typeof draft.values==='object'){
- restoringDraft=true;
- for(const id of ['activity','reference-ci','reference-date','source-mode','helper-size'])if(typeof draft.values[id]==='string')$(id).value=draft.values[id];
- if(!sizes.includes(Number($('helper-size').value)))$('helper-size').value=String(sizes[0]);helperGeometry();
- for(const id of draftIds.filter(id=>!weldDraftIds.includes(id)&&!['activity','reference-ci','reference-date','source-mode','helper-size'].includes(id)))if(typeof draft.values[id]==='string'&&(!id.startsWith('factor-')||draft.model==='six-film-density-drafts-v1'))$(id).value=draft.values[id];
- if(draft.model==='six-film-density-drafts-v1'&&sizes.includes(Number(draft.values['weld-size']))){$('weld-size').value=draft.values['weld-size'];weldGeometry();for(const id of ['weld-schedule','weld-film','weld-density'])if(typeof draft.values[id]==='string')$(id).value=draft.values[id];showWeldFactor();if(typeof draft.values['weld-factor']==='string')$('weld-factor').value=draft.values['weld-factor'];$('weld-panel').open=!!draft.weld;}
+if(draft&&draft.model===DRAFT_MODEL&&draft.values&&typeof draft.values==='object'){
+ restoringDraft=true;const values=draft.values;
+ for(const id of ['activity','reference-ci','reference-date','source-mode','helper-size'])restoreValue(id,values[id]);helperGeometry();
+ for(const id of draftIds.filter(id=>!weldDraftIds.includes(id)&&!['activity','reference-ci','reference-date','source-mode','helper-size'].includes(id)))restoreValue(id,values[id]);
+ restoreValue('weld-size',values['weld-size']);weldGeometry();for(const id of ['weld-schedule','weld-film','weld-density'])restoreValue(id,values[id]);showWeldFactor();restoreValue('weld-factor',values['weld-factor']);$('weld-panel').open=!!draft.weld;
  setMode();if(draft.sourceDirty)clearResults('Source values changed');
  $('calibration-form').parentElement.open=!!draft.calibration;$('cal-helper').open=!!draft.helper;clearHelperReview();
  const sheets={'setup-panel':['Source & film','source'],'pipe-filter':['Pipe sizes','filter'],'schedule-filter':['Schedules','filter'],'print-panel':['Print options','print']};
