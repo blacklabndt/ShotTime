@@ -59,3 +59,10 @@ Consolidated density targets into one table and removed unreachable model branch
 - In decay mode a restored draft no longer overwrites the calculated Current activity box with an older figure, so switching to manual mode starts from today's activity.
 - The helper's Current factor and the size/schedule form's Film-wide factor show the factor actually in use (invalid stored values count as 1.00) instead of the raw stored value.
 - The printed date uses the app's own year-month-day date (the same one used for decay) instead of WebView locale formatting.
+- Print flow (`MainActivity.java`, manifest):
+  - Rotation and other size changes no longer recreate the Activity (`configChanges`), so an open print screen is not torn down. On `onDestroy`, the print adapter is detached (`super.onDestroy()`) before the print WebView is destroyed; `onFinish` errors are caught.
+  - If the main screen's renderer crashes while the print screen is open, the reload waits until printing finishes.
+  - A print session no longer stays stuck if the print service never reports it finished: on returning to the app, or on the next Print tap, a completed, cancelled or failed job is cleaned up.
+  - Tapping Print with nothing to print shows "Nothing to print. Check the source activity and filters."
+  - A failure after the print screen has opened shows "Printing was interrupted. Close the print screen and try again." and keeps the session until Android reports it finished, instead of blaming the print service and allowing a second print.
+  - Compiled and packaged with `build-review.sh` (platform 35, build-tools 35.0.0); not yet tested on a device.
