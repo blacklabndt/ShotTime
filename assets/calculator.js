@@ -37,16 +37,16 @@
   // Reference shots: 3-inch STD for small films, 4-inch STD for large films.
   const REFERENCE_GEOMETRY={small:{wall:0.216,sfd:3.625},large:{wall:0.237,sfd:4.625}};
   // Large films: approximate calculator targets at 26 Ci on 4-inch STD (index 3 interpolated).
-  // Small films: density-3 exposure = large partner x published Ir-192 exposure ratio at the same
-  // geometry (Agfa D4 3.0 / D5 1.5; Carestream MX125 2.8 / T200 1.7; Fuji IX80 speed 55 / IX50 30).
-  // Each small film keeps its own density-curve shape from its original targets.
+  // Small films: large partner x published Ir-192 exposure ratio at the same geometry and density
+  // (Agfa D4 3.0 / D5 1.5; Carestream MX125 2.8 / T200 1.7; Fuji IX80 speed 55 / IX50 30), so a small
+  // film and its partner aim at the same density at every target and can share a hanger.
   const FILM_REFERENCES={
     d5:{group:'large',times:[11,15,19,23,27]},
     t200:{group:'large',times:[14,18,22,25.5,29]},
     ix80:{group:'large',times:[13,18,23,28,33]},
-    d4:{group:'small',partner:'d5',ratio:3/1.5,shape:[9,13,16,19.5,23]},
-    mx125:{group:'small',partner:'t200',ratio:2.8/1.7,shape:[16,20,24,27.5,31]},
-    ix50:{group:'small',partner:'ix80',ratio:55/30,shape:[17,21,25,29.5,34]}
+    d4:{group:'small',partner:'d5',ratio:3/1.5},
+    mx125:{group:'small',partner:'t200',ratio:2.8/1.7},
+    ix50:{group:'small',partner:'ix80',ratio:55/30}
   };
   function geometryFactor(technique,reference) {
     return Math.pow(technique.sfd/reference.sfd,2)*Math.pow(2,2*(technique.wall-reference.wall)*25.4/STEEL_HVL_MM);
@@ -55,8 +55,8 @@
   const REFERENCE_CURIE_SECONDS={};
   for(const film of Object.keys(FILM_REFERENCES)){const r=FILM_REFERENCES[film];if(r.times)REFERENCE_CURIE_SECONDS[film]=r.times.map(t=>t*26);}
   for(const film of Object.keys(FILM_REFERENCES)){const r=FILM_REFERENCES[film];if(!r.partner)continue;
-    const density3=r.ratio*REFERENCE_CURIE_SECONDS[r.partner][2]*geometryFactor(REFERENCE_GEOMETRY.small,REFERENCE_GEOMETRY.large);
-    REFERENCE_CURIE_SECONDS[film]=r.shape.map(t=>density3*t/r.shape[2]);}
+    const move=geometryFactor(REFERENCE_GEOMETRY.small,REFERENCE_GEOMETRY.large);
+    REFERENCE_CURIE_SECONDS[film]=REFERENCE_CURIE_SECONDS[r.partner].map(cs=>r.ratio*cs*move);}
   function densityExposure(technique,film,density){
     const index=DENSITIES.indexOf(density),reference=FILM_REFERENCES[film];
     if(index<0||!reference||reference.group!==technique.group||!Number.isFinite(technique.wall)||!(technique.sfd>0))throw new Error('Unsupported density or film');

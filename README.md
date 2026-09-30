@@ -20,13 +20,13 @@ Large films use approximate calculator targets on 4-inch STD at 26 Ci:
 | T200 | 14 | 18 | 22 | 25.5 | 29 |
 | Fuji IX80 | 13 | 18 | 23 | 28 | 33 |
 
-Small films are tied to their large-film partner at the same geometry using published Ir-192 relative exposures at density 3.0 — D4 = D5 × 2.0 (Agfa D4 3.0 / D5 1.5), MX125 = T200 × 1.65 (Carestream 2.8 / 1.7), Fuji IX50 = IX80 × 1.83 (Fuji speed 55 / 30) — and keep their own density-curve shape (original targets D4 9/13/16/19.5/23, MX125 16/20/24/27.5/31, IX50 17/21/25/29.5/34, scaled to the density-3 value). Resulting 3-inch STD times at 26 Ci:
+Small films are tied to their large-film partner at the same geometry and every density using published Ir-192 relative exposures — D4 = D5 × 2.0 (Agfa D4 3.0 / D5 1.5), MX125 = T200 × 1.65 (Carestream 2.8 / 1.7), Fuji IX50 = IX80 × 1.83 (Fuji speed 55 / 30) — so a small film and its partner aim at the same density at every target and can share a hanger. Resulting 3-inch STD times at 26 Ci:
 
 | Film | 2.0 | 2.5 | 3.0 | 3.5 | 4.0 |
 |---|---:|---:|---:|---:|---:|
-| D4 | 12.4 | 17.8 | 22.0 | 26.8 | 31.6 |
-| MX125 | 14.0 | 17.5 | 20.9 | 24.0 | 27.1 |
-| Fuji IX50 | 16.6 | 20.5 | 24.4 | 28.8 | 33.1 |
+| D4 | 12.7 | 17.3 | 22.0 | 26.6 | 31.2 |
+| MX125 | 13.3 | 17.1 | 20.9 | 24.3 | 27.6 |
+| Fuji IX50 | 13.8 | 19.1 | 24.4 | 29.7 | 35.0 |
 
 Times are seconds. Density 3.5 is the arithmetic midpoint of 3.0 and 4.0 in the source targets. Reference targets and published ratios are not measured film densities for this processing; verify them with test shots and correct with film-wide factors. `scripts/original-techniques.json` keeps the pre-1.21 per-film Ci·s baseline for comparison only.
 
@@ -38,7 +38,7 @@ Final seconds = model Ci·s × film-wide correction × size/schedule correction 
 
 Compact-only dark UI with Time, Internal and Internal offset columns. Multi-select pipe/schedule filters. Manual activity or daily Ir-192 decay from a reference using a 73.83-day half-life. Film-wide helper and manual size/schedule correction controls. Prints a narrow vertical list with only activity, density and local date above it.
 
-Settings use one local JSON record with explicit storage-failure reporting. Draft inputs and panels are restored after reload. The record carries `schemaVersion: 2`. Version 1 records (1.20.0, previous exposure model) are migrated once: film-wide factors and the saved draft reset, everything else (size/schedule factors, films, source, filters, density) is kept. Records without a version (pre-release builds) are ignored. Film-wide factors are stored as `factor.<density>.<film>` and size/schedule factors as `weld.<density>.<film>.<size>.<schedule>`. Stored factors outside 0.10–10.00 load as 1.00. A future storage change should increase the schema version and add an explicit, tested migration.
+Settings use one local JSON record with explicit storage-failure reporting. Draft inputs and panels are restored after reload. The record carries `schemaVersion: 2`. Version 1 records (1.20.0, previous exposure model) are migrated once: film-wide factors, size/schedule factors and the saved draft reset; films, source, filters, density and print size are kept. Records without a version (pre-release builds) are ignored. Film-wide factors are stored as `factor.<density>.<film>` and size/schedule factors as `weld.<density>.<film>.<size>.<schedule>`. Stored factors outside 0.10–10.00 load as 1.00. A future storage change should increase the schema version and add an explicit, tested migration.
 
 No network permission, tracking or JS-to-native interface. Printing uses a separate JS-disabled WebView snapshot and the Android print service. Preparation timeout, error callbacks and main-thread cleanup provide recovery. Real-device printing, installation, rotation and background/foreground checks remain necessary.
 
@@ -60,9 +60,9 @@ Requires the available Playwright package. `tests/legacy/` contains historical h
 
 - Exposure model redesign (shot times change):
   - Step 1: all films share one Ir-192 steel curve (inverse square for SFD, exposure doubles every 12.1 mm of total steel) anchored at each film's reference shot. Agfa D4/D5 change by about 2% or less; Carestream and Fuji become longer on heavy wall (up to about 30% for T200 and 2× for IX80 on 12"–16" Sch160).
-  - Step 2: small films are tied to their large-film partner by published Ir-192 relative exposures. At 3-inch STD, 26 Ci, density 3.0: D4 16 → 22 s, MX125 24 → 21 s, Fuji IX50 25 → 24 s.
+  - Step 2: small films are tied to their large-film partner by published Ir-192 relative exposures at the same geometry and every density, so partners share a hanger at any target density. At 3-inch STD, 26 Ci, density 3.0: D4 16 → 22 s, MX125 24 → 21 s, Fuji IX50 25 → 24 s.
   - `techniques.json` is geometry only; the old per-film Ci·s baseline stays in `scripts/original-techniques.json` for comparison.
-- Settings schema 2: film-wide factors and the saved draft reset to 1.00 on upgrade from 1.20.0 (they were set against the old model); a one-time message says so. Size/schedule factors are kept but should be reviewed.
+- Settings schema 2: film-wide and size/schedule factors and the saved draft reset to 1.00 on upgrade from 1.20.0 (they were set against the old model); a one-time message says so.
 - Not yet verified with test shots; see `HANDOVER.md`.
 
 ## 1.20.0 (versionCode 41, never released)
