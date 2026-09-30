@@ -31,6 +31,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 | R4 | Second review: saved filters hid new rows; helper/size-schedule defaulted to Sch 10 (a 3" STD calibration logged as Sch 10 would be 1.32× too high); 17 truncated walls; dead code | "All" saved as null and old full lists treated as all; forms default to STD; walls corrected to B36.10M; cleanup | 1.21.0 |
 | F2 | Accuracy feature: measured density in the calibration helper | Film curve (log-linear between target densities) converts a densitometer reading to the target density | 1.21.0 |
 | A2 | Owner request: hide extrapolated rows | Rows over 90 mm total steel (18" and 20" Sch160, 24" Sch120–160) hidden in results, print and forms; 109 shown | 1.21.0 |
+| A3 | Owner request: Carestream CR | `cr` film on both belts from the owner's CR chart (`EXPOSURE_CHART.xlsx`), values used as given (not the steel model); owner chose: chart rows only (others —), same at every density, Internal ÷ 8 / offset ÷ 3, 24" XS and 6" XXH as written | 1.21.0 |
 | — | Version and settings | 1.21.0, versionCode 42; settings schema 2 resets film-wide and size/schedule factors on upgrade | 1.21.0 |
 
 `README.md` has the user-facing change lists under "1.21.0" and "1.20.0".
@@ -40,6 +41,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 - **Exposure model (1.21.0):** the owner approved the shared steel curve and the published small/large ratios, to be verified by test shots. Measured results may replace the published ratios or large-film reference times.
 - **Calibration helper** divides out the selected pipe's size/schedule factor (option chosen over "show the doubled result").
 - **Storage clean slate:** pre-release saved settings are discarded (`schemaVersion: 1`). From now on, storage changes need a real migration.
+- **Carestream CR** uses the owner's chart as given. The chart does not follow the shared steel curve (relative to 4" STD, small pipes up to 2.9× and large pipes down to about a fifth of the model), so CR must not be tied to it without the owner's approval. 24" XS 85,610 Ci·s looks like a thicker schedule's value; the owner chose to keep it.
 - **Helper activity pre-fill** stays, labelled with its date (chosen over removing it or asking for a shot date).
 - **Left as-is on purpose:**
   - XXH/XXS rows are listed after schedule 160 for 8"–16" even though their wall is thinner (conventional order; values are correct).

@@ -810,7 +810,8 @@
       "films": [
         "d4",
         "mx125",
-        "ix50"
+        "ix50",
+        "cr"
       ]
     },
     "large": {
@@ -820,7 +821,8 @@
       "films": [
         "d5",
         "t200",
-        "ix80"
+        "ix80",
+        "cr"
       ]
     }
   },
@@ -848,6 +850,10 @@
     "ix80": {
       "name": "Fuji IX80",
       "note": "Calculator reference target on 4-inch STD. Verify with test shots."
+    },
+    "cr": {
+      "name": "Carestream CR",
+      "note": "Owner\u2019s Carestream CR Ci\u00b7s chart, used as given. Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
 }

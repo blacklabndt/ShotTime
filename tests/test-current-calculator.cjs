@@ -33,7 +33,7 @@ assert.equal(C.timeLabel(C.seconds(C.densityExposure(find(3,'80 / XH'),'d4',3),6
 assert.equal(C.timeLabel(C.seconds(C.densityExposure(find(4,'80 / XH'),'d5',3),60)),'11s');
 // Every row follows the shared geometry model; all 1,710 combinations are finite and positive.
 let count=0;
-for(const t of data.techniques)for(const film of data.groups[t.group].films)for(const d of C.DENSITIES){
+for(const t of data.techniques)for(const film of data.groups[t.group].films.filter(C.usesDensity))for(const d of C.DENSITIES){
   const e=C.densityExposure(t,film,d),r=t.group==='small'?ref3:ref4;assert.ok(Number.isFinite(e)&&e>0);
   close(e,C.densityExposure(r,film,d)*scale(t,r),1e-9);assert.equal(C.seconds(e,52),C.seconds(e,26)/2);count++;}
 assert.equal(count,1710);
@@ -47,5 +47,21 @@ for(const film of ['d4','d5','ix80'])for(const t of [ref3,ref4].filter(t=>data.g
   close(C.exposureAtDensity(t,film,2.75),Math.sqrt(C.densityExposure(t,film,2.5)*C.densityExposure(t,film,3)));assert.ok(C.exposureAtDensity(t,film,2.7)>C.densityExposure(t,film,2.5)&&C.exposureAtDensity(t,film,2.7)<C.densityExposure(t,film,3));}
 for(const d of [1.99,4.01,NaN])assert.throws(()=>C.exposureAtDensity(ref3,'d4',d));
 assert.throws(()=>C.densityExposure(ref3,'d4',4.5));assert.throws(()=>C.densityExposure(ref4,'d4',3));assert.throws(()=>C.densityExposure(ref3,'d5',3));
+// Carestream CR: the owner's chart (EXPOSURE_CHART.xlsx, sheet CARESTREAM CR, column G) exactly, in both belts, same at every density.
+const crChart=[[2,'STD',234],[2,'XH',273],[2,'160',338],[2,'XXH',403],[3,'STD',481],[3,'XH',546],[3,'160',637],[3,'XXH',754],
+  [4,'STD',637],[4,'XH',741],[4,'120',845],[4,'160',975],[4,'XXH',1170],[6,'STD',845],[6,'XH',1080],[6,'120',1340],[6,'160',2070],[6,'XXH',1790],
+  [8,'STD',980],[8,'XH',1400],[8,'120',1930],[8,'160',3240],[8,'XXS',2980],[10,'STD',1340],[10,'XH',1590],[10,'80',2070],[10,'120',3310],[10,'160',7200],[10,'XXH',5090],
+  [12,'STD',1550],[12,'40',1690],[12,'XH',2050],[12,'80',3190],[12,'120',7020],[12,'160',15270],[12,'XXH',7020],
+  [14,'STD',1770],[14,'40',1770],[14,'XH',2450],[14,'80',4540],[14,'120',10870],[14,'160',23660],[16,'STD',2230],[16,'XH',2930],[16,'80',7010],[16,'120',18160],[16,'160',46700],
+  [20,'STD',3140],[20,'40',5830],[20,'XH',4490],[20,'80',16550],[20,'120',55220],[24,'STD',4520],[24,'40',9930],[24,'80',36050],[24,'XH',85610]];
+const crRows=new Set();for(const [size,schedule,cs] of crChart){const t=data.techniques.find(t=>t.size===size&&C.matchesSchedule(t,schedule));assert.ok(t&&C.withinSteelRange(t),size+' '+schedule);crRows.add(t);
+  for(const d of C.DENSITIES)assert.equal(C.densityExposure(t,'cr',d),cs);assert.equal(C.exposureAtDensity(t,'cr',2.7),cs);}
+assert.equal(crRows.size,56);assert.equal(Object.keys(C.CHART_EXPOSURES.cr).length,56);
+for(const t of data.techniques)if(!crRows.has(t))assert.equal(C.densityExposure(t,'cr',3),null,t.size+' '+t.schedule);
+for(const group of ['small','large'])assert.ok(data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
+assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'25s');
+// Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ×1.15÷4 rounded up.
+assert.equal(C.internalSeconds('cr',49),6);assert.equal(C.offsetSeconds('cr',49),17);assert.equal(C.offsetSeconds('cr',48),16);
+assert.equal(C.internalSeconds('d5',49),5);assert.equal(C.offsetSeconds('d5',49),15);assert.equal(C.internalSeconds('d5',90),10);assert.equal(C.offsetSeconds('d5',90),26);
 for(const s of ['','0','-1','1e3','NaN','1000'])assert.equal(C.parseActivity(s),null);assert.equal(C.parseActivity('26,5'),26.5);assert.equal(C.timeLabel(.1),'0s');assert.equal(C.timeLabel(59.5),'1m 0s');assert.equal(C.timeLabel(3599.5),'1h 0m 0s');assert.equal(C.decay(26,'2026-09-29','2026-09-29'),26);assert.equal(C.decay(26,'2026-09-30','2026-09-29'),null);assert.equal(C.dayNumber('2026-02-30'),null);
-console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation.`);
+console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation; Carestream CR chart (56 rows) in both belts.`);
