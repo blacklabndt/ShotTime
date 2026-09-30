@@ -55,3 +55,4 @@ Consolidated density targets into one table and removed unreachable model branch
 - Film factor form keeps unchanged values, names the out-of-range film and focuses its box.
 - Clean-slate settings storage before first release: removed the density-3 migration, legacy namespaces and standalone-key fallbacks; added `schemaVersion: 1`. Pre-release saved settings are discarded. Built-in shot times are unchanged.
 - Draft restoration checks each restored dropdown value against the current options, saves schedules by name instead of chart row position, and the helper and size/schedule forms show a message instead of failing silently or saving to another pipe when a selection is blank.
+- The calibration helper's pre-filled activity is rounded to 3 decimals and labelled with the date it applies to (kept after restart); the review marks it as pre-filled. Change it if the shot was on another day.
