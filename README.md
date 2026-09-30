@@ -40,7 +40,7 @@ Restore the separate private signing backup into `signing/` before building. The
 ## Active verification
 
 - `node tests/test-current-calculator.cjs`: all 1,095 exposure combinations, all 30 reference targets, activity scaling, parsing, date validation and rounding.
-- `CHROME_BINARY=/path/to/chromium node tests/test-current-ui.mjs`: six films across the five densities, corrections, save failures, persistence, reset behavior, narrow layouts and print agreement.
+- `CHROME_BINARY=/path/to/chromium node tests/test-current-ui.mjs`: six films across the five densities, corrections, calibration helper with size/schedule factors, save failures, persistence, reset behavior, narrow layouts and print agreement.
 - `CHROME_BINARY=/path/to/chromium node tests/test-factor-upgrades.mjs`: one-time migration, retained current factors, resets across five densities and persistence after reload.
 
 Requires the available Playwright package. `tests/legacy/` contains historical harnesses, not active release gates. Physical Android print-service checks are not simulated by browser tests.
