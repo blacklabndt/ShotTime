@@ -58,3 +58,4 @@ Consolidated density targets into one table and removed unreachable model branch
 - The calibration helper's pre-filled activity is rounded to 3 decimals and labelled with the date it applies to (kept after restart); the review marks it as pre-filled. Change it if the shot was on another day.
 - In decay mode a restored draft no longer overwrites the calculated Current activity box with an older figure, so switching to manual mode starts from today's activity.
 - The helper's Current factor and the size/schedule form's Film-wide factor show the factor actually in use (invalid stored values count as 1.00) instead of the raw stored value.
+- The printed date uses the app's own year-month-day date (the same one used for decay) instead of WebView locale formatting.
