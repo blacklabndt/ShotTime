@@ -14,6 +14,8 @@ const b3610={'1|10':.109,'2|10':.109,'3|10':.12,'4|10':.12,'5|10':.134,'6|10':.1
   '20|10':.25,'20|STD':.375,'20|XH':.5,'20|40':.594,'20|60':.812,'20|80':1.031,'20|100':1.281,'20|120':1.5,'20|140':1.75,'20|160':1.969,
   '24|10':.25,'24|STD':.375,'24|XH':.5,'24|40':.688,'24|60':.969,'24|80':1.219,'24|100':1.531,'24|120':1.812,'24|140':2.062,'24|160':2.344};
 for(const [key,wall] of Object.entries(b3610)){const [size,schedule]=key.split('|');assert.equal(find(+size,schedule).wall,wall,key);}
+// Rows over 90 mm total steel are outside the model's range (hidden by the app).
+assert.equal(C.MAX_STEEL_MM,90);assert.deepEqual(data.techniques.filter(t=>!C.withinSteelRange(t)).map(t=>t.size+' '+t.schedule),['18 160','20 160','24 120','24 140','24 160']);
 // Every original row keeps its geometry.
 for(const o of historical.techniques){const t=find(o.size,o.schedule);assert.ok(t&&t.wall===o.wall&&t.sfd===o.sfd&&t.group===o.group,o.size+' '+o.schedule);}assert.equal(C.STEEL_HVL_MM,12.1);
 for(const [group,r] of [['small',ref3],['large',ref4]])assert.deepEqual(C.REFERENCE_GEOMETRY[group],{wall:r.wall,sfd:r.sfd});

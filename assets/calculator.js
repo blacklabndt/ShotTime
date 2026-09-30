@@ -35,6 +35,10 @@
   // Measured from the GE/Agfa STRUCTURIX Ir-192 exposure diagram (Pb screens); all films share it.
   const STEEL_HVL_MM=12.1;
   // Reference shots: 3-inch STD for small films, 4-inch STD for large films.
+  // Rows above this total steel lie beyond the Agfa Ir-192 chart (10-90 mm) the curve was measured from;
+  // the app hides them rather than extrapolate.
+  const MAX_STEEL_MM=90;
+  function withinSteelRange(technique){return 2*technique.wall*25.4<=MAX_STEEL_MM;}
   const REFERENCE_GEOMETRY={small:{wall:0.216,sfd:3.625},large:{wall:0.237,sfd:4.625}};
   // Large films: approximate calculator targets at 26 Ci on 4-inch STD (index 3 interpolated).
   // Small films: large partner x published Ir-192 exposure ratio at the same geometry and density
@@ -62,7 +66,7 @@
     if(index<0||!reference||reference.group!==technique.group||!Number.isFinite(technique.wall)||!(technique.sfd>0))throw new Error('Unsupported density or film');
     return REFERENCE_CURIE_SECONDS[film][index]*geometryFactor(technique,REFERENCE_GEOMETRY[reference.group]);
   }
-  const api={DENSITIES,STEEL_HVL_MM,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={DENSITIES,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

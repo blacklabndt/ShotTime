@@ -45,6 +45,7 @@ button{transition:background-color .16s,color .16s,transform .12s}button:active{
 <script>const CHART=/*__TECHNIQUES__*/;</script><script>/*__CALCULATOR__*/</script><script>
 'use strict';
 const $=id=>document.getElementById(id), C=ShotCalculator;
+CHART.techniques=CHART.techniques.filter(C.withinSteelRange);
 let sessionSettings={};let storageFailed=false;
 // One versioned settings record. Records without this version (pre-release builds) are ignored.
 const SCHEMA_VERSION=2;
