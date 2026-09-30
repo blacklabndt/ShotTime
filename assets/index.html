@@ -217,7 +217,9 @@ function captureDraft(){if(restoringDraft)return;const values={};for(const id of
 const draft=readSetting('draft',null);
 if(draft&&draft.model===DRAFT_MODEL&&draft.values&&typeof draft.values==='object'){
  restoringDraft=true;const values=draft.values;
- for(const id of ['activity','reference-ci','reference-date','source-mode','helper-size'])restoreValue(id,values[id]);helperGeometry();
+ for(const id of ['source-mode','reference-ci','reference-date','helper-size'])restoreValue(id,values[id]);helperGeometry();
+ // In decay mode the activity box is calculated from the reference, so a saved copy would only be out of date.
+ if($('source-mode').value!=='decay')restoreValue('activity',values.activity);
  for(const id of draftIds.filter(id=>!weldDraftIds.includes(id)&&!['activity','reference-ci','reference-date','source-mode','helper-size'].includes(id)))restoreValue(id,values[id]);
  restoreValue('weld-size',values['weld-size']);weldGeometry();for(const id of ['weld-schedule','weld-film','weld-density'])restoreValue(id,values[id]);showWeldFactor();restoreValue('weld-factor',values['weld-factor']);$('weld-panel').open=!!draft.weld;
  const prefill=draft.helperPrefill;helperPrefill=prefill&&typeof prefill.value==='string'&&typeof prefill.date==='string'?{value:prefill.value,date:prefill.date}:null;showHelperPrefill();
