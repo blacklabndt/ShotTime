@@ -16,7 +16,6 @@ const b3610={'1|10':.109,'2|10':.109,'3|10':.12,'4|10':.12,'5|10':.134,'6|10':.1
 for(const [key,wall] of Object.entries(b3610)){const [size,schedule]=key.split('|');assert.equal(find(+size,schedule).wall,wall,key);}
 // Rows over 90 mm total steel are outside the model's range (hidden by the app).
 assert.equal(C.MAX_STEEL_MM,90);assert.deepEqual(data.techniques.filter(t=>!C.withinSteelRange(t)).map(t=>t.size+' '+t.schedule),['18 160','20 160','24 120','24 140','24 160']);
-// Every original row keeps its geometry.
 // Every original row keeps its geometry, except truncated walls corrected to ASME B36.10M (e.g. 0.437 -> 0.438).
 const corrected={.437:.438,.593:.594,.687:.688,.718:.719,.843:.844,.937:.938,1.093:1.094,1.218:1.219,1.437:1.438,1.593:1.594};
 let correctedRows=0;for(const o of historical.techniques){const t=find(o.size,o.schedule),wall=corrected[o.wall]??o.wall;if(wall!==o.wall)correctedRows++;assert.ok(t&&t.wall===wall&&t.sfd===o.sfd&&t.group===o.group,o.size+' '+o.schedule);}
