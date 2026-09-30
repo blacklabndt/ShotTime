@@ -32,7 +32,7 @@ Times are seconds. Density 3.5 is the arithmetic midpoint of 3.0 and 4.0 in the 
 
 Final seconds = model Ci·s × film-wide correction × size/schedule correction ÷ current source Ci. Both editable correction types are density-specific and default/reset to 1.00. Internal = unrounded final seconds / 9, nearest second. Internal offset = unrounded final seconds × 1.15 / 4, rounded up. Internal columns apply only to 6-inch and larger pipes. Standard times retain nearest-second rounding including 0s.
 
-73 geometry rows, 219 film/geometry combinations, five densities (1,095 exposure combinations). Small films cover 1–3 inches; large films 4–16 inches. Double-wall carbon steel. 1-inch pipe uses 12-inch SFD; other sizes use OD +0.125 inches. Processing reference: manual 4 minutes at 72°F, Carestream INDUSTREX Single Part developer, lead screens. The app does not model weld reinforcement, source transit, oblique paths or geometric unsharpness. Film-wide adjustments require verification across the sizes used.
+114 geometry rows, 342 film/geometry combinations, five densities (1,710 exposure combinations). Small films cover 1–3 inches; large films 4–24 inches. Schedules: 10, STD, 40, 60, XH, 80, 100, 120, 140, 160 and XXH where they exist; walls follow ASME B36.10M. Beyond about 90 mm of total steel (18" Sch160, 20" Sch160, 24" Sch120–160) the steel curve is extrapolated past the Agfa chart and times run to hours. Double-wall carbon steel. 1-inch pipe uses 12-inch SFD; other sizes use OD +0.125 inches. Processing reference: manual 4 minutes at 72°F, Carestream INDUSTREX Single Part developer, lead screens. The app does not model weld reinforcement, source transit, oblique paths or geometric unsharpness. Film-wide adjustments require verification across the sizes used.
 
 ## Application behavior
 
@@ -50,7 +50,7 @@ Restore the separate private signing backup into `signing/` before building. The
 
 ## Active verification
 
-- `node tests/test-current-calculator.cjs`: all 1,095 combinations follow the shared steel model; 30 reference targets; published small/large film ratios; Agfa D4/D5 shape within 4% of the historical Agfa-curve baseline; activity scaling, parsing, date validation and rounding.
+- `node tests/test-current-calculator.cjs`: SFD rule and ASME B36.10M walls for added rows; all 1,710 combinations follow the shared steel model; 30 reference targets; published small/large film ratios; Agfa D4/D5 shape within 4% of the historical Agfa-curve baseline; activity scaling, parsing, date validation and rounding.
 - `CHROME_BINARY=/path/to/chromium node tests/test-current-ui.mjs`: six films across the five densities, corrections, calibration helper with size/schedule factors, save failures, persistence, reset behavior, narrow layouts and print agreement.
 - `CHROME_BINARY=/path/to/chromium node tests/test-settings-storage.mjs`: version 1 migration, unversioned records ignored, per-density factor and size/schedule keys, schema version, range checks, resets across five densities and persistence after reload.
 
@@ -62,6 +62,7 @@ Requires the available Playwright package. `tests/legacy/` contains historical h
   - Step 1: all films share one Ir-192 steel curve (inverse square for SFD, exposure doubles every 12.1 mm of total steel) anchored at each film's reference shot. Agfa D4/D5 change by about 2% or less; Carestream and Fuji become longer on heavy wall (up to about 30% for T200 and 2× for IX80 on 12"–16" Sch160).
   - Step 2: small films are tied to their large-film partner by published Ir-192 relative exposures at the same geometry and every density, so partners share a hanger at any target density. At 3-inch STD, 26 Ci, density 3.0: D4 16 → 22 s, MX125 24 → 21 s, Fuji IX50 25 → 24 s.
   - `techniques.json` is geometry only; the old per-film Ci·s baseline stays in `scripts/original-techniques.json` for comparison.
+- Added NPS 18, 20 and 24 (Sch 10, STD, XH, 40, 60, 80, 100, 120, 140, 160) and Sch 10 on every existing size (ASME B36.10M walls; SFD OD + 0.125 in; large films on 18"–24"). 114 rows, 1,710 combinations. The schedule filter gains "10".
 - Settings schema 2: film-wide and size/schedule factors and the saved draft reset to 1.00 on upgrade from 1.20.0 (they were set against the old model); a one-time message says so.
 - Not yet verified with test shots; see `HANDOVER.md`.
 

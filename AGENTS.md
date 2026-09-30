@@ -8,7 +8,7 @@ Offline Android app (package `ca.kylekeith.shottime`) that calculates Ir-192 exp
 
 - `assets/index.html` — the whole UI and app logic (inline CSS and JS). At runtime `MainActivity` substitutes `/*__TECHNIQUES__*/` with `techniques.json` and `/*__CALCULATOR__*/` with `calculator.js`.
 - `assets/calculator.js` — pure calculation module: the shared Ir-192 exposure model (reference shots, steel half-value thickness, small/large film ratios), parsing, rounding labels, decay. Also loadable from Node.
-- `assets/techniques.json` — 73 pipe geometry rows (size, schedule, wall, SFD, group) plus film names and groups. Geometry only since 1.21.0; regenerate with `scripts/generate-films.py`.
+- `assets/techniques.json` — 114 pipe geometry rows (size, schedule, wall, SFD, group; NPS 1–24, ASME B36.10M walls) plus film names and groups. Geometry only since 1.21.0; regenerate with `scripts/generate-films.py`, which holds the added sizes and Sch 10 walls.
 - `scripts/original-techniques.json` — the pre-1.21 per-film Ci·s baseline, kept only for comparison tests.
 - `src/ca/kylekeith/shottime/MainActivity.java` — WebView host, window insets, Back handling, native print flow.
 - `AndroidManifest.xml`, `res/` — manifest, theme, icon.
@@ -37,7 +37,7 @@ npm test                         # runs all three suites
 
 Individually:
 
-- `node tests/test-current-calculator.cjs` — shared steel model across all 1,095 combinations, 30 reference targets, published film ratios, Agfa shape check, parsing, rounding, date validation.
+- `node tests/test-current-calculator.cjs` — geometry (SFD rule, B36.10M walls), shared steel model across all 1,710 combinations, 30 reference targets, published film ratios, Agfa shape check, parsing, rounding, date validation.
 - `CHROME_BINARY=/path/to/chrome node tests/test-current-ui.mjs` — UI: six films × five densities, corrections, calibration helper, save failure, persistence, narrow layouts, screen/print equality, printed date, screen-reader labels.
 - `CHROME_BINARY=/path/to/chrome node tests/test-settings-storage.mjs` — storage schema, per-density keys, range checks, resets, draft restoration, helper pre-fill, decay-mode behaviour, displayed factors.
 

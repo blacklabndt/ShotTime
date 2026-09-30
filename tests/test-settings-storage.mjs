@@ -28,7 +28,7 @@ const selects=['helper-size','helper-schedule','helper-film','weld-size','weld-s
 page=await open(draft({'helper-size':'8','helper-schedule':'XXH / XXS','helper-film':'t200','helper-ci':'25','weld-size':'3','weld-schedule':'80 / XH','weld-film':'mx125','weld-factor':'1.5'}));
 assert.deepEqual(await read(page),['8','XXH / XXS','t200','3','80 / XH','mx125']);assert.equal(await page.locator('#helper-ci').inputValue(),'25');assert.equal(await page.locator('#weld-factor').inputValue(),'1.5');
 page=await open(draft({'helper-size':'3','helper-schedule':'9','helper-film':'d5','weld-size':'8','weld-schedule':'bogus','weld-film':'d4','source-mode':'x'}));
-assert.deepEqual(await read(page),['3','40 / STD','ix50','8','40 / STD','d5']);assert.equal(await page.locator('#source-mode').inputValue(),'manual');
+assert.deepEqual(await read(page),['3','10','ix50','8','10','d5']);assert.equal(await page.locator('#source-mode').inputValue(),'manual');
 // A blank selection shows a message instead of failing silently or saving to another pipe.
 await page.evaluate(()=>{$('helper-film').value='missing';$('helper-ci').value='26';$('helper-time').value='30';$('helper-form').requestSubmit();});assert.equal(await page.locator('#helper-error').textContent(),'Choose a pipe size, schedule, film and density. Nothing has been changed.');assert.equal(await page.locator('#helper-review').isHidden(),true);
 const before=await stored(page);await page.evaluate(()=>{$('weld-schedule').value='missing';$('weld-factor').value='2';$('weld-form').requestSubmit();});assert.equal(await page.locator('#weld-error').textContent(),'Choose a pipe size, schedule, film and density. Nothing has changed.');await page.evaluate(()=>$('weld-reset').click());

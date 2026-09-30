@@ -5,6 +5,14 @@
   "techniques": [
     {
       "size": 1,
+      "schedule": "10",
+      "wall": 0.109,
+      "steelMm": 5.5371999999999995,
+      "sfd": 12,
+      "group": "small"
+    },
+    {
+      "size": 1,
       "schedule": "40 / STD",
       "wall": 0.133,
       "steelMm": 6.7564,
@@ -33,6 +41,14 @@
       "wall": 0.358,
       "steelMm": 18.1864,
       "sfd": 12,
+      "group": "small"
+    },
+    {
+      "size": 2,
+      "schedule": "10",
+      "wall": 0.109,
+      "steelMm": 5.5371999999999995,
+      "sfd": 2.5,
       "group": "small"
     },
     {
@@ -69,6 +85,14 @@
     },
     {
       "size": 3,
+      "schedule": "10",
+      "wall": 0.12,
+      "steelMm": 6.095999999999999,
+      "sfd": 3.625,
+      "group": "small"
+    },
+    {
+      "size": 3,
       "schedule": "40 / STD",
       "wall": 0.216,
       "steelMm": 10.9728,
@@ -98,6 +122,14 @@
       "steelMm": 30.479999999999997,
       "sfd": 3.625,
       "group": "small"
+    },
+    {
+      "size": 4,
+      "schedule": "10",
+      "wall": 0.12,
+      "steelMm": 6.095999999999999,
+      "sfd": 4.625,
+      "group": "large"
     },
     {
       "size": 4,
@@ -149,6 +181,14 @@
     },
     {
       "size": 5,
+      "schedule": "10",
+      "wall": 0.134,
+      "steelMm": 6.8072,
+      "sfd": 5.688,
+      "group": "large"
+    },
+    {
+      "size": 5,
       "schedule": "40 / STD",
       "wall": 0.258,
       "steelMm": 13.106399999999999,
@@ -189,6 +229,14 @@
     },
     {
       "size": 6,
+      "schedule": "10",
+      "wall": 0.134,
+      "steelMm": 6.8072,
+      "sfd": 6.75,
+      "group": "large"
+    },
+    {
+      "size": 6,
       "schedule": "40 / STD",
       "wall": 0.28,
       "steelMm": 14.224,
@@ -225,6 +273,14 @@
       "wall": 0.864,
       "steelMm": 43.8912,
       "sfd": 6.75,
+      "group": "large"
+    },
+    {
+      "size": 8,
+      "schedule": "10",
+      "wall": 0.148,
+      "steelMm": 7.518399999999999,
+      "sfd": 8.75,
       "group": "large"
     },
     {
@@ -293,6 +349,14 @@
     },
     {
       "size": 10,
+      "schedule": "10",
+      "wall": 0.165,
+      "steelMm": 8.382,
+      "sfd": 10.875,
+      "group": "large"
+    },
+    {
+      "size": 10,
       "schedule": "40 / STD",
       "wall": 0.365,
       "steelMm": 18.541999999999998,
@@ -353,6 +417,14 @@
       "wall": 1,
       "steelMm": 50.8,
       "sfd": 10.875,
+      "group": "large"
+    },
+    {
+      "size": 12,
+      "schedule": "10",
+      "wall": 0.18,
+      "steelMm": 9.143999999999998,
+      "sfd": 12.875,
       "group": "large"
     },
     {
@@ -437,6 +509,14 @@
     },
     {
       "size": 14,
+      "schedule": "10",
+      "wall": 0.25,
+      "steelMm": 12.7,
+      "sfd": 14.125,
+      "group": "large"
+    },
+    {
+      "size": 14,
       "schedule": "STD",
       "wall": 0.375,
       "steelMm": 19.049999999999997,
@@ -517,6 +597,14 @@
     },
     {
       "size": 16,
+      "schedule": "10",
+      "wall": 0.25,
+      "steelMm": 12.7,
+      "sfd": 16.125,
+      "group": "large"
+    },
+    {
+      "size": 16,
       "schedule": "STD",
       "wall": 0.375,
       "steelMm": 19.049999999999997,
@@ -586,6 +674,246 @@
       "steelMm": 50.8,
       "sfd": 16.125,
       "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "10",
+      "wall": 0.25,
+      "steelMm": 12.7,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "STD",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "40",
+      "wall": 0.562,
+      "steelMm": 28.5496,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "60",
+      "wall": 0.75,
+      "steelMm": 38.099999999999994,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "80",
+      "wall": 0.938,
+      "steelMm": 47.6504,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "100",
+      "wall": 1.156,
+      "steelMm": 58.724799999999995,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "120",
+      "wall": 1.375,
+      "steelMm": 69.85,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "140",
+      "wall": 1.562,
+      "steelMm": 79.3496,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 18,
+      "schedule": "160",
+      "wall": 1.781,
+      "steelMm": 90.47479999999999,
+      "sfd": 18.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "10",
+      "wall": 0.25,
+      "steelMm": 12.7,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "STD",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "40",
+      "wall": 0.594,
+      "steelMm": 30.175199999999997,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "60",
+      "wall": 0.812,
+      "steelMm": 41.2496,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "80",
+      "wall": 1.031,
+      "steelMm": 52.37479999999999,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "100",
+      "wall": 1.281,
+      "steelMm": 65.0748,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "120",
+      "wall": 1.5,
+      "steelMm": 76.19999999999999,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "140",
+      "wall": 1.75,
+      "steelMm": 88.89999999999999,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 20,
+      "schedule": "160",
+      "wall": 1.969,
+      "steelMm": 100.0252,
+      "sfd": 20.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "10",
+      "wall": 0.25,
+      "steelMm": 12.7,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "STD",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "40",
+      "wall": 0.688,
+      "steelMm": 34.950399999999995,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "60",
+      "wall": 0.969,
+      "steelMm": 49.225199999999994,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "80",
+      "wall": 1.219,
+      "steelMm": 61.925200000000004,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "100",
+      "wall": 1.531,
+      "steelMm": 77.77479999999998,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "120",
+      "wall": 1.812,
+      "steelMm": 92.0496,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "140",
+      "wall": 2.062,
+      "steelMm": 104.74959999999999,
+      "sfd": 24.125,
+      "group": "large"
+    },
+    {
+      "size": 24,
+      "schedule": "160",
+      "wall": 2.344,
+      "steelMm": 119.07519999999998,
+      "sfd": 24.125,
+      "group": "large"
     }
   ],
   "groups": {
@@ -601,7 +929,7 @@
     },
     "large": {
       "name": "Medium and large belts",
-      "range": "4\"\u201316\"",
+      "range": "4\"\u201324\"",
       "default": "d5",
       "films": [
         "d5",

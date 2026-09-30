@@ -27,6 +27,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 | R1 | Films disagreed on how exposure grows with steel (effective half-value thickness 12.0 mm Agfa vs 14.6 mm Fuji); up to 2× apart on heavy wall | Step 1: one shared Ir-192 steel curve (12.1 mm, from the Agfa/GE Structurix chart) for all films, anchored at each film's reference shot | 1.21.0 |
 | R2 | Small-film targets were entered independently of large films; D4/D5 implied 1.46× vs Agfa's published 2.0× | Step 2: small film = large partner × published ratio at the same geometry (D4 = D5 × 2.0, MX125 = T200 × 1.65, IX50 = IX80 × 1.83). D4 3" STD: 16 → 22 s at 26 Ci | 1.21.0 |
 | R3 | Independent review: keeping each small film's own density curve tied partners only at density 3.0 (Fuji up to ~0.4 density apart at 2.0); kept size/schedule factors were set against the old model | Small films follow partner × ratio at every density; size/schedule factors also reset on upgrade | 1.21.0 |
+| A1 | Owner request: more sizes | NPS 18, 20, 24 and Sch 10 on every size (ASME B36.10M walls, SFD OD + 0.125 in); 114 rows | 1.21.0 |
 | — | Version and settings | 1.21.0, versionCode 42; settings schema 2 resets film-wide and size/schedule factors on upgrade | 1.21.0 |
 
 `README.md` has the user-facing change lists under "1.21.0" and "1.20.0".
