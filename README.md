@@ -66,3 +66,6 @@ Consolidated density targets into one table and removed unreachable model branch
   - Tapping Print with nothing to print shows "Nothing to print. Check the source activity and filters."
   - A failure after the print screen has opened shows "Printing was interrupted. Close the print screen and try again." and keeps the session until Android reports it finished, instead of blaming the print service and allowing a second print.
   - Compiled and packaged with `build-review.sh` (platform 35, build-tools 35.0.0); not yet tested on a device.
+- Chart data: removed the unused file-level `density` and per-row `film`/`curieSeconds` fields from `assets/techniques.json` and `scripts/original-techniques.json`. Exposure values are unchanged.
+- Screen readers: each result value is announced with its column name (Schedule, Time, Internal, Internal offset; "not applicable" below 6"), and the visual column header row is hidden from them.
+- Decay mode rebuilds the results only when the decayed activity changes (once a day), not on every one-minute check.
