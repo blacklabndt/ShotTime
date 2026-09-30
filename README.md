@@ -1,4 +1,4 @@
-# ShotTime 1.19.1
+# ShotTime 1.20.0
 
 Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target API 36 (Android 16). Package `ca.kylekeith.shottime`. Requires a compatible, updated Android System WebView.
 
@@ -45,11 +45,7 @@ Restore the separate private signing backup into `signing/` before building. The
 
 Requires the available Playwright package. `tests/legacy/` contains historical harnesses, not active release gates. Physical Android print-service checks are not simulated by browser tests.
 
-## This release
-
-Consolidated density targets into one table and removed unreachable model branches. Replaced stale workbook/fallback correction wording. Refreshed documentation and test summaries. All 1,095 outputs and six migration multipliers match v1.19.0 exactly; no shot-time or saved-key changes were introduced.
-
-## Changes since 1.19.1 (unreleased)
+## 1.20.0 (versionCode 41, not yet built, signed or device-tested)
 
 - Calibration helper divides out the selected pipe's size/schedule factor, so that pipe keeps the successful time.
 - Film factor form keeps unchanged values, names the out-of-range film and focuses its box.
@@ -70,3 +66,7 @@ Consolidated density targets into one table and removed unreachable model branch
 - Screen readers: each result value is announced with its column name (Schedule, Time, Internal, Internal offset; "not applicable" below 6"), and the visual column header row is hidden from them.
 - Decay mode rebuilds the results only when the decayed activity changes (once a day), not on every one-minute check.
 - Target API raised to 36 (Android 16); build scripts use platform android-36 and build-tools 36.0.0. Back handling uses `OnBackInvokedCallback` on Android 13+ (`enableOnBackInvokedCallback="true"`) and `onBackPressed` on Android 8–12, so Back still closes an open sheet or preview before leaving the app. Compiled and packaged with `build-review.sh`; not yet tested on a device.
+
+## 1.19.1
+
+Consolidated density targets into one table and removed unreachable model branches. Replaced stale workbook/fallback correction wording. Refreshed documentation and test summaries. All 1,095 outputs and six migration multipliers match v1.19.0 exactly; no shot-time or saved-key changes were introduced.
