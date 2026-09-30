@@ -28,6 +28,8 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 | R2 | Small-film targets were entered independently of large films; D4/D5 implied 1.46× vs Agfa's published 2.0× | Step 2: small film = large partner × published ratio at the same geometry (D4 = D5 × 2.0, MX125 = T200 × 1.65, IX50 = IX80 × 1.83). D4 3" STD: 16 → 22 s at 26 Ci | 1.21.0 |
 | R3 | Independent review: keeping each small film's own density curve tied partners only at density 3.0 (Fuji up to ~0.4 density apart at 2.0); kept size/schedule factors were set against the old model | Small films follow partner × ratio at every density; size/schedule factors also reset on upgrade | 1.21.0 |
 | A1 | Owner request: more sizes | NPS 18, 20, 24 and Sch 10 on every size (ASME B36.10M walls, SFD OD + 0.125 in); 114 rows | 1.21.0 |
+| R4 | Second review: saved filters hid new rows; helper/size-schedule defaulted to Sch 10 (a 3" STD calibration logged as Sch 10 would be 1.32× too high); 17 truncated walls; dead code | "All" saved as null and old full lists treated as all; forms default to STD; walls corrected to B36.10M; cleanup | 1.21.0 |
+| F2 | Accuracy feature: measured density in the calibration helper | Film curve (log-linear between target densities) converts a densitometer reading to the target density | 1.21.0 |
 | A2 | Owner request: hide extrapolated rows | Rows over 90 mm total steel (18" and 20" Sch160, 24" Sch120–160) hidden in results, print and forms; 109 shown | 1.21.0 |
 | — | Version and settings | 1.21.0, versionCode 42; settings schema 2 resets film-wide and size/schedule factors on upgrade | 1.21.0 |
 

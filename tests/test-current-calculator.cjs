@@ -17,7 +17,10 @@ for(const [key,wall] of Object.entries(b3610)){const [size,schedule]=key.split('
 // Rows over 90 mm total steel are outside the model's range (hidden by the app).
 assert.equal(C.MAX_STEEL_MM,90);assert.deepEqual(data.techniques.filter(t=>!C.withinSteelRange(t)).map(t=>t.size+' '+t.schedule),['18 160','20 160','24 120','24 140','24 160']);
 // Every original row keeps its geometry.
-for(const o of historical.techniques){const t=find(o.size,o.schedule);assert.ok(t&&t.wall===o.wall&&t.sfd===o.sfd&&t.group===o.group,o.size+' '+o.schedule);}assert.equal(C.STEEL_HVL_MM,12.1);
+// Every original row keeps its geometry, except truncated walls corrected to ASME B36.10M (e.g. 0.437 -> 0.438).
+const corrected={.437:.438,.593:.594,.687:.688,.718:.719,.843:.844,.937:.938,1.093:1.094,1.218:1.219,1.437:1.438,1.593:1.594};
+let correctedRows=0;for(const o of historical.techniques){const t=find(o.size,o.schedule),wall=corrected[o.wall]??o.wall;if(wall!==o.wall)correctedRows++;assert.ok(t&&t.wall===wall&&t.sfd===o.sfd&&t.group===o.group,o.size+' '+o.schedule);}
+assert.equal(correctedRows,17);assert.ok(data.techniques.every(t=>!(t.wall in corrected)));assert.ok(data.techniques.every(t=>Object.keys(t).join()==='size,schedule,wall,sfd,group'));assert.equal(C.STEEL_HVL_MM,12.1);
 for(const [group,r] of [['small',ref3],['large',ref4]])assert.deepEqual(C.REFERENCE_GEOMETRY[group],{wall:r.wall,sfd:r.sfd});
 // Large films: calculator targets on 4-inch STD at 26 Ci.
 const large={d5:[11,15,19,23,27],t200:[14,18,22,25.5,29],ix80:[13,18,23,28,33]};
@@ -40,6 +43,10 @@ for(const film of ['d5','t200','ix80']){const a=find(8,'80 / XH'),b=find(16,'40 
 // Agfa films keep the shape of the historical Agfa-curve baseline (matched Agfa's own chart) within 4%.
 for(const film of ['d4','d5']){const ratios=historical.techniques.filter(t=>film in t.exposures).map(t=>C.densityExposure(t,film,3)/t.exposures[film]).sort((a,b)=>a-b),mid=ratios[ratios.length>>1];
   for(const r of ratios)assert.ok(Math.abs(r/mid-1)<.04,film+' shape drift '+r/mid);}
+// Film curve between target densities: exact at the five targets, log-linear between them, refused outside 2.0-4.0.
+for(const film of ['d4','d5','ix80'])for(const t of [ref3,ref4].filter(t=>data.groups[t.group].films.includes(film))){C.DENSITIES.forEach(d=>close(C.exposureAtDensity(t,film,d),C.densityExposure(t,film,d)));
+  close(C.exposureAtDensity(t,film,2.75),Math.sqrt(C.densityExposure(t,film,2.5)*C.densityExposure(t,film,3)));assert.ok(C.exposureAtDensity(t,film,2.7)>C.densityExposure(t,film,2.5)&&C.exposureAtDensity(t,film,2.7)<C.densityExposure(t,film,3));}
+for(const d of [1.99,4.01,NaN])assert.throws(()=>C.exposureAtDensity(ref3,'d4',d));
 assert.throws(()=>C.densityExposure(ref3,'d4',4.5));assert.throws(()=>C.densityExposure(ref4,'d4',3));assert.throws(()=>C.densityExposure(ref3,'d5',3));
 for(const s of ['','0','-1','1e3','NaN','1000'])assert.equal(C.parseActivity(s),null);assert.equal(C.parseActivity('26,5'),26.5);assert.equal(C.timeLabel(.1),'0s');assert.equal(C.timeLabel(59.5),'1m 0s');assert.equal(C.timeLabel(3599.5),'1h 0m 0s');assert.equal(C.decay(26,'2026-09-29','2026-09-29'),26);assert.equal(C.decay(26,'2026-09-30','2026-09-29'),null);assert.equal(C.dayNumber('2026-02-30'),null);
-console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, inverse activity, rounding and date validation.`);
+console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation.`);

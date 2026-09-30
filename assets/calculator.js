@@ -66,7 +66,15 @@
     if(index<0||!reference||reference.group!==technique.group||!Number.isFinite(technique.wall)||!(technique.sfd>0))throw new Error('Unsupported density or film');
     return REFERENCE_CURIE_SECONDS[film][index]*geometryFactor(technique,REFERENCE_GEOMETRY[reference.group]);
   }
-  const api={DENSITIES,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  // Exposure for any density between 2.0 and 4.0 on the film's curve: log-linear between the five
+  // target densities, so a measured density such as 2.7 can be used for calibration.
+  function exposureAtDensity(technique,film,density){
+    if(!Number.isFinite(density)||density<DENSITIES[0]||density>DENSITIES[DENSITIES.length-1])throw new Error('Density outside the film curve');
+    let i=0;while(i<DENSITIES.length-2&&density>DENSITIES[i+1])i++;
+    const lower=densityExposure(technique,film,DENSITIES[i]),upper=densityExposure(technique,film,DENSITIES[i+1]);
+    return lower*Math.pow(upper/lower,(density-DENSITIES[i])/(DENSITIES[i+1]-DENSITIES[i]));
+  }
+  const api={DENSITIES,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
