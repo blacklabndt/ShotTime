@@ -1,0 +1,254 @@
+[
+  {
+    "size": 1,
+    "schedule": "XH",
+    "curieSeconds": 5000.0,
+    "cell": "D3",
+    "film": "d4"
+  },
+  {
+    "size": 1,
+    "schedule": "160",
+    "curieSeconds": 7000.0,
+    "cell": "F3",
+    "film": "d4"
+  },
+  {
+    "size": 1,
+    "schedule": "XXH",
+    "curieSeconds": 8690.0,
+    "cell": "G3",
+    "film": "d4"
+  },
+  {
+    "size": 2,
+    "schedule": "STD",
+    "curieSeconds": 280.0,
+    "cell": "B4",
+    "film": "d4"
+  },
+  {
+    "size": 2,
+    "schedule": "XH",
+    "curieSeconds": 350.0,
+    "cell": "D4",
+    "film": "d4"
+  },
+  {
+    "size": 2,
+    "schedule": "160",
+    "curieSeconds": 500.0,
+    "cell": "F4",
+    "film": "d4"
+  },
+  {
+    "size": 2,
+    "schedule": "XXH",
+    "curieSeconds": 550.0,
+    "cell": "G4",
+    "film": "d4"
+  },
+  {
+    "size": 3,
+    "schedule": "STD",
+    "curieSeconds": 650.0,
+    "cell": "B5",
+    "film": "d4"
+  },
+  {
+    "size": 3,
+    "schedule": "XH",
+    "curieSeconds": 700.0,
+    "cell": "D5",
+    "film": "d4"
+  },
+  {
+    "size": 3,
+    "schedule": "160",
+    "curieSeconds": 1000.0,
+    "cell": "F5",
+    "film": "d4"
+  },
+  {
+    "size": 3,
+    "schedule": "XXH",
+    "curieSeconds": 1540.0,
+    "cell": "G5",
+    "film": "d4"
+  },
+  {
+    "size": 4,
+    "schedule": "STD",
+    "curieSeconds": 600.0,
+    "cell": "B6",
+    "film": "d5"
+  },
+  {
+    "size": 4,
+    "schedule": "XH",
+    "curieSeconds": 700.0,
+    "cell": "D6",
+    "film": "d5"
+  },
+  {
+    "size": 4,
+    "schedule": "160",
+    "curieSeconds": 950.0,
+    "cell": "F6",
+    "film": "d5"
+  },
+  {
+    "size": 4,
+    "schedule": "XXH",
+    "curieSeconds": 1520.0,
+    "cell": "G6",
+    "film": "d5"
+  },
+  {
+    "size": 6,
+    "schedule": "STD",
+    "curieSeconds": 1100.0,
+    "cell": "B7",
+    "film": "d5"
+  },
+  {
+    "size": 6,
+    "schedule": "XH",
+    "curieSeconds": 1540.0,
+    "cell": "D7",
+    "film": "d5"
+  },
+  {
+    "size": 6,
+    "schedule": "160",
+    "curieSeconds": 3390.0,
+    "cell": "F7",
+    "film": "d5"
+  },
+  {
+    "size": 6,
+    "schedule": "XXH",
+    "curieSeconds": 5068.0,
+    "cell": "G7",
+    "film": "d5"
+  },
+  {
+    "size": 8,
+    "schedule": "STD",
+    "curieSeconds": 1865.0,
+    "cell": "B8",
+    "film": "d5"
+  },
+  {
+    "size": 8,
+    "schedule": "XH",
+    "curieSeconds": 3054.0,
+    "cell": "D8",
+    "film": "d5"
+  },
+  {
+    "size": 8,
+    "schedule": "160",
+    "curieSeconds": 13259.0,
+    "cell": "F8",
+    "film": "d5"
+  },
+  {
+    "size": 8,
+    "schedule": "XXH",
+    "curieSeconds": 9207.0,
+    "cell": "G8",
+    "film": "d5"
+  },
+  {
+    "size": 10,
+    "schedule": "STD",
+    "curieSeconds": 3226.0,
+    "cell": "B9",
+    "film": "d5"
+  },
+  {
+    "size": 10,
+    "schedule": "XH",
+    "curieSeconds": 4561.0,
+    "cell": "D9",
+    "film": "d5"
+  },
+  {
+    "size": 10,
+    "schedule": "80",
+    "curieSeconds": 5400.0,
+    "cell": "E9",
+    "film": "d5"
+  },
+  {
+    "size": 10,
+    "schedule": "160",
+    "curieSeconds": 25801.0,
+    "cell": "F9",
+    "film": "d5"
+  },
+  {
+    "size": 10,
+    "schedule": "XXH",
+    "curieSeconds": 18245.0,
+    "cell": "G9",
+    "film": "d5"
+  },
+  {
+    "size": 12,
+    "schedule": "STD",
+    "curieSeconds": 4500.0,
+    "cell": "B10",
+    "film": "d5"
+  },
+  {
+    "size": 12,
+    "schedule": "40",
+    "curieSeconds": 5000.0,
+    "cell": "C10",
+    "film": "d5"
+  },
+  {
+    "size": 12,
+    "schedule": "XH",
+    "curieSeconds": 6618.0,
+    "cell": "D10",
+    "film": "d5"
+  },
+  {
+    "size": 12,
+    "schedule": "80",
+    "curieSeconds": 9200.0,
+    "cell": "E10",
+    "film": "d5"
+  },
+  {
+    "size": 12,
+    "schedule": "160",
+    "curieSeconds": 37436.0,
+    "cell": "F10",
+    "film": "d5"
+  },
+  {
+    "size": 12,
+    "schedule": "XXH",
+    "curieSeconds": 26471.0,
+    "cell": "G10",
+    "film": "d5"
+  },
+  {
+    "size": 14,
+    "schedule": "STD",
+    "curieSeconds": 5130.0,
+    "cell": "B11",
+    "film": "d5"
+  },
+  {
+    "size": 14,
+    "schedule": "80",
+    "curieSeconds": 15831.0,
+    "cell": "E11",
+    "film": "d5"
+  }
+]

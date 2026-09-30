@@ -1,0 +1,1151 @@
+{
+  "version": 1,
+  "date": "2026-09-29",
+  "isotope": "Ir-192",
+  "density": 3,
+  "techniques": [
+    {
+      "size": 1,
+      "schedule": "40 / STD",
+      "wall": 0.133,
+      "steelMm": 6.7564,
+      "sfd": 12,
+      "film": "Fuji IX50",
+      "curieSeconds": 4441,
+      "group": "small",
+      "exposures": {
+        "d4": 2200.0,
+        "mx125": 3900.0,
+        "ix50": 4441
+      }
+    },
+    {
+      "size": 1,
+      "schedule": "80 / XH",
+      "wall": 0.179,
+      "steelMm": 9.0932,
+      "sfd": 12,
+      "film": "Fuji IX50",
+      "curieSeconds": 4963,
+      "group": "small",
+      "exposures": {
+        "d4": 2500.0,
+        "mx125": 4400.0,
+        "ix50": 4963
+      }
+    },
+    {
+      "size": 1,
+      "schedule": "160",
+      "wall": 0.25,
+      "steelMm": 12.7,
+      "sfd": 12,
+      "film": "Fuji IX50",
+      "curieSeconds": 5891,
+      "group": "small",
+      "exposures": {
+        "d4": 3000.0,
+        "mx125": 5300.0,
+        "ix50": 5891
+      }
+    },
+    {
+      "size": 1,
+      "schedule": "XXH / XXS",
+      "wall": 0.358,
+      "steelMm": 18.1864,
+      "sfd": 12,
+      "film": "Fuji IX50",
+      "curieSeconds": 7646,
+      "group": "small",
+      "exposures": {
+        "d4": 4200.0,
+        "mx125": 7200.0,
+        "ix50": 7646
+      }
+    },
+    {
+      "size": 2,
+      "schedule": "40 / STD",
+      "wall": 0.154,
+      "steelMm": 7.823199999999999,
+      "sfd": 2.5,
+      "film": "Fuji IX50",
+      "curieSeconds": 203,
+      "group": "small",
+      "exposures": {
+        "d4": 100.0,
+        "mx125": 180.0,
+        "ix50": 203
+      }
+    },
+    {
+      "size": 2,
+      "schedule": "80 / XH",
+      "wall": 0.218,
+      "steelMm": 11.074399999999999,
+      "sfd": 2.5,
+      "film": "Fuji IX50",
+      "curieSeconds": 237,
+      "group": "small",
+      "exposures": {
+        "d4": 120.0,
+        "mx125": 210.0,
+        "ix50": 237
+      }
+    },
+    {
+      "size": 2,
+      "schedule": "160",
+      "wall": 0.344,
+      "steelMm": 17.475199999999997,
+      "sfd": 2.5,
+      "film": "Fuji IX50",
+      "curieSeconds": 321,
+      "group": "small",
+      "exposures": {
+        "d4": 170.0,
+        "mx125": 300.0,
+        "ix50": 321
+      }
+    },
+    {
+      "size": 2,
+      "schedule": "XXH / XXS",
+      "wall": 0.436,
+      "steelMm": 22.148799999999998,
+      "sfd": 2.5,
+      "film": "Fuji IX50",
+      "curieSeconds": 401,
+      "group": "small",
+      "exposures": {
+        "d4": 230.0,
+        "mx125": 380.0,
+        "ix50": 401
+      }
+    },
+    {
+      "size": 3,
+      "schedule": "40 / STD",
+      "wall": 0.216,
+      "steelMm": 10.9728,
+      "sfd": 3.625,
+      "film": "Fuji IX50",
+      "curieSeconds": 495,
+      "group": "small",
+      "exposures": {
+        "d4": 250.0,
+        "mx125": 450.0,
+        "ix50": 495
+      }
+    },
+    {
+      "size": 3,
+      "schedule": "80 / XH",
+      "wall": 0.3,
+      "steelMm": 15.239999999999998,
+      "sfd": 3.625,
+      "film": "Fuji IX50",
+      "curieSeconds": 607,
+      "group": "small",
+      "exposures": {
+        "d4": 320.0,
+        "mx125": 560.0,
+        "ix50": 607
+      }
+    },
+    {
+      "size": 3,
+      "schedule": "160",
+      "wall": 0.438,
+      "steelMm": 22.2504,
+      "sfd": 3.625,
+      "film": "Fuji IX50",
+      "curieSeconds": 846,
+      "group": "small",
+      "exposures": {
+        "d4": 480.0,
+        "mx125": 810.0,
+        "ix50": 846
+      }
+    },
+    {
+      "size": 3,
+      "schedule": "XXH / XXS",
+      "wall": 0.6,
+      "steelMm": 30.479999999999997,
+      "sfd": 3.625,
+      "film": "Fuji IX50",
+      "curieSeconds": 1251,
+      "group": "small",
+      "exposures": {
+        "d4": 770.0,
+        "mx125": 1300.0,
+        "ix50": 1251
+      }
+    },
+    {
+      "size": 4,
+      "schedule": "40 / STD",
+      "wall": 0.237,
+      "steelMm": 12.039599999999998,
+      "sfd": 4.625,
+      "film": "Agfa D5",
+      "curieSeconds": 220,
+      "group": "large",
+      "exposures": {
+        "d5": 220,
+        "t200": 390.0,
+        "ix80": 466
+      }
+    },
+    {
+      "size": 4,
+      "schedule": "60",
+      "wall": 0.281,
+      "steelMm": 14.2748,
+      "sfd": 4.625,
+      "film": "Agfa D5",
+      "curieSeconds": 250,
+      "group": "large",
+      "exposures": {
+        "d5": 250,
+        "t200": 440.0,
+        "ix80": 518
+      }
+    },
+    {
+      "size": 4,
+      "schedule": "80 / XH",
+      "wall": 0.337,
+      "steelMm": 17.1196,
+      "sfd": 4.625,
+      "film": "Agfa D5",
+      "curieSeconds": 290,
+      "group": "large",
+      "exposures": {
+        "d5": 290,
+        "t200": 520.0,
+        "ix80": 593
+      }
+    },
+    {
+      "size": 4,
+      "schedule": "120",
+      "wall": 0.437,
+      "steelMm": 22.1996,
+      "sfd": 4.625,
+      "film": "Agfa D5",
+      "curieSeconds": 390,
+      "group": "large",
+      "exposures": {
+        "d5": 390,
+        "t200": 680.0,
+        "ix80": 755
+      }
+    },
+    {
+      "size": 4,
+      "schedule": "160",
+      "wall": 0.531,
+      "steelMm": 26.9748,
+      "sfd": 4.625,
+      "film": "Agfa D5",
+      "curieSeconds": 510,
+      "group": "large",
+      "exposures": {
+        "d5": 510,
+        "t200": 870.0,
+        "ix80": 947
+      }
+    },
+    {
+      "size": 4,
+      "schedule": "XXH / XXS",
+      "wall": 0.674,
+      "steelMm": 34.2392,
+      "sfd": 4.625,
+      "film": "Agfa D5",
+      "curieSeconds": 780,
+      "group": "large",
+      "exposures": {
+        "d5": 780,
+        "t200": 1300.0,
+        "ix80": 1337
+      }
+    },
+    {
+      "size": 5,
+      "schedule": "40 / STD",
+      "wall": 0.258,
+      "steelMm": 13.106399999999999,
+      "sfd": 5.688,
+      "film": "Agfa D5",
+      "curieSeconds": 350,
+      "group": "large",
+      "exposures": {
+        "d5": 350,
+        "t200": 630.0,
+        "ix80": 741
+      }
+    },
+    {
+      "size": 5,
+      "schedule": "80 / XH",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 5.688,
+      "film": "Agfa D5",
+      "curieSeconds": 490,
+      "group": "large",
+      "exposures": {
+        "d5": 490,
+        "t200": 860.0,
+        "ix80": 983
+      }
+    },
+    {
+      "size": 5,
+      "schedule": "120",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 5.688,
+      "film": "Agfa D5",
+      "curieSeconds": 710,
+      "group": "large",
+      "exposures": {
+        "d5": 710,
+        "t200": 1200.0,
+        "ix80": 1329
+      }
+    },
+    {
+      "size": 5,
+      "schedule": "160",
+      "wall": 0.625,
+      "steelMm": 31.75,
+      "sfd": 5.688,
+      "film": "Agfa D5",
+      "curieSeconds": 1000,
+      "group": "large",
+      "exposures": {
+        "d5": 1000,
+        "t200": 1700.0,
+        "ix80": 1797
+      }
+    },
+    {
+      "size": 5,
+      "schedule": "XXH / XXS",
+      "wall": 0.75,
+      "steelMm": 38.099999999999994,
+      "sfd": 5.688,
+      "film": "Agfa D5",
+      "curieSeconds": 1500,
+      "group": "large",
+      "exposures": {
+        "d5": 1500,
+        "t200": 2400.0,
+        "ix80": 2429
+      }
+    },
+    {
+      "size": 6,
+      "schedule": "40 / STD",
+      "wall": 0.28,
+      "steelMm": 14.224,
+      "sfd": 6.75,
+      "film": "Agfa D5",
+      "curieSeconds": 530,
+      "group": "large",
+      "exposures": {
+        "d5": 530,
+        "t200": 940.0,
+        "ix80": 1100
+      }
+    },
+    {
+      "size": 6,
+      "schedule": "80 / XH",
+      "wall": 0.432,
+      "steelMm": 21.9456,
+      "sfd": 6.75,
+      "film": "Agfa D5",
+      "curieSeconds": 820,
+      "group": "large",
+      "exposures": {
+        "d5": 820,
+        "t200": 1400.0,
+        "ix80": 1588
+      }
+    },
+    {
+      "size": 6,
+      "schedule": "120",
+      "wall": 0.562,
+      "steelMm": 28.5496,
+      "sfd": 6.75,
+      "film": "Agfa D5",
+      "curieSeconds": 1200,
+      "group": "large",
+      "exposures": {
+        "d5": 1200,
+        "t200": 2000.0,
+        "ix80": 2173
+      }
+    },
+    {
+      "size": 6,
+      "schedule": "160",
+      "wall": 0.718,
+      "steelMm": 36.474399999999996,
+      "sfd": 6.75,
+      "film": "Agfa D5",
+      "curieSeconds": 1900,
+      "group": "large",
+      "exposures": {
+        "d5": 1900,
+        "t200": 3100.0,
+        "ix80": 3166
+      }
+    },
+    {
+      "size": 6,
+      "schedule": "XXH / XXS",
+      "wall": 0.864,
+      "steelMm": 43.8912,
+      "sfd": 6.75,
+      "film": "Agfa D5",
+      "curieSeconds": 2900,
+      "group": "large",
+      "exposures": {
+        "d5": 2900,
+        "t200": 4600.0,
+        "ix80": 4502
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "40 / STD",
+      "wall": 0.322,
+      "steelMm": 16.357599999999998,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 1000,
+      "group": "large",
+      "exposures": {
+        "d5": 1000,
+        "t200": 1800.0,
+        "ix80": 2047
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "60",
+      "wall": 0.406,
+      "steelMm": 20.6248,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 1300,
+      "group": "large",
+      "exposures": {
+        "d5": 1300,
+        "t200": 2200.0,
+        "ix80": 2507
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "80 / XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 1700,
+      "group": "large",
+      "exposures": {
+        "d5": 1700,
+        "t200": 2900.0,
+        "ix80": 3145
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "100",
+      "wall": 0.593,
+      "steelMm": 30.124399999999998,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 2200,
+      "group": "large",
+      "exposures": {
+        "d5": 2200,
+        "t200": 3700.0,
+        "ix80": 3936
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "120",
+      "wall": 0.718,
+      "steelMm": 36.474399999999996,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 3200,
+      "group": "large",
+      "exposures": {
+        "d5": 3200,
+        "t200": 5200.0,
+        "ix80": 5321
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "140",
+      "wall": 0.812,
+      "steelMm": 41.2496,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 4200,
+      "group": "large",
+      "exposures": {
+        "d5": 4200,
+        "t200": 6700.0,
+        "ix80": 6674
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "160",
+      "wall": 0.906,
+      "steelMm": 46.0248,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 5500,
+      "group": "large",
+      "exposures": {
+        "d5": 5500,
+        "t200": 8600.0,
+        "ix80": 8372
+      }
+    },
+    {
+      "size": 8,
+      "schedule": "XXH / XXS",
+      "wall": 0.875,
+      "steelMm": 44.449999999999996,
+      "sfd": 8.75,
+      "film": "Agfa D5",
+      "curieSeconds": 5000,
+      "group": "large",
+      "exposures": {
+        "d5": 5000,
+        "t200": 7900.0,
+        "ix80": 7769
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "40 / STD",
+      "wall": 0.365,
+      "steelMm": 18.541999999999998,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 1800,
+      "group": "large",
+      "exposures": {
+        "d5": 1800,
+        "t200": 3100.0,
+        "ix80": 3507
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "60 / XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 2600,
+      "group": "large",
+      "exposures": {
+        "d5": 2600,
+        "t200": 4400.0,
+        "ix80": 4858
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "80",
+      "wall": 0.593,
+      "steelMm": 30.124399999999998,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 3400,
+      "group": "large",
+      "exposures": {
+        "d5": 3400,
+        "t200": 5700.0,
+        "ix80": 6080
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "100",
+      "wall": 0.718,
+      "steelMm": 36.474399999999996,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 4900,
+      "group": "large",
+      "exposures": {
+        "d5": 4900,
+        "t200": 8000.0,
+        "ix80": 8219
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "120",
+      "wall": 0.843,
+      "steelMm": 42.8244,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 7100,
+      "group": "large",
+      "exposures": {
+        "d5": 7100,
+        "t200": 11000.0,
+        "ix80": 11110
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "140",
+      "wall": 1,
+      "steelMm": 50.8,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 11000,
+      "group": "large",
+      "exposures": {
+        "d5": 11000,
+        "t200": 17000.0,
+        "ix80": 16220
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "160",
+      "wall": 1.125,
+      "steelMm": 57.15,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 16000,
+      "group": "large",
+      "exposures": {
+        "d5": 16000,
+        "t200": 24000.0,
+        "ix80": 21919
+      }
+    },
+    {
+      "size": 10,
+      "schedule": "XXH / XXS",
+      "wall": 1,
+      "steelMm": 50.8,
+      "sfd": 10.875,
+      "film": "Agfa D5",
+      "curieSeconds": 11000,
+      "group": "large",
+      "exposures": {
+        "d5": 11000,
+        "t200": 17000.0,
+        "ix80": 16220
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "STD",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 2500,
+      "group": "large",
+      "exposures": {
+        "d5": 2500,
+        "t200": 4400.0,
+        "ix80": 5036
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "40",
+      "wall": 0.406,
+      "steelMm": 20.6248,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 2800,
+      "group": "large",
+      "exposures": {
+        "d5": 2800,
+        "t200": 4800.0,
+        "ix80": 5427
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 3600,
+      "group": "large",
+      "exposures": {
+        "d5": 3600,
+        "t200": 6200.0,
+        "ix80": 6809
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "60",
+      "wall": 0.562,
+      "steelMm": 28.5496,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 4400,
+      "group": "large",
+      "exposures": {
+        "d5": 4400,
+        "t200": 7400.0,
+        "ix80": 7907
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "80",
+      "wall": 0.687,
+      "steelMm": 34.8996,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 6300,
+      "group": "large",
+      "exposures": {
+        "d5": 6300,
+        "t200": 10000.0,
+        "ix80": 10690
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "100",
+      "wall": 0.843,
+      "steelMm": 42.8244,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 9900,
+      "group": "large",
+      "exposures": {
+        "d5": 9900,
+        "t200": 16000.0,
+        "ix80": 15572
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "120",
+      "wall": 1,
+      "steelMm": 50.8,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 16000,
+      "group": "large",
+      "exposures": {
+        "d5": 16000,
+        "t200": 24000.0,
+        "ix80": 22734
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "140",
+      "wall": 1.125,
+      "steelMm": 57.15,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 23000,
+      "group": "large",
+      "exposures": {
+        "d5": 23000,
+        "t200": 34000.0,
+        "ix80": 30723
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "160",
+      "wall": 1.312,
+      "steelMm": 66.64959999999999,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 39000,
+      "group": "large",
+      "exposures": {
+        "d5": 39000,
+        "t200": 56000.0,
+        "ix80": 48199
+      }
+    },
+    {
+      "size": 12,
+      "schedule": "XXH / XXS",
+      "wall": 1,
+      "steelMm": 50.8,
+      "sfd": 12.875,
+      "film": "Agfa D5",
+      "curieSeconds": 16000,
+      "group": "large",
+      "exposures": {
+        "d5": 16000,
+        "t200": 24000.0,
+        "ix80": 22734
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "STD",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 3000,
+      "group": "large",
+      "exposures": {
+        "d5": 3000,
+        "t200": 5300.0,
+        "ix80": 6061
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "40",
+      "wall": 0.437,
+      "steelMm": 22.1996,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 3600,
+      "group": "large",
+      "exposures": {
+        "d5": 3600,
+        "t200": 6300.0,
+        "ix80": 7039
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 4400,
+      "group": "large",
+      "exposures": {
+        "d5": 4400,
+        "t200": 7500.0,
+        "ix80": 8195
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "60",
+      "wall": 0.593,
+      "steelMm": 30.124399999999998,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 5800,
+      "group": "large",
+      "exposures": {
+        "d5": 5800,
+        "t200": 9600.0,
+        "ix80": 10256
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "80",
+      "wall": 0.75,
+      "steelMm": 38.099999999999994,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 9100,
+      "group": "large",
+      "exposures": {
+        "d5": 9100,
+        "t200": 15000.0,
+        "ix80": 14978
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "100",
+      "wall": 0.937,
+      "steelMm": 47.5996,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 16000,
+      "group": "large",
+      "exposures": {
+        "d5": 16000,
+        "t200": 24000.0,
+        "ix80": 23508
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "120",
+      "wall": 1.093,
+      "steelMm": 55.52439999999999,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 25000,
+      "group": "large",
+      "exposures": {
+        "d5": 25000,
+        "t200": 37000.0,
+        "ix80": 34235
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "140",
+      "wall": 1.25,
+      "steelMm": 63.5,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 39000,
+      "group": "large",
+      "exposures": {
+        "d5": 39000,
+        "t200": 57000.0,
+        "ix80": 49968
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "160",
+      "wall": 1.406,
+      "steelMm": 71.42479999999999,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 62000,
+      "group": "large",
+      "exposures": {
+        "d5": 62000,
+        "t200": 87000.0,
+        "ix80": 72742
+      }
+    },
+    {
+      "size": 14,
+      "schedule": "XXH / XXS",
+      "wall": 1,
+      "steelMm": 50.8,
+      "sfd": 14.125,
+      "film": "Agfa D5",
+      "curieSeconds": 19000,
+      "group": "large",
+      "exposures": {
+        "d5": 19000,
+        "t200": 29000.0,
+        "ix80": 27363
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "STD",
+      "wall": 0.375,
+      "steelMm": 19.049999999999997,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 4000,
+      "group": "large",
+      "exposures": {
+        "d5": 4000,
+        "t200": 6900.0,
+        "ix80": 7899
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "40 / XH",
+      "wall": 0.5,
+      "steelMm": 25.4,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 5700,
+      "group": "large",
+      "exposures": {
+        "d5": 5700,
+        "t200": 9700.0,
+        "ix80": 10680
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "60",
+      "wall": 0.656,
+      "steelMm": 33.324799999999996,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 9000,
+      "group": "large",
+      "exposures": {
+        "d5": 9000,
+        "t200": 15000.0,
+        "ix80": 15560
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "80",
+      "wall": 0.843,
+      "steelMm": 42.8244,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 16000,
+      "group": "large",
+      "exposures": {
+        "d5": 16000,
+        "t200": 25000.0,
+        "ix80": 24425
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "100",
+      "wall": 1.031,
+      "steelMm": 52.37479999999999,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 27000,
+      "group": "large",
+      "exposures": {
+        "d5": 27000,
+        "t200": 41000.0,
+        "ix80": 38425
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "120",
+      "wall": 1.218,
+      "steelMm": 61.874399999999994,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 47000,
+      "group": "large",
+      "exposures": {
+        "d5": 47000,
+        "t200": 68000.0,
+        "ix80": 60290
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "140",
+      "wall": 1.437,
+      "steelMm": 72.9996,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 89000,
+      "group": "large",
+      "exposures": {
+        "d5": 89000,
+        "t200": 120000.0,
+        "ix80": 102143
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "160",
+      "wall": 1.593,
+      "steelMm": 80.92439999999999,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 140000,
+      "group": "large",
+      "exposures": {
+        "d5": 140000,
+        "t200": 190000.0,
+        "ix80": 148664
+      }
+    },
+    {
+      "size": 16,
+      "schedule": "XXH / XXS",
+      "wall": 1,
+      "steelMm": 50.8,
+      "sfd": 16.125,
+      "film": "Agfa D5",
+      "curieSeconds": 25000,
+      "group": "large",
+      "exposures": {
+        "d5": 25000,
+        "t200": 38000.0,
+        "ix80": 35660
+      }
+    }
+  ],
+  "groups": {
+    "small": {
+      "name": "Small belts",
+      "range": "1\"\u20133\"",
+      "default": "ix50",
+      "films": [
+        "d4",
+        "mx125",
+        "ix50"
+      ]
+    },
+    "large": {
+      "name": "Medium and large belts",
+      "range": "4\"\u201316\"",
+      "default": "d5",
+      "films": [
+        "d5",
+        "t200",
+        "ix80"
+      ]
+    }
+  },
+  "films": {
+    "d4": {
+      "name": "Agfa D4",
+      "note": "Agfa curve estimate with approximate density correction. Below 10 mm total steel is extrapolated."
+    },
+    "mx125": {
+      "name": "Carestream MX125",
+      "note": "R-factor estimate using simplified steel attenuation. Validate with your screens and processing."
+    },
+    "ix50": {
+      "name": "Fuji IX50",
+      "note": "Fujifilm Ir-192 calculator estimate. Validate with your screens and processing."
+    },
+    "d5": {
+      "name": "Agfa D5",
+      "note": "Agfa curve estimate with approximate density correction. Validate with your screens and processing."
+    },
+    "t200": {
+      "name": "Carestream T200",
+      "note": "R-factor estimate using simplified steel attenuation. Validate with your screens and processing."
+    },
+    "ix80": {
+      "name": "Fuji IX80",
+      "note": "Fujifilm Ir-192 calculator estimate. Validate with your screens and processing."
+    }
+  }
+}

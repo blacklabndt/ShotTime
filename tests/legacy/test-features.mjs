@@ -1,0 +1,54 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+const dir=new URL('../',import.meta.url);
+const raw=await fs.readFile(new URL('assets/index.html',dir),'utf8');
+const data=await fs.readFile(new URL('assets/techniques.json',dir),'utf8');
+const calc=await fs.readFile(new URL('assets/calculator.js',dir),'utf8');
+const html=raw.replace('/*__TECHNIQUES__*/',()=>data).replace('/*__CALCULATOR__*/',()=>calc);
+const browser=await chromium.launch({executablePath:process.env.CHROME_BINARY,headless:true,args:['--no-sandbox']});
+const context=await browser.newContext({viewport:{width:393,height:852}});await context.route('https://shottime.local/**',r=>r.fulfill({contentType:'text/html',body:html}));
+const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(String(e)));await page.goto('https://shottime.local/');
+await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#activity').fill('50');await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('button[form="activity-form"]').click();
+assert.ok(await page.locator('#results').evaluate(n=>n.classList.contains('compact')));
+await page.locator('#pipe-filter summary').click();await page.locator('#pipe-filter input[value="1"]').uncheck();await page.locator('#pipe-filter summary').click();
+await page.locator('#schedule-filter summary').click();await page.locator('#schedule-filter input[value="160"]').uncheck();await page.locator('#schedule-filter summary').click();
+await page.locator('#result-view').selectOption('detailed');await page.reload();
+assert.equal(await page.locator('#pipe-filter input[value="1"]').isChecked(),false);assert.equal(await page.locator('#schedule-filter input[value="160"]').isChecked(),false);assert.equal(await page.locator('#result-view').inputValue(),'detailed');
+const before=Number(await page.locator('.shot').first().getAttribute('data-seconds'));
+await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('.settings summary').click();await page.locator('#factor-ix50').fill('1.25');await page.locator('#calibration-form button[type="submit"]').click();
+assert.ok(Math.abs(Number(await page.locator('.shot').first().getAttribute('data-seconds'))-before*1.25)<1e-10);
+await page.locator('#factor-ix50').fill('0');await page.locator('#calibration-form button[type="submit"]').click();assert.match(await page.locator('#calibration-error').textContent(),/Nothing/);assert.ok(Math.abs(Number(await page.locator('.shot').first().getAttribute('data-seconds'))-before*1.25)<1e-10);
+await page.reload();await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('.settings summary').click();assert.equal(await page.locator('#factor-ix50').inputValue(),'1.25');
+await page.locator('#reset-factors').click();assert.equal(Number(await page.locator('.shot').first().getAttribute('data-seconds')),before);
+await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#source-mode').selectOption('decay');assert.ok(await page.locator('#print-list').isDisabled());
+const dates=await page.evaluate(()=>{const d=new Date();const f=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');const today=f(d);d.setDate(d.getDate()-74);const ref=f(d);d.setDate(d.getDate()+75);return {today,ref,future:f(d)};});
+await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#reference-ci').fill('100');await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#reference-date').fill(dates.ref);await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('button[form="activity-form"]').click();
+const expected=100*2**(-74/73.83);assert.ok(Math.abs(Number(await page.locator('#activity').inputValue())-expected)<.000001);assert.match(await page.locator('#source-summary').textContent(),/Decay to/);
+await page.reload();assert.equal(await page.locator('#source-mode').inputValue(),'decay');assert.ok(Math.abs(Number(await page.locator('#activity').inputValue())-expected)<.000001);
+await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#reference-date').fill(dates.future);await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('button[form="activity-form"]').click();assert.ok(await page.locator('#print-list').isDisabled());assert.match(await page.locator('#input-error').textContent(),/no later/);
+await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#reference-date').fill(dates.ref);await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('button[form="activity-form"]').click();
+await page.locator('#pipe-filter summary').click();await page.locator('#pipe-filter button').filter({hasText:/^All$/}).click();await page.locator('#pipe-filter summary').click();
+await page.locator('#schedule-filter summary').click();await page.locator('#schedule-filter button').filter({hasText:/^All$/}).click();await page.locator('#schedule-filter summary').click();
+const print=await context.newPage();
+for(const [size,px] of [['small',11],['medium',13],['large',15]]){
+ await page.evaluate(()=>{document.getElementById('setup-panel').open=true;document.getElementById('print-panel').open=true;});await page.locator('#print-size').selectOption(size);await print.setContent(await page.evaluate(()=>makePrintDocument()));assert.equal(await print.locator('tbody tr').count(),73);assert.equal(await print.locator('table').evaluate(n=>getComputedStyle(n).fontSize),px+'px');assert.match(await print.locator('body').textContent(),/Film factors:/);
+ await print.pdf({path:new URL('verification/print-'+size+'.pdf',dir).pathname,format:'Letter',margin:{top:'.5in',bottom:'.5in',left:'.5in',right:'.5in'}});
+}
+await page.reload();assert.equal(await page.locator('#print-size').inputValue(),'large');
+await page.locator('#result-view').selectOption('compact');await page.locator('#results').scrollIntoViewIfNeeded();await page.screenshot({path:new URL('verification/compact-view.png',dir).pathname});
+
+await page.locator('#show-all').click();assert.equal(await page.locator('.shot').count(),73);
+await page.locator('#pipe-filter summary').click();await page.locator('#pipe-filter input[value="16"]').uncheck();await page.locator('#pipe-filter summary').click();
+await page.getByRole('button',{name:'Remove pipe size 2',exact:true}).click();assert.equal(await page.locator('.shot[data-size="2"]').count(),0);
+await page.locator('#show-all').click();assert.equal(await page.locator('.shot').count(),73);assert.match(await page.locator('#filter-chips').textContent(),/All sizes/);
+await page.locator('#open-print').click();assert.ok(await page.locator('#print-panel').evaluate(n=>n.open));
+await page.locator('#preview-list').click();assert.ok(await page.locator('#preview-dialog').evaluate(n=>n.open));assert.equal(await page.locator('#preview-content tbody tr').count(),73);await page.locator('#close-preview').click();
+await page.evaluate(()=>document.getElementById('setup-panel').open=true);await page.locator('#source-mode').selectOption('manual');await page.locator('#activity').fill('50');await page.locator('button[form="activity-form"]').click();
+assert.equal(await page.locator('#setup-panel').evaluate(n=>n.open),false);assert.match(await page.locator('#mode-badge').textContent(),/Manual/);assert.match(await page.locator('#freshness').textContent(),/saved/);
+const stamp=await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.source')).savedAt);assert.ok(stamp);await page.reload();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.source')).savedAt),stamp);
+assert.equal(await page.locator('#setup-panel').evaluate(n=>n.open),false);
+for(const width of [320,393,740]){await page.setViewportSize({width,height:852});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+await page.setViewportSize({width:393,height:852});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:new URL('verification/ShotTime-main-v1.6.png',dir).pathname});
+console.log('PASS: collapse, chips, Show all, dark preview, mode label and preserved manual timestamp.');
+assert.deepEqual(errors,[]);await browser.close();console.log('PASS: filters/view persistence, calibration save/reset/validation, decay/reference restore/future rejection, print sizes and persistence.');
