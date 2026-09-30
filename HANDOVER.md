@@ -1,6 +1,6 @@
-# ShotTime handover — 1.21.0 (versionCode 42)
+# ShotTime handover — 1.21.1 (versionCode 43)
 
-Status on 2026-09-30: source is at 1.21.0, which changes the exposure model (shot times change; see below). All three test suites pass and `build-review.sh` compiles and packages against Android 16 (API 36). **Not yet signed, released or tested on a device.** The last signed release is 1.19.1 (versionCode 40) in `release/`.
+Status on 2026-09-30: source is at 1.21.1. 1.21.0 changed the exposure model and 1.21.1 adds Carestream CR (shot times change; see below). All three test suites pass and `build-review.sh` compiles and packages against Android 16 (API 36). **Not yet signed, released or tested on a device.** The last signed release is 1.19.1 (versionCode 40) in `release/`.
 
 The app has not been released to anyone except the owner, which is why the settings storage was reset rather than migrated (see decisions below).
 
@@ -31,10 +31,11 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 | R4 | Second review: saved filters hid new rows; helper/size-schedule defaulted to Sch 10 (a 3" STD calibration logged as Sch 10 would be 1.32× too high); 17 truncated walls; dead code | "All" saved as null and old full lists treated as all; forms default to STD; walls corrected to B36.10M; cleanup | 1.21.0 |
 | F2 | Accuracy feature: measured density in the calibration helper | Film curve (log-linear between target densities) converts a densitometer reading to the target density | 1.21.0 |
 | A2 | Owner request: hide extrapolated rows | Rows over 90 mm total steel (18" and 20" Sch160, 24" Sch120–160) hidden in results, print and forms; 109 shown | 1.21.0 |
-| A3 | Owner request: Carestream CR | `cr` film on both belts from the owner's CR chart (`EXPOSURE_CHART.xlsx`), values used as given (not the steel model); owner chose: chart rows only (others —), same at every density, Internal ÷ 8 / offset ÷ 3, 24" XS and 6" XXH as written | 1.21.0 |
+| A3 | Owner request: Carestream CR | `cr` film on both belts from the owner's CR chart (`EXPOSURE_CHART.xlsx`), values used as given (not the steel model); owner chose: chart rows only (others —), same at every density, Internal ÷ 8 / offset ÷ 3, 24" XS and 6" XXH as written | 1.21.1 |
 | — | Version and settings | 1.21.0, versionCode 42; settings schema 2 resets film-wide and size/schedule factors on upgrade | 1.21.0 |
+| — | Version | 1.21.1, versionCode 43 (Carestream CR); no settings change | 1.21.1 |
 
-`README.md` has the user-facing change lists under "1.21.0" and "1.20.0".
+`README.md` has the user-facing change lists under "1.21.1", "1.21.0" and "1.20.0".
 
 ## Owner decisions to respect
 
@@ -57,7 +58,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
    - D5 on 4" STD, 8" XS and 12" Sch160: checks the 12.1 mm steel curve. 12.1 mm is the lowest published value; if density rises with wall, the effective half-value thickness is higher (review estimate: 12.7–13.6 mm would put 12"–16" Sch160 about 0.2–0.9 density lighter than 4" STD).
    - If Carestream or Fuji are used, the same pair for MX125/T200 or IX50/IX80.
    - Correct with film-wide factors (the helper calculates them), or, if a published ratio or reference time is consistently off, update `FILM_REFERENCES` in `calculator.js` with owner approval.
-2. **Sign and release** (owner only, needs the private `signing/` backup): `SDK_ROOT=/path/to/sdk bash build.sh` produces `dist/ShotTime-v1.21.0.apk`. `release/` still holds the signed 1.19.1 APK; replace it when a signed 1.21.0 exists and regenerate `SHA256SUMS` (it covers every tracked file except itself).
+2. **Sign and release** (owner only, needs the private `signing/` backup): `SDK_ROOT=/path/to/sdk bash build.sh` produces `dist/ShotTime-v1.21.1.apk`. `release/` still holds the signed 1.19.1 APK; replace it when a signed 1.21.1 exists and regenerate `SHA256SUMS` (it covers every tracked file except itself).
 3. **Device testing** — none of the native changes has run on a phone. Checklist:
    - Install over 1.19.1: installs as an update; saved settings reset to defaults (expected). Over a 1.20.0 test install: a one-time message says film factors reset to 1.00.
    - Print normally, then print again straight away.

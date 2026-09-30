@@ -1,4 +1,4 @@
-# ShotTime 1.21.0
+# ShotTime 1.21.1
 
 Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target API 36 (Android 16). Package `ca.kylekeith.shottime`. Requires a compatible, updated Android System WebView.
 
@@ -60,7 +60,11 @@ Restore the separate private signing backup into `signing/` before building. The
 
 Requires the available Playwright package. `tests/legacy/` contains historical harnesses, not active release gates. Physical Android print-service checks are not simulated by browser tests.
 
-## 1.21.0 (versionCode 42, not yet built, signed or device-tested)
+## 1.21.1 (versionCode 43, not yet signed or device-tested)
+
+- Carestream CR film on small and medium/large belts from the owner's CR Ci·s chart (see Carestream CR above).
+
+## 1.21.0 (versionCode 42, never released)
 
 - Exposure model redesign (shot times change):
   - Step 1: all films share one Ir-192 steel curve (inverse square for SFD, exposure doubles every 12.1 mm of total steel) anchored at each film's reference shot. Agfa D4/D5 change by about 2% or less; Carestream and Fuji become longer on heavy wall (up to about 30% for T200 and 2× for IX80 on 12"–16" Sch160).
@@ -70,7 +74,6 @@ Requires the available Playwright package. `tests/legacy/` contains historical h
 - Fixes from the second independent review: saved filters no longer hide rows added later ("All" is saved as all; a pre-1.21 full list counts as all); the helper and size/schedule forms default to STD instead of Sch 10; 17 truncated original walls corrected to ASME B36.10M (≤0.3% exposure); unused `steelMm` and dead print code removed.
 - Calibration helper takes a measured density (feature from the accuracy list): factor = successful time ÷ (model time at the measured density × size/schedule factor), so a shot that read 2.7 still calibrates the 3.0 target correctly. The review shows the resulting time for the target density.
 - Settings schema 2: film-wide and size/schedule factors and the saved draft reset to 1.00 on upgrade from 1.20.0 (they were set against the old model); a one-time message says so.
-- Carestream CR film on small and medium/large belts from the owner's CR Ci·s chart (see Carestream CR above).
 - Not yet verified with test shots; see `HANDOVER.md`.
 
 ## 1.20.0 (versionCode 41, never released)

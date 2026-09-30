@@ -51,7 +51,7 @@ Requires JDK 17+ (21 works), Python 3, Bash, and an Android SDK with **platform 
 SDK_ROOT=/path/to/android-sdk bash build-review.sh   # unsigned: dist/ShotTime-review-unsigned.apk
 ```
 
-Expected output includes `versionCode='42' versionName='1.21.0'` and `targetSdkVersion:'36'`. The `-source 8` obsolete-option warnings and four deprecation warnings (`setDecorFitsSystemWindows`, `setStatusBarColor`, `setNavigationBarColor`, `setSystemUiVisibility`, all on intentionally version-guarded paths) are known. `build/` and `dist/` are git-ignored.
+Expected output includes `versionCode='43' versionName='1.21.1'` and `targetSdkVersion:'36'`. The `-source 8` obsolete-option warnings and four deprecation warnings (`setDecorFitsSystemWindows`, `setStatusBarColor`, `setNavigationBarColor`, `setSystemUiVisibility`, all on intentionally version-guarded paths) are known. `build/` and `dist/` are git-ignored.
 
 Browser tests do not exercise `MainActivity.java`. Native behaviour (printing, Back, insets, rotation, TalkBack) needs a device or an emulator with hardware acceleration.
 
@@ -59,4 +59,4 @@ Browser tests do not exercise `MainActivity.java`. Native behaviour (printing, B
 
 - Match the existing dense style in `index.html`: compact single-line functions, `$()` for `getElementById`, `C` for `ShotCalculator`, `CHART` for the data. Keep comments sparse and explain *why*.
 - Java targets `-source 8` with lambdas; guard APIs above 26 with `Build.VERSION.SDK_INT`, and put API 33+ types in a nested class (see `BackApi33`) so older Android never loads them.
-- Keep changes minimal and focused; update `README.md`'s 1.21.0 section when behaviour changes.
+- Keep changes minimal and focused; update the current version's section in `README.md` when behaviour changes.

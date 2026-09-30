@@ -1,6 +1,6 @@
 # ShotTime review handoff
 
-Source version: 1.21.0, Android versionCode 42, package ca.kylekeith.shottime (not yet built, signed or device-tested). The last signed release is 1.19.1, versionCode 40, in release/.
+Source version: 1.21.1, Android versionCode 43, package ca.kylekeith.shottime (not yet built, signed or device-tested). The last signed release is 1.19.1, versionCode 40, in release/.
 The owner reports the current app is working. This package is for an independent code review, not a requested redesign or automatic deployment.
 
 ## Give Claude Code this task
