@@ -10,6 +10,8 @@ import android.graphics.Insets;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -62,6 +64,9 @@ public final class MainActivity extends Activity {
             getWindow().getDecorView().setSystemUiVisibility(0);
         }
         setContentView(root);
+        // From Android 13 (and always when targeting Android 16) Back goes through OnBackInvokedCallback,
+        // not onBackPressed(). Kept in a nested class so older Android never loads the API 33 types.
+        if (Build.VERSION.SDK_INT >= 33) BackApi33.register(this);
         if (Build.VERSION.SDK_INT >= 30 && getWindow().getInsetsController() != null) {
             getWindow().getInsetsController().setSystemBarsAppearance(
                 0,
@@ -225,11 +230,25 @@ public final class MainActivity extends Activity {
             return output.toString(StandardCharsets.UTF_8.name());
         }
     }
-    @Override public void onBackPressed() {
-        if (web == null) { super.onBackPressed(); return; }
+    // Back closes an open sheet or preview first; otherwise it does the system default.
+    private void handleBack() {
+        if (web == null) { defaultBack(); return; }
         web.evaluateJavascript("typeof closeTopSheet==='function' && closeTopSheet()", result -> {
-            if (!"true".equals(result)) MainActivity.super.onBackPressed();
+            if (!"true".equals(result)) defaultBack();
         });
+    }
+    @SuppressWarnings("deprecation")
+    private void defaultBack() { if (!isFinishing() && !isDestroyed()) super.onBackPressed(); }
+    // Android 8–12 only; Android 13+ uses BackApi33 because the manifest enables OnBackInvokedCallback.
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() { handleBack(); }
+    private static final class BackApi33 {
+        static void register(MainActivity activity) {
+            activity.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, new OnBackInvokedCallback() {
+                    @Override public void onBackInvoked() { activity.handleBack(); }
+                });
+        }
     }
     @Override protected void onResume() {
         super.onResume();

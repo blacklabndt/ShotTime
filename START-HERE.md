@@ -21,7 +21,7 @@ On Linux, browser system dependencies may also be required. For an existing brow
 
 ## Android compilation without private credentials
 
-Prerequisites: Bash, Python 3, JDK 17, Android SDK platform android-35 and build-tools 35.0.0.
+Prerequisites: Bash, Python 3, JDK 17, Android SDK platform android-36 and build-tools 36.0.0.
 
 ```sh
 SDK_ROOT=/absolute/path/to/android-sdk bash build-review.sh

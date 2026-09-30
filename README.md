@@ -1,6 +1,6 @@
 # ShotTime 1.19.1
 
-Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target API 35. Package `ca.kylekeith.shottime`. Requires a compatible, updated Android System WebView.
+Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target API 36 (Android 16). Package `ca.kylekeith.shottime`. Requires a compatible, updated Android System WebView.
 
 ## Current calculation
 
@@ -33,7 +33,7 @@ No network permission, tracking or JS-to-native interface. Printing uses a separ
 
 ## Build
 
-Set `SDK_ROOT` to an Android SDK with platform android-35 and build-tools 35.0.0. Run `SDK_ROOT=/path/to/sdk bash build.sh` with Java 17 available.
+Set `SDK_ROOT` to an Android SDK with platform android-36 and build-tools 36.0.0. Run `SDK_ROOT=/path/to/sdk bash build.sh` with Java 17 available.
 
 Restore the separate private signing backup into `signing/` before building. The build refuses to generate a replacement key. Signing credentials are excluded from the source archive. Never share the signing backup. Keep the package and key unchanged for installation as an update, and increase versionCode for each release.
 
@@ -69,3 +69,4 @@ Consolidated density targets into one table and removed unreachable model branch
 - Chart data: removed the unused file-level `density` and per-row `film`/`curieSeconds` fields from `assets/techniques.json` and `scripts/original-techniques.json`. Exposure values are unchanged.
 - Screen readers: each result value is announced with its column name (Schedule, Time, Internal, Internal offset; "not applicable" below 6"), and the visual column header row is hidden from them.
 - Decay mode rebuilds the results only when the decayed activity changes (once a day), not on every one-minute check.
+- Target API raised to 36 (Android 16); build scripts use platform android-36 and build-tools 36.0.0. Back handling uses `OnBackInvokedCallback` on Android 13+ (`enableOnBackInvokedCallback="true"`) and `onBackPressed` on Android 8–12, so Back still closes an open sheet or preview before leaving the app. Compiled and packaged with `build-review.sh`; not yet tested on a device.
