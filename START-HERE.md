@@ -5,7 +5,7 @@ The owner reports the current app is working. This package is for an independent
 
 ## Give Claude Code this task
 
-Review this Android application end to end. Read START-HERE.md, README.md, and REVIEW-BRIEF.md first. Run the three active test suites where possible. Trace calculations independently and inspect saved-setting migrations, draft restoration, calibration, and Android print lifecycle. Report findings by severity with file/line references, concrete reproduction steps, impact, and proposed fixes. Distinguish reproduced failures from suspected risks and physical-device validation gaps. Do not change source, calculation assumptions, reference times, signing identity, or publish a release without discussing findings with me. Do not claim that matching the supplied targets validates physical radiographic exposures.
+Review this Android application end to end. Read START-HERE.md, README.md, and REVIEW-BRIEF.md first. Run the three active test suites where possible. Trace calculations independently and inspect saved settings, draft restoration, calibration, and Android print lifecycle. Report findings by severity with file/line references, concrete reproduction steps, impact, and proposed fixes. Distinguish reproduced failures from suspected risks and physical-device validation gaps. Do not change source, calculation assumptions, reference times, signing identity, or publish a release without discussing findings with me. Do not claim that matching the supplied targets validates physical radiographic exposures.
 
 ## Test setup
 

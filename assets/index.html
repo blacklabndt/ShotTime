@@ -46,21 +46,20 @@ button{transition:background-color .16s,color .16s,transform .12s}button:active{
 'use strict';
 const $=id=>document.getElementById(id), C=ShotCalculator;
 let sessionSettings={};let storageFailed=false;
-try{const stored=JSON.parse(localStorage.getItem('shottime.settings')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))sessionSettings=stored;}catch(e){}
-function readSetting(key,fallback){if(Object.prototype.hasOwnProperty.call(sessionSettings,key))return sessionSettings[key];try{const v=localStorage.getItem('shottime.'+key);return v===null?fallback:JSON.parse(v);}catch(e){return fallback;}}
-function saveSettings(values){const next={...sessionSettings,...values};sessionSettings=next;try{localStorage.setItem('shottime.settings',JSON.stringify(next));storageFailed=false;}catch(e){storageFailed=true;}const warning=$('storage-warning');if(warning)warning.hidden=!storageFailed;return !storageFailed;}
+// One versioned settings record. Records without this version (pre-release builds) are ignored.
+const SCHEMA_VERSION=1;
+try{const stored=JSON.parse(localStorage.getItem('shottime.settings')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored)&&stored.schemaVersion===SCHEMA_VERSION)sessionSettings=stored;}catch(e){}
+function readSetting(key,fallback){return Object.prototype.hasOwnProperty.call(sessionSettings,key)?sessionSettings[key]:fallback;}
+function saveSettings(values){const next={...sessionSettings,...values,schemaVersion:SCHEMA_VERSION};sessionSettings=next;try{localStorage.setItem('shottime.settings',JSON.stringify(next));storageFailed=false;}catch(e){storageFailed=true;}const warning=$('storage-warning');if(warning)warning.hidden=!storageFailed;return !storageFailed;}
 function saveSetting(key,value){return saveSettings({[key]:value});}
 let targetDensity=readSetting('density',3);if(![2,2.5,3,3.5,4].includes(targetDensity))targetDensity=3;
-function factorKey(film,density=targetDensity){return (density!==3&&['mx125','t200'].includes(film)?'factor.carestream-densities-v1.':density!==3&&['ix50','ix80'].includes(film)?'factor.fuji-densities-v1.':['d4','d5'].includes(film)&&density!==3?'factor.agfa-densities-v1.':'factor.baseline-six-v1.')+density+'.'+film;}
-function defaultFactor(){return 1;}
-// Preserve effective times when migrating previously edited film factors.
-if(!readSetting('baseline-six-v1-migrated',false)){const updates={'baseline-six-v1-migrated':true};for(const film of Object.keys(CHART.films)){const old=readSetting('factor.original-adjusted-v3.3.'+film,null);if(typeof old==='number'&&old>=.1&&old<=10)updates['factor.baseline-six-v1.3.'+film]=old/C.BASELINE_FACTORS[film];for(const density of [2,2.5,3.5]){const value=readSetting('factor.original-adjusted-v3.'+density+'.'+film,null);if(typeof value==='number')updates['factor.baseline-six-v1.'+density+'.'+film]=value;}}saveSettings(updates);}
-const factors={};function loadFactors(){for(const film of Object.keys(CHART.films)){const n=readSetting(factorKey(film),defaultFactor(film));factors[film]=typeof n==='number'&&n>0&&n<=10?n:1;}}loadFactors();
+function factorKey(film,density=targetDensity){return 'factor.'+density+'.'+film;}
+const factors={};function loadFactors(){for(const film of Object.keys(CHART.films)){const n=readSetting(factorKey(film),1);factors[film]=typeof n==='number'&&n>=.1&&n<=10?n:1;}}loadFactors();
 $('target-density').value=String(targetDensity);
 let appliedSource=null,manualSavedAt=null;
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 function filmFactor(film){return factors[film]||1;}
-function weldKey(t,film,density=targetDensity){return (density!==3&&['mx125','t200'].includes(film)?'weld.carestream-densities-v1.':density!==3&&['ix50','ix80'].includes(film)?'weld.fuji-densities-v1.':['d4','d5'].includes(film)&&density!==3?'weld.agfa-densities-v1.':'weld.original-adjusted-v3.')+density+'.'+film+'.'+t.size+'.'+t.schedule;}
+function weldKey(t,film,density=targetDensity){return 'weld.'+density+'.'+film+'.'+t.size+'.'+t.schedule;}
 function weldFactor(t,film,density=targetDensity){const n=readSetting(weldKey(t,film,density),1);return typeof n==='number'&&n>=.1&&n<=10?n:1;}
 function correctedExposure(t,film){return C.densityExposure(t,film,targetDensity)*filmFactor(film)*weldFactor(t,film);}
 
@@ -86,7 +85,7 @@ function setupChoices(kind,values){
 }
 function setupFilms(){
  for(const key of ['small','large']){const group=CHART.groups[key],select=$('film-'+key);
- for(const id of group.films){const o=document.createElement('option');o.value=id;o.textContent=CHART.films[id].name;select.appendChild(o);}let legacy=null;try{legacy=localStorage.getItem('shottime.film.'+key);}catch(e){}let saved=readSetting('film.'+key,legacy);select.value=group.films.includes(saved)?saved:group.default;
+ for(const id of group.films){const o=document.createElement('option');o.value=id;o.textContent=CHART.films[id].name;select.appendChild(o);}const saved=readSetting('film.'+key,null);select.value=group.films.includes(saved)?saved:group.default;
  select.addEventListener('change',()=>{saveSetting('film.'+key,select.value);updateFilms();});}
  setupChoices('pipe',sizes.map(String));setupChoices('schedule',['STD','40','60','XH','80','100','120','140','160','XXH']);updateFilms();
 }
@@ -152,13 +151,13 @@ if(ci===null||ci<.001){$('helper-error').textContent='Enter the shot’s activit
 if(!Number.isFinite(duration)||duration<=0){$('helper-error').textContent='Enter a successful exposure time greater than zero.';return;}
 const t=CHART.techniques[Number($('helper-schedule').value)],film=$('helper-film').value,density=Number($('helper-density').value);const weld=weldFactor(t,film,density),base=C.densityExposure(t,film,density)/ci,factor=duration/(base*weld);
 if(!Number.isFinite(factor)||factor<.1||factor>10){$('helper-error').textContent='Calculated factor is outside 0.10–10.00. Check the activity, time unit, and technique. Nothing has been changed.';return;}
-const old=readSetting(factorKey(film,density),defaultFactor(film,density));
+const old=readSetting(factorKey(film,density),1);
 helperPending={film,density,factor};$('helper-review-text').textContent=CHART.films[film].name+' · density '+density.toFixed(1)+'\n'+t.size+'" · '+t.schedule+' · SFD '+t.sfd+'"\nShot activity: '+ci+' Ci\nUnadjusted estimate: '+base.toFixed(3)+' s\nSize/schedule factor: ×'+weld.toFixed(4)+'\nSuccessful exposure: '+duration+' s\nCurrent factor: ×'+Number(old).toFixed(4)+'\nProposed factor: ×'+factor.toFixed(4)+'\nCalculated from the unrounded estimate, dividing out this size/schedule factor but not the existing film-wide factor.';$('helper-review').hidden=false;$('helper-save').focus();});
 $('helper-save').addEventListener('click',()=>{if(!helperPending)return;const {film,density,factor}=helperPending;saveSetting(factorKey(film,density),factor);if(density===targetDensity){factors[film]=factor;$('factor-'+film).value=String(factor);render();}clearHelperReview();toast(CHART.films[film].name+' factor saved for density '+density.toFixed(1));});
 
 
 function weldSelection(){return CHART.techniques[Number($('weld-schedule').value)];}
-function showWeldFactor(){const t=weldSelection(),film=$('weld-film').value,density=Number($('weld-density').value);if(!t||!film)return;$('weld-factor').value=String(weldFactor(t,film,density));$('weld-summary').textContent='Baseline: '+C.densityExposure(t,film,density).toFixed(2)+' Ci·s at density '+density.toFixed(1)+'.'+' Film-wide factor ×'+Number(readSetting(factorKey(film,density),defaultFactor(film,density))).toFixed(3);$('weld-error').textContent='';}
+function showWeldFactor(){const t=weldSelection(),film=$('weld-film').value,density=Number($('weld-density').value);if(!t||!film)return;$('weld-factor').value=String(weldFactor(t,film,density));$('weld-summary').textContent='Baseline: '+C.densityExposure(t,film,density).toFixed(2)+' Ci·s at density '+density.toFixed(1)+'.'+' Film-wide factor ×'+Number(readSetting(factorKey(film,density),1)).toFixed(3);$('weld-error').textContent='';}
 function weldGeometry(){const size=Number($('weld-size').value),rows=CHART.techniques.filter(t=>t.size===size);helperOptions('weld-schedule',rows.map(t=>[CHART.techniques.indexOf(t),t.schedule]));helperOptions('weld-film',Object.keys(rows[0].exposures).map(f=>[f,CHART.films[f].name]));$('weld-film').value=$('film-'+rows[0].group).value;showWeldFactor();}
 helperOptions('weld-size',sizes.map(n=>[n,n+'"']));$('weld-density').value=String(targetDensity);weldGeometry();
 $('weld-size').addEventListener('change',weldGeometry);for(const id of ['weld-schedule','weld-film','weld-density'])$(id).addEventListener('change',showWeldFactor);
@@ -168,8 +167,7 @@ $('weld-reset').addEventListener('click',()=>{saveSetting(weldKey(weldSelection(
 $('reset-factors').addEventListener('click',()=>{const updates={};for(const film of Object.keys(factors)){factors[film]=1;$('factor-'+film).value='1';updates[factorKey(film)]=1;}saveSettings(updates);$('calibration-error').textContent='';render();toast('Film factors reset');});
 for(const [id,key,allowed,fallback] of [['print-size','printSize',['small','medium','large'],'medium']]){const saved=readSetting(key,fallback);$(id).value=allowed.includes(saved)?saved:fallback;$(id).addEventListener('change',()=>{saveSetting(key,$(id).value);$('results').classList.add('compact');});}
 $('results').classList.add('compact');
-let savedSource=readSetting('source',null);
-if(!savedSource){try{const a=C.parseActivity(localStorage.getItem('shottime.activity'));if(a!==null)savedSource={mode:'manual',activity:a};}catch(e){}}
+const savedSource=readSetting('source',null);
 if(savedSource&&savedSource.mode==='decay'){$('source-mode').value='decay';$('reference-ci').value=String(savedSource.activity);$('reference-date').value=savedSource.date;setMode();applySource(true);}
 else{setMode();if(savedSource&&savedSource.mode==='manual'){$('activity').value=String(savedSource.activity);manualSavedAt=typeof savedSource.savedAt==='string'&&Number.isFinite(Date.parse(savedSource.savedAt))?savedSource.savedAt:null;applySource(true);$('input-hint').textContent='Saved activity restored — confirm it is current.';}}
 if(activeCi!==null)$('setup-panel').open=false;

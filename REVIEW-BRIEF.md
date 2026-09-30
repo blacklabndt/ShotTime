@@ -8,7 +8,7 @@ Small belts: 1–3 inches, D4/MX125/Fuji IX50. Medium and large belts: 4–16 in
 
 SFD is 12 inches for 1-inch pipe and OD +0.125 inches otherwise. 73 geometry rows × 3 applicable films × 5 densities = 1,095 exposure combinations. Runtime exposure calculation scales stored original Ci·s by a reference-target ratio. A successful reference-target check is not independent validation of attenuation across every thickness.
 
-Film-wide and size/schedule correction factors multiply together and are density-specific. Reset means 1.00 against the current built-in baseline. Preserve effective exposure on supported saved-factor migration; do not reapply migrations on restart. Older model namespaces are retained but generally inactive. Approximate external-calculator targets are not measured film-density calibrations.
+Film-wide and size/schedule correction factors multiply together and are density-specific. Reset means 1.00 against the current built-in baseline. Settings use one record with `schemaVersion: 1` and keys `factor.<density>.<film>` and `weld.<density>.<film>.<size>.<schedule>`. Pre-release records without a schema version are ignored; there is no legacy migration. Approximate external-calculator targets are not measured film-density calibrations.
 
 Normal and Internal times round to nearest second. Internal = unrounded final time /9; Internal offset = unrounded final time ×1.15 /4 rounded upward. Both internal columns apply only to 6-inch and larger pipes. The owner explicitly chose to retain possible 0-second display values.
 
@@ -17,7 +17,7 @@ Print only activity, target density and local date above a narrow vertical table
 ## Areas deserving scrutiny
 
 1. Native print callbacks and cleanup: preparation timeout, renderer failure, repeated printing/canceling, rapid taps, Activity recreation and app-background interactions. Main UI and snapshot WebViews may share a renderer. Do not interrupt active document writes when recovering.
-2. Saved-factor namespaces and migrations: previous models, baseline changes, legacy localStorage keys, incomplete/malformed settings, failed writes and retry. Review tiny migrated factors and form validation consistency.
+2. Saved settings: schema versioning, incomplete/malformed settings, failed writes and retry, and form validation consistency.
 3. Draft restoration: dependent select options, pending helper review, current source versus edited source, density changes, rotating, and restoring during printing.
 4. Calibration helper: distinction between film-wide and per-size factors, existing multipliers, and whether displayed explanations match the result.
 5. Date/decay behavior: local civil dates, leap dates, midnight, DST and timezone changes, and manual versus decay source provenance.

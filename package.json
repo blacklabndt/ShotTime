@@ -3,7 +3,7 @@
   "version": "1.19.1",
   "private": true,
   "scripts": {
-    "test": "node tests/test-current-calculator.cjs && node tests/test-current-ui.mjs && node tests/test-factor-upgrades.mjs"
+    "test": "node tests/test-current-calculator.cjs && node tests/test-current-ui.mjs && node tests/test-settings-storage.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

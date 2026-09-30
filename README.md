@@ -27,7 +27,7 @@ Final seconds = density-adjusted baseline Ci·s × film-wide correction × size/
 
 Compact-only dark UI with Time, Internal and Internal offset columns. Multi-select pipe/schedule filters. Manual activity or daily Ir-192 decay from a reference using a 73.83-day half-life. Film-wide helper and manual size/schedule correction controls. Prints a narrow vertical list with only activity, density and local date above it.
 
-Settings use one local JSON record with explicit storage-failure reporting. Draft inputs and panels are restored after reload. Historical correction namespaces are retained for compatibility; do not rename or erase them casually. A one-time density-3 migration divides older editable film factors by the multiplier now embedded in the baseline. Subsequent resets must not trigger migration again.
+Settings use one local JSON record with explicit storage-failure reporting. Draft inputs and panels are restored after reload. The record carries `schemaVersion: 1`; records without it (pre-release builds) are ignored, so those installs start fresh. Film-wide factors are stored as `factor.<density>.<film>` and size/schedule factors as `weld.<density>.<film>.<size>.<schedule>`. Stored factors outside 0.10–10.00 load as 1.00. There is no migration from pre-release storage; a future storage change should increase the schema version and add an explicit migration.
 
 No network permission, tracking or JS-to-native interface. Printing uses a separate JS-disabled WebView snapshot and the Android print service. Preparation timeout, error callbacks and main-thread cleanup provide recovery. Real-device printing, installation, rotation and background/foreground checks remain necessary.
 
@@ -41,10 +41,16 @@ Restore the separate private signing backup into `signing/` before building. The
 
 - `node tests/test-current-calculator.cjs`: all 1,095 exposure combinations, all 30 reference targets, activity scaling, parsing, date validation and rounding.
 - `CHROME_BINARY=/path/to/chromium node tests/test-current-ui.mjs`: six films across the five densities, corrections, calibration helper with size/schedule factors, save failures, persistence, reset behavior, narrow layouts and print agreement.
-- `CHROME_BINARY=/path/to/chromium node tests/test-factor-upgrades.mjs`: one-time migration, retained current factors, tiny migrated factors not blocking saves, resets across five densities and persistence after reload.
+- `CHROME_BINARY=/path/to/chromium node tests/test-settings-storage.mjs`: unversioned records ignored, per-density factor and size/schedule keys, schema version, range checks, resets across five densities and persistence after reload.
 
 Requires the available Playwright package. `tests/legacy/` contains historical harnesses, not active release gates. Physical Android print-service checks are not simulated by browser tests.
 
 ## This release
 
 Consolidated density targets into one table and removed unreachable model branches. Replaced stale workbook/fallback correction wording. Refreshed documentation and test summaries. All 1,095 outputs and six migration multipliers match v1.19.0 exactly; no shot-time or saved-key changes were introduced.
+
+## Changes since 1.19.1 (unreleased)
+
+- Calibration helper divides out the selected pipe's size/schedule factor, so that pipe keeps the successful time.
+- Film factor form keeps unchanged values, names the out-of-range film and focuses its box.
+- Clean-slate settings storage before first release: removed the density-3 migration, legacy namespaces and standalone-key fallbacks; added `schemaVersion: 1`. Pre-release saved settings are discarded. Built-in shot times are unchanged.

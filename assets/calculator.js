@@ -41,15 +41,12 @@
     t200:{curieSeconds:390,times:[14,18,22,25.5,29]},
     ix80:{curieSeconds:466,times:[13,18,23,28,33]}
   };
-  // Retained for one-time migration from editable density-3 baseline factors.
-  const BASELINE_FACTORS={};
-  for(const film of Object.keys(FILM_REFERENCES)){const r=FILM_REFERENCES[film];BASELINE_FACTORS[film]=26*r.times[2]/r.curieSeconds;}
   function densityExposure(technique,film,density){
     const index=DENSITIES.indexOf(density),reference=FILM_REFERENCES[film];
     if(index<0||!reference||!Number.isFinite(technique.exposures[film]))throw new Error('Unsupported density or film');
     return technique.exposures[film]*26*reference.times[index]/reference.curieSeconds;
   }
-  const api={DENSITIES,FILM_REFERENCES,BASELINE_FACTORS,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={DENSITIES,FILM_REFERENCES,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
