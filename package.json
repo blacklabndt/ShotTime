@@ -1,6 +1,6 @@
 {
   "name": "shottime-review",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "private": true,
   "scripts": {
     "test": "node tests/test-current-calculator.cjs && node tests/test-current-ui.mjs && node tests/test-settings-storage.mjs"

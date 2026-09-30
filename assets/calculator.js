@@ -31,22 +31,38 @@
     return activity*Math.pow(2,-(end-start)/73.83);
   }
   const DENSITIES=[2,2.5,3,3.5,4];
-  // Approximate user-supplied calculator targets at 26 Ci. Index 3 is interpolated.
-  // Small-film reference: 3-inch STD. Large-film reference: 4-inch STD.
+  // Ir-192 through steel: exposure doubles every 12.1 mm of total (double-wall) steel.
+  // Measured from the GE/Agfa STRUCTURIX Ir-192 exposure diagram (Pb screens); all films share it.
+  const STEEL_HVL_MM=12.1;
+  // Reference shots: 3-inch STD for small films, 4-inch STD for large films.
+  const REFERENCE_GEOMETRY={small:{wall:0.216,sfd:3.625},large:{wall:0.237,sfd:4.625}};
+  // Large films: approximate calculator targets at 26 Ci on 4-inch STD (index 3 interpolated).
+  // Small films: density-3 exposure = large partner x published Ir-192 exposure ratio at the same
+  // geometry (Agfa D4 3.0 / D5 1.5; Carestream MX125 2.8 / T200 1.7; Fuji IX80 speed 55 / IX50 30).
+  // Each small film keeps its own density-curve shape from its original targets.
   const FILM_REFERENCES={
-    d4:{curieSeconds:250,times:[9,13,16,19.5,23]},
-    mx125:{curieSeconds:450,times:[16,20,24,27.5,31]},
-    ix50:{curieSeconds:495,times:[17,21,25,29.5,34]},
-    d5:{curieSeconds:220,times:[11,15,19,23,27]},
-    t200:{curieSeconds:390,times:[14,18,22,25.5,29]},
-    ix80:{curieSeconds:466,times:[13,18,23,28,33]}
+    d5:{group:'large',times:[11,15,19,23,27]},
+    t200:{group:'large',times:[14,18,22,25.5,29]},
+    ix80:{group:'large',times:[13,18,23,28,33]},
+    d4:{group:'small',partner:'d5',ratio:3/1.5,shape:[9,13,16,19.5,23]},
+    mx125:{group:'small',partner:'t200',ratio:2.8/1.7,shape:[16,20,24,27.5,31]},
+    ix50:{group:'small',partner:'ix80',ratio:55/30,shape:[17,21,25,29.5,34]}
   };
+  function geometryFactor(technique,reference) {
+    return Math.pow(technique.sfd/reference.sfd,2)*Math.pow(2,2*(technique.wall-reference.wall)*25.4/STEEL_HVL_MM);
+  }
+  // Ci·s at each film's own reference geometry, per density.
+  const REFERENCE_CURIE_SECONDS={};
+  for(const film of Object.keys(FILM_REFERENCES)){const r=FILM_REFERENCES[film];if(r.times)REFERENCE_CURIE_SECONDS[film]=r.times.map(t=>t*26);}
+  for(const film of Object.keys(FILM_REFERENCES)){const r=FILM_REFERENCES[film];if(!r.partner)continue;
+    const density3=r.ratio*REFERENCE_CURIE_SECONDS[r.partner][2]*geometryFactor(REFERENCE_GEOMETRY.small,REFERENCE_GEOMETRY.large);
+    REFERENCE_CURIE_SECONDS[film]=r.shape.map(t=>density3*t/r.shape[2]);}
   function densityExposure(technique,film,density){
     const index=DENSITIES.indexOf(density),reference=FILM_REFERENCES[film];
-    if(index<0||!reference||!Number.isFinite(technique.exposures[film]))throw new Error('Unsupported density or film');
-    return technique.exposures[film]*26*reference.times[index]/reference.curieSeconds;
+    if(index<0||!reference||reference.group!==technique.group||!Number.isFinite(technique.wall)||!(technique.sfd>0))throw new Error('Unsupported density or film');
+    return REFERENCE_CURIE_SECONDS[film][index]*geometryFactor(technique,REFERENCE_GEOMETRY[reference.group]);
   }
-  const api={DENSITIES,FILM_REFERENCES,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={DENSITIES,STEEL_HVL_MM,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

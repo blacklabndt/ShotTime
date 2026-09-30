@@ -17,7 +17,7 @@ if [ ! -f signing/shottime.jks ] || [ ! -f signing/password.txt ]; then
   echo 'Restore the private ShotTime signing backup into signing/ before building an update.' >&2
   exit 1
 fi
-"$bt/apksigner" sign --ks signing/shottime.jks --ks-key-alias shottime --ks-pass file:signing/password.txt --out dist/ShotTime-v1.20.0.apk build/aligned.apk
-"$bt/apksigner" verify --verbose dist/ShotTime-v1.20.0.apk
-"$bt/zipalign" -c -p 4 dist/ShotTime-v1.20.0.apk
-"$bt/aapt" dump badging dist/ShotTime-v1.20.0.apk
+"$bt/apksigner" sign --ks signing/shottime.jks --ks-key-alias shottime --ks-pass file:signing/password.txt --out dist/ShotTime-v1.21.0.apk build/aligned.apk
+"$bt/apksigner" verify --verbose dist/ShotTime-v1.21.0.apk
+"$bt/zipalign" -c -p 4 dist/ShotTime-v1.21.0.apk
+"$bt/aapt" dump badging dist/ShotTime-v1.21.0.apk
