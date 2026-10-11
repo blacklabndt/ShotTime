@@ -56,7 +56,8 @@ public final class MainActivity extends Activity {
             root.setOnApplyWindowInsetsListener((v, insets) -> {
                 Insets edges = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
                 v.setPadding(edges.left, edges.top, edges.right, edges.bottom);
-                return insets;
+                // Consumed so the WebView does not apply the same insets again inside the padded area.
+                return WindowInsets.CONSUMED;
             });
         } else {
             getWindow().setStatusBarColor(Color.BLACK);

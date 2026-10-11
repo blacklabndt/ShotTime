@@ -68,20 +68,20 @@
   // fitted to those steps, not a measured HPX gain curve; measure and replace it.
   const CR_STEEL_HVL_MM=14.8,CR_K_REF=523,CR_PMT_REF=41,CR_PMT_DOUBLING=7.5;
   const CR_PMT_RANGES=[{maxSize:3,min:20,max:50},{maxSize:8,min:30,max:60},{maxSize:Infinity,min:40,max:70}];
-  // PMT at which each size reproduces the former chart; 1", 5" and 18" had no chart rows and are interpolated.
+  // PMT at which each size best matches the former chart (median 6%, not exact); 1", 5" and 18" had no chart rows and are interpolated.
   const CR_SUGGESTED_PMT={1:35,2:35,3:38,4:41,5:44,6:46,8:52,10:54,12:55,14:55,16:55,18:56,20:56,24:57};
-  function crPmtRange(size){return CR_PMT_RANGES.find(r=>size<=r.maxSize);}
+  function crPmtRange(size){const r=Number.isFinite(size)&&size>0?CR_PMT_RANGES.find(r=>size<=r.maxSize):undefined;if(!r)throw new Error('Unsupported pipe size');return r;}
   function crSuggestedPmt(size){const r=crPmtRange(size),n=CR_SUGGESTED_PMT[size];return Math.min(r.max,Math.max(r.min,Number.isFinite(n)?n:Math.round((r.min+r.max)/2)));}
-  function validPmt(size,pmt){const r=crPmtRange(size);return Number.isInteger(pmt)&&pmt>=r.min&&pmt<=r.max;}
+  function validPmt(size,pmt){if(!Number.isFinite(size)||size<=0)return false;const r=crPmtRange(size);return Number.isInteger(pmt)&&pmt>=r.min&&pmt<=r.max;}
   function crExposure(totalSteelMm,sfd,pmt){
     if(!(totalSteelMm>0&&sfd>0&&Number.isFinite(pmt)))throw new Error('Unsupported CR geometry or PMT');
     return CR_K_REF*Math.pow(2,(CR_PMT_REF-pmt)/CR_PMT_DOUBLING)*Math.pow(sfd/REFERENCE_GEOMETRY.large.sfd,2)*Math.pow(2,(totalSteelMm-2*REFERENCE_GEOMETRY.large.wall*25.4)/CR_STEEL_HVL_MM);
   }
   function usesDensity(film){return film!=='cr';}
-  // CR needs the PMT setting; it defaults to the size's suggested setting.
+  // CR needs the PMT setting: a whole number in the size's slider range, or undefined for the suggested setting.
   function densityExposure(technique,film,density,pmt){
     const index=DENSITIES.indexOf(density);
-    if(film==='cr'){if(index<0||!technique)throw new Error('Unsupported density or film');return crExposure(2*technique.wall*25.4,technique.sfd,pmt===undefined?crSuggestedPmt(technique.size):pmt);}
+    if(film==='cr'){if(index<0||!technique)throw new Error('Unsupported density or film');if(pmt!==undefined&&!validPmt(technique.size,pmt))throw new Error('PMT outside the range for this pipe size');return crExposure(2*technique.wall*25.4,technique.sfd,pmt===undefined?crSuggestedPmt(technique.size):pmt);}
     const reference=FILM_REFERENCES[film];
     if(index<0||!reference||reference.group!==technique.group||!Number.isFinite(technique.wall)||!(technique.sfd>0))throw new Error('Unsupported density or film');
     return REFERENCE_CURIE_SECONDS[film][index]*geometryFactor(technique,REFERENCE_GEOMETRY[reference.group]);

@@ -61,12 +61,17 @@ assert.throws(()=>C.crExposure(0,10,50));assert.throws(()=>C.crExposure(20,10,Na
 const ranges={1:[20,50],2:[20,50],3:[20,50],4:[30,60],5:[30,60],6:[30,60],8:[30,60],10:[40,70],12:[40,70],14:[40,70],16:[40,70],18:[40,70],20:[40,70],24:[40,70]};
 for(const [size,[min,max]] of Object.entries(ranges)){const r=C.crPmtRange(Number(size));assert.deepEqual([r.min,r.max],[min,max],size);assert.ok(C.validPmt(Number(size),min)&&C.validPmt(Number(size),max)&&!C.validPmt(Number(size),min-1)&&!C.validPmt(Number(size),max+1)&&!C.validPmt(Number(size),min+.5)&&!C.validPmt(Number(size),String(min)));
   assert.ok(C.validPmt(Number(size),C.crSuggestedPmt(Number(size))));}
+// Sizes not in the table get the middle of their range; a missing or invalid size is refused, not a TypeError.
+assert.equal(C.crSuggestedPmt(7),45);for(const size of [undefined,NaN,0,-1,'4'])assert.throws(()=>C.crSuggestedPmt(size),/Unsupported pipe size/);for(const size of [undefined,NaN,0])assert.equal(C.validPmt(size,41),false);
+assert.throws(()=>C.densityExposure({...ref4,size:undefined},'cr',3),/Unsupported pipe size/);
+// An explicit PMT must be a whole number in the size's range; undefined means the suggested setting.
+for(const pmt of [29,61,41.5,0,-1000,'41',null,NaN])assert.throws(()=>C.densityExposure(ref4,'cr',3,pmt),/PMT|Unsupported/);
 assert.deepEqual(data.techniques.map(t=>t.size).filter((v,i,a)=>a.indexOf(v)===i).map(C.crSuggestedPmt),[35,35,38,41,44,46,52,54,55,55,55,56,56,57]);
 // At the suggested PMT the formula reproduces the former chart (scripts/cr-chart.json): median within 7%, no bias,
 // every row within 35% except the three entries that disagree with their own size (6" XXH, 24" XH, 14" Sch 40).
 const crChart=require('../scripts/cr-chart.json').exposures,crDiff=[];
 for(const [key,cs] of Object.entries(crChart)){const t=data.techniques.find(t=>t.size+'|'+t.schedule===key);const d=C.densityExposure(t,'cr',3)/cs-1;if(['6|XXH / XXS','24|XH','14|40'].includes(key))continue;assert.ok(Math.abs(d)<.35,key+' '+d);crDiff.push(d);}
-assert.equal(crDiff.length,53);const crAbs=crDiff.map(Math.abs).sort((a,b)=>a-b);assert.ok(crAbs[26]<.07);assert.ok(Math.abs(crDiff.reduce((a,b)=>a+b,0)/53)<.02);
+assert.equal(crDiff.length,53);const crAbs=crDiff.map(Math.abs).sort((a,b)=>a-b);assert.ok(crAbs[26]<.07);assert.equal(crAbs.filter(d=>d<=.2).length,51);assert.ok(Math.abs(crDiff.reduce((a,b)=>a+b,0)/53)<.02);
 assert.equal(Object.keys(crChart).length,56);assert.equal(C.CHART_EXPOSURES,undefined);
 for(const group of ['small','large'])assert.ok(data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
 assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'20s');

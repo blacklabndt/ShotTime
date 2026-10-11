@@ -63,10 +63,50 @@ record=await stored(page);assert.equal(record.schemaVersion,2);assert.ok(!Object
 assert.equal(record['film.small'],'d4');assert.equal(record.density,2.5);assert.deepEqual(record['filter.pipe'],['3','4']);
 assert.ok(Object.values(await factorsAt(page)).every(v=>v===1));assert.equal(await page.evaluate(()=>activeCi),26);assert.equal(await page.locator('#helper-ci').inputValue(),'');assert.match(await page.locator('#toast').textContent(),/Film and size\/schedule factors reset to 1\.00/);
 await page.reload();assert.doesNotMatch(await page.locator('#toast').textContent(),/factors reset/);assert.equal((await stored(page)).schemaVersion,2);
-// Filters: a saved pre-1.21 full list means "all" (new sizes and Sch 10 appear); "All" is stored as null; partial lists stay partial.
-page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'filter.pipe':['1','2','3','4','5','6','8','10','12','14','16'],'filter.schedule':['STD','40','60','XH','80','100','120','140','160','XXH']});
+// Filters: a 1.20 (version 1) full list means "all", once, during migration, so new sizes and Sch 10 appear.
+page=await open({schemaVersion:1,'source':{mode:'manual',activity:26},'filter.pipe':['1','2','3','4','5','6','8','10','12','14','16'],'filter.schedule':['STD','40','60','XH','80','100','120','140','160','XXH']});
 assert.equal(await page.locator('#pipe-summary').textContent(),'All pipe sizes');assert.equal(await page.locator('#schedule-summary').textContent(),'All schedules');assert.equal(await page.locator('.shot[data-schedule="10"]').count(),14);assert.equal(await page.locator('.shot[data-size="24"][data-schedule="STD"]').count(),1);
+record=await stored(page);assert.equal(record['filter.pipe'],null);assert.equal(record['filter.schedule'],null);
+// A current record that leaves out only the newer options is the user's choice and stays that way after a restart.
+page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'filter.pipe':['1','2','3','4','5','6','8','10','12','14','16'],'filter.schedule':['STD','40','60','XH','80','100','120','140','160','XXH']});
+for(let i=0;i<2;i++){assert.equal(await page.locator('#pipe-summary').textContent(),'1", 2", 3", 4", 5", 6", 8", 10", 12", 14", 16"');assert.equal(await page.locator('.shot[data-size="20"]').count(),0);assert.equal(await page.locator('.shot[data-schedule="10"]').count(),0);await page.reload();}
 page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'filter.schedule':['STD','XH']});assert.equal(await page.locator('#schedule-summary').textContent(),'STD, XH');assert.equal(await page.locator('.shot[data-schedule="10"]').count(),0);
 await page.locator('#schedule-filter>summary').click();await page.locator('#sheet-content .choice-actions button',{hasText:'All'}).click();assert.equal((await stored(page))['filter.schedule'],null);assert.equal(await page.locator('.shot[data-schedule="10"]').count(),14);
 await page.locator('#sheet-content .choice-actions button',{hasText:'Clear'}).click();assert.deepEqual((await stored(page))['filter.schedule'],[]);
-assert.deepEqual(errors,[]);await browser.close();console.log('PASS: filters saved as all/null and pre-1.21 full lists, unversioned records ignored, version 1 migration, per-density factor and size/schedule keys, schema version, persistence, range checks, resets across five densities, validated draft restoration, the labelled helper activity pre-fill, decay-mode activity restoration, once-a-day decay re-rendering and displayed factors matching the factors in use.');
+// CR PMT: a saved value outside the size's range, not a whole number, or not a number falls back to the suggested PMT.
+const crSeed={schemaVersion:2,'source':{mode:'manual',activity:26},'film.small':'cr','film.large':'cr'};
+page=await open({...crSeed,'pmt.4':25,'pmt.3':30.5,'pmt.10':'60','pmt.8':60});
+assert.deepEqual(await page.evaluate(()=>['4','3','10','8'].map(s=>$('pmt-'+s).value)),['41','38','54','60']);
+const crRow=(size,schedule='40 / STD')=>page.locator('.shot[data-size="'+size+'"][data-schedule="'+schedule+'"] .time');assert.equal(await crRow(4).textContent(),'20s');assert.equal(await crRow(3).textContent(),'16s');
+// Both belts on CR: the factor summary names CR once.
+assert.equal(await page.locator('#factor-summary').textContent(),'Film factors: Carestream CR ×1.000');
+// Printed CR times follow the slider (not only the suggested PMT) and match the screen.
+await page.locator('#pmt-4').fill('56');await page.locator('#pmt-24').fill('70');await page.locator('#pmt-1').fill('20');
+const print=await (await page.context().newPage());await print.setContent(await page.evaluate(()=>makePrintDocument()));
+for(const [screen,printed] of [['.shot .time','td.time'],['.internal-value .value','td.internal'],['.offset-value .value','td.internal-offset']])assert.deepEqual(await page.locator(screen).allTextContents(),await print.locator(printed).allTextContents());
+assert.equal(await crRow(4).textContent(),'5s');assert.ok((await print.locator('td.time').allTextContents()).includes('5s'));await print.close();
+// The preview keeps the print sheet's small, unwrapped PMT line.
+await page.locator('#open-print').click();await page.locator('#preview-list').click();assert.deepEqual(await page.locator('#preview-content .pmt-print').first().evaluate(n=>[getComputedStyle(n).whiteSpace,getComputedStyle(n).fontSize]),['nowrap','9px']);await page.locator('#close-preview').click();await page.locator('#close-sheet').click();
+// Slider and its button name the pipe size; "Use suggested" from the keyboard leaves focus on the slider.
+assert.equal(await page.locator('#pmt-4').getAttribute('aria-label'),'PMT for 4-inch pipe');assert.equal(await page.getByRole('button',{name:'Use suggested PMT 41 for 4-inch pipe'}).count(),1);
+await page.getByRole('button',{name:'Use suggested PMT 41 for 4-inch pipe'}).focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>document.activeElement.id),'pmt-4');assert.equal(await page.locator('#pmt-4').inputValue(),'41');
+// The helper's PMT follows the pipe's slider until the user types a different value; the size/schedule summary follows it too.
+await page.locator('#setup-panel>summary').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=true;$('weld-panel').open=true;$('helper-size').value='8';$('helper-size').dispatchEvent(new Event('change'));$('helper-film').value='cr';$('helper-film').dispatchEvent(new Event('change'));$('weld-size').value='8';weldGeometry();$('weld-film').value='cr';$('weld-film').dispatchEvent(new Event('change'));$('weld-factor').value='1.7';});
+assert.equal(await page.locator('#helper-pmt').inputValue(),'60');await page.locator('#close-sheet').click();
+await page.locator('#pmt-8').fill('45');await page.locator('#pmt-8').dispatchEvent('change');
+assert.equal(await page.locator('#helper-pmt').inputValue(),'45');assert.match(await page.locator('#weld-summary').textContent(),/at PMT 45, every density/);assert.equal(await page.locator('#weld-factor').inputValue(),'1.7');
+await page.evaluate(()=>{$('helper-pmt').value='50';$('helper-pmt').dispatchEvent(new Event('input',{bubbles:true}));});await page.locator('#pmt-8').fill('55');await page.locator('#pmt-8').dispatchEvent('change');assert.equal(await page.locator('#helper-pmt').inputValue(),'50');
+// "Reset this density's factors" leaves the density-free CR factor alone.
+await page.evaluate(()=>{$('factor-cr').value='1.5';$('calibration-form').requestSubmit();$('reset-factors').click();});assert.equal((await stored(page))['factor.cr'],1.5);assert.equal(await page.locator('#factor-cr').inputValue(),'1.5');
+// Restored helper drafts set up the CR / density fields for the restored film, not the belt's film.
+page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'film.large':'d5',draft:{model:'drafts-v2',values:{'helper-size':'8','helper-film':'cr','helper-pmt':''}}});
+assert.deepEqual(await page.evaluate(()=>[$('helper-film').value,$('helper-pmt').hidden,$('helper-pmt').value,$('helper-measured').hidden,$('helper-density').hidden]),['cr',false,'52',true,true]);
+page=await open({...crSeed,draft:{model:'drafts-v2',values:{'helper-size':'8','helper-film':'d5','helper-measured':'2.2','helper-density':'2'}}});
+assert.deepEqual(await page.evaluate(()=>[$('helper-film').value,$('helper-pmt').hidden,$('helper-measured').hidden,$('helper-density').hidden]),['d5',true,false,false]);
+// A restored auto-filled helper PMT keeps following the slider after a restart; one the user typed does not.
+page=await open({...crSeed,'pmt.8':60,draft:{model:'drafts-v2',values:{'helper-size':'8','helper-film':'cr','helper-pmt':'52'},helperPmtAuto:'52'}});assert.equal(await page.locator('#helper-pmt').inputValue(),'60');
+page=await open({...crSeed,'pmt.8':60,draft:{model:'drafts-v2',values:{'helper-size':'8','helper-film':'cr','helper-pmt':'52'}}});assert.equal(await page.locator('#helper-pmt').inputValue(),'52');
+// A corrupt draft sheet name is ignored and does not stop drafts from saving afterwards.
+page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},draft:{model:'drafts-v2',values:{},sheet:'constructor'}});
+await page.locator('#setup-panel>summary').click();await page.locator('#activity').fill('12.5');assert.equal((await stored(page)).draft.values.activity,'12.5');
+assert.deepEqual(errors,[]);await browser.close();console.log('PASS: filters saved as all/null, version 1 full lists migrated to all once and current partial lists kept, CR PMT range fallback, print at non-suggested PMT, preview PMT style, slider labels and focus, helper PMT following the slider and its draft, size/schedule summary refresh, CR factor kept by the density reset, helper fields after draft restore, corrupt draft sheet, unversioned records ignored, version 1 migration, per-density factor and size/schedule keys, schema version, persistence, range checks, resets across five densities, validated draft restoration, the labelled helper activity pre-fill, decay-mode activity restoration, once-a-day decay re-rendering and displayed factors matching the factors in use.');

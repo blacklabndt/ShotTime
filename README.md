@@ -45,8 +45,9 @@ Ci·s = 523 × 2^((41 − PMT) ÷ 7.5) × (SFD ÷ 4.625)² × 2^((total steel �
 - **Steel curve, 14.8 mm.** Fitted to the chart's schedule-to-schedule changes within each pipe size. PMT was set per pipe size, so it cannot affect this fit. The value is close to the ~13 mm Ir-192 steel half-value thickness.
 - **PMT term.** 523 Ci·s is 4" STD at PMT 41. The signal doubles every 7.5 PMT units (`CR_PMT_DOUBLING`). That step was fitted so the chart's per-size gain steps line up with the owner's slider ranges. It is **not** a measured HPX-1 gain curve. Measure it (identical fresh plates scanned at two PMT settings) and replace it.
 - **Slider ranges** (whole numbers): 1"–3" 20–50, 4"–8" 30–60, 10" and up 40–70.
-- **Suggested PMT** is the setting at which the formula reproduces the former chart for that size: 1" 35, 2" 35, 3" 38, 4" 41, 5" 44, 6" 46, 8" 52, 10" 54, 12"–16" 55, 18"–20" 56, 24" 57. At these settings the formula is within a median of 6% of the chart's 53 consistent rows (51 within 20%), with no overall bias. 1", 5" and 18" had no chart rows and are interpolated.
-- **Chart rows that disagree with their own size.** 6" XXH (1,790), 14" Sch 40 (1,770) and 24" XH (85,610) differed by 74%, 47% and 93%; the formula does not follow them.
+- **Suggested PMT** is the setting at which the formula best matches the former chart for that size (an approximation, not an exact reproduction): 1" 35, 2" 35, 3" 38, 4" 41, 5" 44, 6" 46, 8" 52, 10" 54, 12"–16" 55, 18"–20" 56, 24" 57. At these settings the formula is within a median of 6% of the chart's 53 consistent rows (51 within 20%), with no overall bias. 1", 5" and 18" had no chart rows and are interpolated.
+- **Largest differences on rows in normal use:** 3" STD −16%, 4" STD −18%, 8" STD −15%, 3" XXH +33%, 4" XXH +26% (formula vs chart). Test these first.
+- **Chart rows that disagree with their own size.** 6" XXH (1,790), 14" Sch 40 (1,770) and 24" XH (85,610) differ from the formula by +74%, +22% and −93%; the formula does not follow them.
 
 The slider value is saved per size as `pmt.<size>`. A missing, non-integer or out-of-range value falls back to the suggested PMT. The printed list shows the PMT under the pipe size for CR rows. In the calibration helper, CR asks for the PMT the successful plate was read at. CR has no film density, so the time is the same at every target density. CR film-wide and size/schedule factors are stored without a density (`factor.cr`, `weld.cr.<size>.<schedule>`) and multiply the formula at every PMT. Internal = unrounded time ÷ 8, nearest second. Internal offset = unrounded time ÷ 3, rounded up. Both are shown only for 6" and larger. Matching scanner brightness does not establish image quality: check the IQI. See `docs/CR-PROFILE-MODEL.md` for the analysis.
 
@@ -79,6 +80,18 @@ Requires the available Playwright package. `tests/legacy/` contains historical h
 - The printed list shows the PMT under the pipe size for CR rows.
 - The calibration helper asks for the PMT used for a CR shot.
 - New setting `pmt.<size>`. It is additive, so the schema stays at 2 and existing settings are kept.
+- Audit fixes:
+  - A saved pipe/schedule filter that leaves out only the newer options (18", 20", 24", Sch 10) is kept after a restart; the "old full list means all" rule now runs only once, when migrating a 1.20 record.
+  - The CR helper's PMT follows the pipe's slider until you type your own value, also after a restart.
+  - Restoring a half-filled helper sets up the CR PMT and density fields for the restored film.
+  - The size/schedule summary follows the slider.
+  - "Reset this density's factors" no longer resets the CR factor.
+  - A corrupt saved draft no longer stops drafts saving.
+  - Sliders and their buttons name the pipe size for screen readers; "Use suggested" keeps keyboard focus; brighter slider track; 44 px touch targets.
+  - Printed Pipe column widened for "PMT nn"; preview keeps the print style for it.
+  - The calculator refuses invalid pipe sizes and out-of-range PMTs.
+  - Android: WebView usage metrics opted out (`android.webkit.WebView.MetricsOptOut`); window insets consumed so they are not applied twice; dark mode, font or display size and locale changes no longer restart the screen (and cancel an open print preview).
+  - Build scripts start from empty class/dex folders and run d8 in release mode.
 
 ## 1.21.1 (versionCode 43, never released)
 

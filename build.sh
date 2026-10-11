@@ -4,11 +4,13 @@ cd "$(dirname "$0")"
 : "${SDK_ROOT:?Set SDK_ROOT to your Android SDK path (platform android-36, build-tools 36.0.0)}"
 bt="$SDK_ROOT/build-tools/36.0.0"
 platform="$SDK_ROOT/platforms/android-36/android.jar"
+# Fresh class and dex folders: a class removed from the source must not stay in the APK.
+rm -rf build/classes build/dex
 mkdir -p build/classes build/dex dist
 "$bt/aapt" package -f -M AndroidManifest.xml -S res -A assets -I "$platform" -F build/resources.apk
 java com.sun.tools.javac.Main -source 8 -target 8 -classpath "$platform" -d build/classes src/ca/kylekeith/shottime/MainActivity.java
 mapfile -t class_files < <(find build/classes -name '*.class' -type f)
-"$bt/d8" --lib "$platform" --min-api 26 --output build/dex "${class_files[@]}"
+"$bt/d8" --release --lib "$platform" --min-api 26 --output build/dex "${class_files[@]}"
 cp build/resources.apk build/unsigned.apk
 python3 -c 'from zipfile import ZipFile, ZIP_DEFLATED
 with ZipFile("build/unsigned.apk","a",ZIP_DEFLATED) as z:z.write("build/dex/classes.dex","classes.dex")'

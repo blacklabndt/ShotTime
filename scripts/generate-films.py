@@ -11,6 +11,7 @@ truncated (e.g. 0.437) are corrected to B36.10M (0.438). 14" and 16" XXH (1.000 
 owner's entries; B36.10M defines no XXS above 12".
 """
 import json
+import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -52,4 +53,11 @@ for size in sorted(OD):
 data['techniques'] = techniques
 data['groups'] = current['groups']
 data['films'] = current['films']
-(root / 'assets/techniques.json').write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+output = json.dumps(data, indent=2) + '\n'
+if '--check' in sys.argv:
+    # Used by npm test: the committed file must be exactly what this script generates.
+    if (root / 'assets/techniques.json').read_text(encoding='utf-8') != output:
+        sys.exit('assets/techniques.json differs from scripts/generate-films.py output; regenerate it')
+    print('PASS: assets/techniques.json matches scripts/generate-films.py')
+else:
+    (root / 'assets/techniques.json').write_text(output, encoding='utf-8')

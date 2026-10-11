@@ -3,7 +3,7 @@
   "version": "1.22.0",
   "private": true,
   "scripts": {
-    "test": "node tests/test-current-calculator.cjs && node tests/test-current-ui.mjs && node tests/test-settings-storage.mjs"
+    "test": "python3 scripts/generate-films.py --check && node tests/test-current-calculator.cjs && node tests/test-cr-profile-model.cjs && node tests/test-current-ui.mjs && node tests/test-settings-storage.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

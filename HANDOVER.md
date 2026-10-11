@@ -34,9 +34,10 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 | A3 | Owner request: Carestream CR | `cr` film on both belts from the owner's CR chart (`EXPOSURE_CHART.xlsx`), values used as given (not the steel model); owner chose: chart rows only (others —), same at every density, Internal ÷ 8 / offset ÷ 3, 24" XS and 6" XXH as written | 1.21.1 |
 | — | Version and settings | 1.21.0, versionCode 42; settings schema 2 resets film-wide and size/schedule factors on upgrade | 1.21.0 |
 | — | Version | 1.21.1, versionCode 43 (Carestream CR); no settings change | 1.21.1 |
-| A4 | Owner request: CR from a formula, no chart, PMT slider per size with a suggested setting | Shared CR steel curve (14.8 mm) fitted within sizes of the old chart; PMT term (signal ×2 per 7.5 units) fitted to the owner's ranges; suggested PMT per size reproduces the chart (median 6%); chart kept in `scripts/cr-chart.json`; `pmt.<size>` setting; PMT on the printed list and in the CR helper | 1.22.0 |
+| A4 | Owner request: CR from a formula, no chart, PMT slider per size with a suggested setting | Shared CR steel curve (14.8 mm) fitted within sizes of the old chart; PMT term (signal ×2 per 7.5 units) fitted to the owner's ranges; suggested PMT per size approximates the chart (median 6%); chart kept in `scripts/cr-chart.json`; `pmt.<size>` setting; PMT on the printed list and in the CR helper | 1.22.0 |
+| AU | Four-way audit of 1.22.0 (calculations, app state, Android host, display/print/tests) | All medium and low findings fixed, each with a test that fails on the old code (README 1.22.0 → Audit fixes). Not done, owner's call: blocking settings transfer to a new phone; confirming the 4" Sch 60 row (0.281") | 1.22.0 |
 
-`README.md` has the user-facing change lists under "1.21.1", "1.21.0" and "1.20.0".
+`README.md` has the user-facing change lists under "1.22.0", "1.21.1", "1.21.0" and "1.20.0".
 
 ## Owner decisions to respect
 
@@ -52,7 +53,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 
 ## Open work
 
-0. **CR PMT calibration** (owner): read two identical, fresh Flex HR plates (same shot, same delay) at two PMT settings, e.g. 41 and 56, and compare background-subtracted linear pixel values in the same ROI. If the ratio is not about 4×, change `CR_PMT_DOUBLING` in `calculator.js` to 15 ÷ log2(ratio). Also confirm the suggested PMT matches the settings actually used, and check a few non-suggested settings against IQI results.
+0. **CR PMT calibration** (owner): read two identical, fresh Flex HR plates (same shot, same delay) at two PMT settings, e.g. 41 and 56, and compare background-subtracted linear pixel values in the same ROI. If the ratio is not about 4×, change `CR_PMT_DOUBLING` in `calculator.js` to 15 ÷ log2(ratio). Also confirm the suggested PMT matches the settings actually used, and check a few non-suggested settings against IQI results. First CR test shots at the suggested PMT: 3", 4" and 8" STD (formula 15–18% shorter than the old chart) and 3"/4" XXH (26–33% longer).
 1. **Test shots for the 1.21.0 model** (owner): at density 3.0, 72 °F / 4 min, one hanger —
    - D4 on 3" STD and D5 on 4" STD at the app's times: checks the D4/D5 ratio (2.0) and D5's reference time. Repeat at density 2.0 if other densities are used (published ratios are usually defined near density 2).
    - D4 on 2" STD with D4 on 3" STD: short 2" shots (~9 s at 26 Ci) are sensitive to source transit and SFD placement; correct with a size/schedule factor if 2" reads darker.
@@ -60,7 +61,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
    - D5 on 4" STD, 8" XS and 12" Sch160: checks the 12.1 mm steel curve. 12.1 mm is the lowest published value; if density rises with wall, the effective half-value thickness is higher (review estimate: 12.7–13.6 mm would put 12"–16" Sch160 about 0.2–0.9 density lighter than 4" STD).
    - If Carestream or Fuji are used, the same pair for MX125/T200 or IX50/IX80.
    - Correct with film-wide factors (the helper calculates them), or, if a published ratio or reference time is consistently off, update `FILM_REFERENCES` in `calculator.js` with owner approval.
-2. **Sign and release** (owner only, needs the private `signing/` backup): `SDK_ROOT=/path/to/sdk bash build.sh` produces `dist/ShotTime-v1.21.1.apk`. `release/` still holds the signed 1.19.1 APK; replace it when a signed 1.21.1 exists and regenerate `SHA256SUMS` (it covers every tracked file except itself).
+2. **Sign and release** (owner only, needs the private `signing/` backup): `SDK_ROOT=/path/to/sdk bash build.sh` produces `dist/ShotTime-v1.22.0.apk`. `release/` still holds the signed 1.19.1 APK; replace it when a signed 1.22.0 exists and regenerate `SHA256SUMS` (it covers every tracked file except itself).
 3. **Device testing** — none of the native changes has run on a phone. Checklist:
    - Install over 1.19.1: installs as an update; saved settings reset to defaults (expected). Over a 1.20.0 test install: a one-time message says film factors reset to 1.00.
    - Print normally, then print again straight away.

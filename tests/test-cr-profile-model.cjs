@@ -39,6 +39,8 @@ const rows=M.chartRows().filter(r=>!M.SUSPECT.includes(r.key));
 assert.strictEqual(rows.length,53);
 const perSize=M.fitChart(rows);
 assert.ok(Math.abs(perSize.hvlMm-M.HVL_MM)<0.05,`fitted H ${perSize.hvlMm}`);
+// The app's CR steel curve is this fitted value.
+assert.equal(require('../assets/calculator.js').CR_STEEL_HVL_MM,M.HVL_MM);
 assert.ok(M.leaveOneOut(rows,r=>String(r.size)).median<0.08);
 assert.ok(M.leaveOneOut(rows,()=>'all').median>0.4);
 // Large pipes need several times the gain of small ones at the same pixel target.
