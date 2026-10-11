@@ -1,6 +1,6 @@
 # AGENTS.md — ShotTime
 
-Instructions for coding agents (Codex and others) working in this repository. Read this first, then `HANDOVER.md` for the current state and open work. `START-HERE.md` and `REVIEW-BRIEF.md` describe the earlier 1.19.1 code review; that review is finished.
+Instructions for coding agents (Codex and others) working in this repository. Read this first, then `CODEX-HANDOVER.md` (latest session: CR formula, PMT slider, audit fixes) and `HANDOVER.md` for the full state and open work. `START-HERE.md` and `REVIEW-BRIEF.md` describe the earlier 1.19.1 code review; that review is finished.
 
 ## What this is
 

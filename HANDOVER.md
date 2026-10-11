@@ -81,3 +81,4 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 - Playwright 1.62.1 worked with Chromium build 1194 via `CHROME_BINARY`.
 - Android SDK installed from `dl.google.com` command-line tools: `platforms;android-36`, `build-tools;36.0.0` (platform 35 also verified earlier).
 - No KVM was available, so no emulator runs were possible.
+- 2026-10-11 session: Android platform 36 (`platform-36_r02.zip`) and build-tools 36 (`build-tools_r36_linux.zip`) downloaded from `dl.google.com/android/repository/`; `build-review.sh` built 1.22.0 / 44 with no permissions. Still no device or emulator run.
