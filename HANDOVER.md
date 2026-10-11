@@ -1,6 +1,6 @@
-# ShotTime handover — 1.21.1 (versionCode 43)
+# ShotTime handover — 1.22.0 (versionCode 44)
 
-Status on 2026-09-30: source is at 1.21.1. 1.21.0 changed the exposure model and 1.21.1 adds Carestream CR (shot times change; see below). All three test suites pass and `build-review.sh` compiles and packages against Android 16 (API 36). **Not yet signed, released or tested on a device.** The last signed release is 1.19.1 (versionCode 40) in `release/`.
+Status on 2026-10-11: source is at 1.22.0, which replaces the Carestream CR chart with a formula and per-size PMT sliders (CR times change; see `README.md` → Carestream CR and `docs/CR-PROFILE-MODEL.md`). 1.21.0 changed the film exposure model and 1.21.1 added CR from the chart. All three test suites pass and `build-review.sh` compiles and packages against Android 16 (API 36). **Not yet signed, released or tested on a device.** The last signed release is 1.19.1 (versionCode 40) in `release/`.
 
 The app has not been released to anyone except the owner, which is why the settings storage was reset rather than migrated (see decisions below).
 
@@ -34,6 +34,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 | A3 | Owner request: Carestream CR | `cr` film on both belts from the owner's CR chart (`EXPOSURE_CHART.xlsx`), values used as given (not the steel model); owner chose: chart rows only (others —), same at every density, Internal ÷ 8 / offset ÷ 3, 24" XS and 6" XXH as written | 1.21.1 |
 | — | Version and settings | 1.21.0, versionCode 42; settings schema 2 resets film-wide and size/schedule factors on upgrade | 1.21.0 |
 | — | Version | 1.21.1, versionCode 43 (Carestream CR); no settings change | 1.21.1 |
+| A4 | Owner request: CR from a formula, no chart, PMT slider per size with a suggested setting | Shared CR steel curve (14.8 mm) fitted within sizes of the old chart; PMT term (signal ×2 per 7.5 units) fitted to the owner's ranges; suggested PMT per size reproduces the chart (median 6%); chart kept in `scripts/cr-chart.json`; `pmt.<size>` setting; PMT on the printed list and in the CR helper | 1.22.0 |
 
 `README.md` has the user-facing change lists under "1.21.1", "1.21.0" and "1.20.0".
 
@@ -42,7 +43,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 - **Exposure model (1.21.0):** the owner approved the shared steel curve and the published small/large ratios, to be verified by test shots. Measured results may replace the published ratios or large-film reference times.
 - **Calibration helper** divides out the selected pipe's size/schedule factor (option chosen over "show the doubled result").
 - **Storage clean slate:** pre-release saved settings are discarded (`schemaVersion: 1`). From now on, storage changes need a real migration.
-- **Carestream CR** uses the owner's chart as given. The chart does not follow the shared steel curve (relative to 4" STD, small pipes up to 2.9× and large pipes down to about a fifth of the model), so CR must not be tied to it without the owner's approval. 24" XS 85,610 Ci·s looks like a thicker schedule's value; the owner chose to keep it.
+- **Carestream CR (1.22.0)** uses its own formula with a per-size PMT slider (owner's ranges 1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70) and the owner asked to drop the chart. CR keeps its own 14.8 mm steel curve; do not tie it to the film model's 12.1 mm. The PMT doubling step (7.5 units) is an assumption until measured. The former chart's 24" XH, 6" XXH and 14" Sch 40 disagree with their own sizes, and the formula does not follow them.
 - **Helper activity pre-fill** stays, labelled with its date (chosen over removing it or asking for a shot date).
 - **Left as-is on purpose:**
   - XXH/XXS rows are listed after schedule 160 for 8"–16" even though their wall is thinner (conventional order; values are correct).
@@ -51,6 +52,7 @@ A review of 1.19.1 found no high-severity issues. Every finding the owner approv
 
 ## Open work
 
+0. **CR PMT calibration** (owner): read two identical, fresh Flex HR plates (same shot, same delay) at two PMT settings, e.g. 41 and 56, and compare background-subtracted linear pixel values in the same ROI. If the ratio is not about 4×, change `CR_PMT_DOUBLING` in `calculator.js` to 15 ÷ log2(ratio). Also confirm the suggested PMT matches the settings actually used, and check a few non-suggested settings against IQI results.
 1. **Test shots for the 1.21.0 model** (owner): at density 3.0, 72 °F / 4 min, one hanger —
    - D4 on 3" STD and D5 on 4" STD at the app's times: checks the D4/D5 ratio (2.0) and D5's reference time. Repeat at density 2.0 if other densities are used (published ratios are usually defined near density 2).
    - D4 on 2" STD with D4 on 3" STD: short 2" shots (~9 s at 26 Ci) are sensitive to source transit and SFD placement; correct with a size/schedule factor if 2" reads darker.

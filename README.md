@@ -1,4 +1,4 @@
-# ShotTime 1.21.1
+# ShotTime 1.22.0
 
 Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target API 36 (Android 16). Package `ca.kylekeith.shottime`. Requires a compatible, updated Android System WebView.
 
@@ -36,7 +36,19 @@ Final seconds = model Ci·s × film-wide correction × size/schedule correction 
 
 ### Carestream CR
 
-Carestream CR (both belts) does not use the steel model. It uses the owner's Carestream CR chart (`EXPOSURE_CHART.xlsx`, sheet CARESTREAM CR, Ci·s column) exactly as given for 56 size/schedule rows, held in `CHART_EXPOSURES.cr` in `calculator.js`. Rows not in the chart show —. CR has no film density, so the time is the same at every target density, and CR film-wide and size/schedule factors are stored without a density (`factor.cr`, `weld.cr.<size>.<schedule>`). Internal = unrounded time ÷ 8, nearest second; Internal offset = unrounded time ÷ 3, rounded up (the chart's rules; still shown only for 6" and larger). The chart's 24" XS (85,610 Ci·s) and 6" XXH (below 6" Sch 160 although thicker) are used as written at the owner's request.
+Carestream CR (both belts) has its own formula in `calculator.js` (`crExposure`) and a PMT slider on every pipe size. The owner's former CR chart is no longer used by the app; it is kept in `scripts/cr-chart.json` for comparison tests only.
+
+```
+Ci·s = 523 × 2^((41 − PMT) ÷ 7.5) × (SFD ÷ 4.625)² × 2^((total steel − 12.04 mm) ÷ 14.8 mm)
+```
+
+- **Steel curve, 14.8 mm.** Fitted to the chart's schedule-to-schedule changes within each pipe size. PMT was set per pipe size, so it cannot affect this fit. The value is close to the ~13 mm Ir-192 steel half-value thickness.
+- **PMT term.** 523 Ci·s is 4" STD at PMT 41. The signal doubles every 7.5 PMT units (`CR_PMT_DOUBLING`). That step was fitted so the chart's per-size gain steps line up with the owner's slider ranges. It is **not** a measured HPX-1 gain curve. Measure it (identical fresh plates scanned at two PMT settings) and replace it.
+- **Slider ranges** (whole numbers): 1"–3" 20–50, 4"–8" 30–60, 10" and up 40–70.
+- **Suggested PMT** is the setting at which the formula reproduces the former chart for that size: 1" 35, 2" 35, 3" 38, 4" 41, 5" 44, 6" 46, 8" 52, 10" 54, 12"–16" 55, 18"–20" 56, 24" 57. At these settings the formula is within a median of 6% of the chart's 53 consistent rows (51 within 20%), with no overall bias. 1", 5" and 18" had no chart rows and are interpolated.
+- **Chart rows that disagree with their own size.** 6" XXH (1,790), 14" Sch 40 (1,770) and 24" XH (85,610) differed by 74%, 47% and 93%; the formula does not follow them.
+
+The slider value is saved per size as `pmt.<size>`. A missing, non-integer or out-of-range value falls back to the suggested PMT. The printed list shows the PMT under the pipe size for CR rows. In the calibration helper, CR asks for the PMT the successful plate was read at. CR has no film density, so the time is the same at every target density. CR film-wide and size/schedule factors are stored without a density (`factor.cr`, `weld.cr.<size>.<schedule>`) and multiply the formula at every PMT. Internal = unrounded time ÷ 8, nearest second. Internal offset = unrounded time ÷ 3, rounded up. Both are shown only for 6" and larger. Matching scanner brightness does not establish image quality: check the IQI. See `docs/CR-PROFILE-MODEL.md` for the analysis.
 
 ## Application behavior
 
@@ -54,13 +66,21 @@ Restore the separate private signing backup into `signing/` before building. The
 
 ## Active verification
 
-- `node tests/test-current-calculator.cjs`: SFD rule and ASME B36.10M walls for added rows; all 1,710 combinations follow the shared steel model; 30 reference targets; published small/large film ratios; Agfa D4/D5 shape within 4% of the historical Agfa-curve baseline; activity scaling, parsing, date validation and rounding.
+- `node tests/test-current-calculator.cjs`: CR formula on every row, PMT ranges, suggested settings and agreement with the former chart; SFD rule and ASME B36.10M walls for added rows; all 1,710 combinations follow the shared steel model; 30 reference targets; published small/large film ratios; Agfa D4/D5 shape within 4% of the historical Agfa-curve baseline; activity scaling, parsing, date validation and rounding.
 - `CHROME_BINARY=/path/to/chromium node tests/test-current-ui.mjs`: six films across the five densities, corrections, calibration helper with size/schedule factors, save failures, persistence, reset behavior, narrow layouts and print agreement.
 - `CHROME_BINARY=/path/to/chromium node tests/test-settings-storage.mjs`: version 1 migration, unversioned records ignored, per-density factor and size/schedule keys, schema version, range checks, resets across five densities and persistence after reload.
 
 Requires the available Playwright package. `tests/legacy/` contains historical harnesses, not active release gates. Physical Android print-service checks are not simulated by browser tests.
 
-## 1.21.1 (versionCode 43, not yet signed or device-tested)
+## 1.22.0 (versionCode 44, not yet signed or device-tested)
+
+- Carestream CR uses a formula instead of the owner's chart, so every row now has a CR time (shot times change; see Carestream CR above).
+- PMT slider on each pipe size when CR is selected, showing the suggested PMT, with a "Use suggested" button. Ranges: 1"–3" 20–50, 4"–8" 30–60, 10" and up 40–70.
+- The printed list shows the PMT under the pipe size for CR rows.
+- The calibration helper asks for the PMT used for a CR shot.
+- New setting `pmt.<size>`. It is additive, so the schema stays at 2 and existing settings are kept.
+
+## 1.21.1 (versionCode 43, never released)
 
 - Carestream CR film on small and medium/large belts from the owner's CR Ci·s chart (see Carestream CR above).
 

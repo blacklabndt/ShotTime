@@ -62,9 +62,9 @@ function leaveOneOut(rows,group,opts){
   return errorStats(rows.map(r=>{const f=fitChart(rows.filter(q=>q!==r),group,opts);return f.predict(r)/r.curieSeconds-1;}));}
 
 function chartRows(){
-  const C=require('../assets/calculator.js'),T=require('../assets/techniques.json').techniques;
-  return T.filter(t=>C.CHART_EXPOSURES.cr[t.size+'|'+t.schedule]!=null).map(t=>({key:t.size+'|'+t.schedule,size:t.size,
-    steelMm:2*t.wall*25.4,sfdIn:t.sfd,curieSeconds:C.CHART_EXPOSURES.cr[t.size+'|'+t.schedule]}));
+  const chart=require('./cr-chart.json').exposures,T=require('../assets/techniques.json').techniques;
+  return T.filter(t=>chart[t.size+'|'+t.schedule]!=null).map(t=>({key:t.size+'|'+t.schedule,size:t.size,
+    steelMm:2*t.wall*25.4,sfdIn:t.sfd,curieSeconds:chart[t.size+'|'+t.schedule]}));
 }
 // Entries that disagree with their own pipe size's trend (not proof they are wrong; owner to check).
 const SUSPECT=['6|XXH / XXS','14|40','24|XH'];

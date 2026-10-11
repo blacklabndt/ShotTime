@@ -1,6 +1,6 @@
 # Carestream CR: a scan-profile exposure model
 
-Prepared 2026-10-11 from the CR handover. This is a research proposal. The app is unchanged: the 56-row chart stays exactly as it is, and T200 and the other films are untouched. Matching the chart does not validate physical exposures.
+Prepared 2026-10-11 from the CR handover. **Implemented in 1.22.0** at the owner's request: the app uses the formula below with a PMT slider per pipe size, and the chart has moved to `scripts/cr-chart.json` for comparison only. T200 and the other films are untouched. Matching the chart does not validate physical exposures.
 
 ## Why the earlier formulas fail
 
@@ -65,20 +65,18 @@ These rows sit well off their own size's trend. They were set aside from the fit
 | 6" XXH | 1,790 | ~3,000 | Lower than 6" Sch 160 (2,070) despite thicker wall. The 160 row fits; earlier work excluded the wrong one |
 | 14" Sch 40 | 1,770 | ~2,200 | Same value as 14" STD despite thicker wall |
 
-## How to put it in the app
+## As implemented (1.22.0)
 
-Change the CR option from "one formula" to "**CR + scan profile**":
+```text
+Ci·s = 523 × 2^((41 − PMT) ÷ 7.5) × (SFD ÷ 4.625)² × 2^((X − 12.04) ÷ 14.8)
+```
 
-1. Add a small `CR_PROFILES` store, each with `{name, pmt, K, anchors[], spread, source: 'shots'|'gain'|'chart'}` and a shared `H`. Keep `HVL_MM` in its own frozen CR constant, never borrowed from the film model.
-2. Main table: keep the chart values for chart rows, as the hard rules require. Fill the empty rows from the selected profile, marked visibly as model values. Hide rows over 90 mm as now.
-3. Custom Shot: CR uses the formula with the entered total steel and actual SFD and asks which profile (PMT) is used. No density field.
-4. Add an "add good shot" form to a profile (steel, SFD, activity, time, PMT). It recalculates K and shows the spread. A large spread is a warning that the shots were not taken at one consistent setting.
-5. Store profiles in settings with a schema bump and a tested migration. Old `factor.cr` and `weld.cr.*` keys keep applying to chart rows.
-6. Keep `cr70` only as a labelled legacy option, or remove it once a shot-based profile exists for each PMT in use.
+The owner chose a PMT slider instead of saved profiles. Ranges are 1"–3" 20–50, 4"–8" 30–60, 10" and up 40–70. That needs a PMT-to-gain law, which no public source gives for the HPX-1. The app assumes **the signal doubles every 7.5 PMT units**. That step is the slope that best lines up the chart's per-size gain steps with the middles of the owner's ranges. The suggested PMT for each size is then the setting at which the formula reproduces that size's chart values: 1"/2" 35, 3" 38, 4" 41, 5" 44, 6" 46, 8" 52, 10" 54, 12"–16" 55, 18"/20" 56, 24" 57. At the suggested settings the formula matches the 53 consistent chart rows with a median difference of 6% and no overall bias. Away from the suggested setting, times depend on the assumed 7.5-unit step. Measure it as described below and change `CR_PMT_DOUBLING`.
 
 ## What the owner needs to supply
 
-- The PMT (and laser, pitch) used for each pipe size, and whether it ever changes by schedule.
+- The PMT (and laser, pitch) used for each pipe size, and whether it ever changes by schedule. This checks the suggested PMTs.
+- One gain measurement: identical fresh plates read at two PMT settings, to replace the assumed 7.5-unit doubling step.
 - For each PMT setting in use, 2–3 good shots with steel path, SFD, activity and time.
 - Whether 24" XH, 6" XXH and 14" Sch 40 in the chart are correct.
 

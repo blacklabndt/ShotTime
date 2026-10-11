@@ -853,7 +853,7 @@
     },
     "cr": {
       "name": "Carestream CR",
-      "note": "Owner\u2019s Carestream CR Ci\u00b7s chart, used as given. Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
+      "note": "CR formula with a PMT slider on each pipe size; the suggested PMT reproduces the former CR chart. Same time at every target density. Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
 }
