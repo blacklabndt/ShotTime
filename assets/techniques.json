@@ -812,7 +812,8 @@
         "mx125",
         "ix50",
         "cr",
-        "cr70"
+        "cr70",
+        "crcal"
       ]
     },
     "large": {
@@ -824,7 +825,8 @@
         "t200",
         "ix80",
         "cr",
-        "cr70"
+        "cr70",
+        "crcal"
       ]
     }
   },
@@ -860,6 +862,10 @@
     "cr": {
       "name": "Carestream CR",
       "note": "Owner\u2019s Carestream CR Ci\u00b7s chart, used as given. Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
+    },
+    "crcal": {
+      "name": "Carestream CR (calibrated)",
+      "note": "Calculated from your own CR reference shots and measured scanner gain (Source & film \u2192 Carestream CR calibration). No chart values. Shows \u2014 until calibrated. Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
 }

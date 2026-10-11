@@ -1,5 +1,7 @@
 # ShotTime handover — 1.21.1 (versionCode 43)
 
+> **Newest first:** 1.97 / versionCode 119 (2026-10-11, unreleased) adds Carestream CR (calibrated). See AGENTS.md (top entry) and docs/CR-CALIBRATED.md. Older sections below are historical.
+
 
 
 Status on 2026-09-30: source is at 1.21.1. 1.21.0 changed the exposure model and 1.21.1 adds Carestream CR (shot times change; see below). All three test suites pass and `build-review.sh` compiles and packages against Android 16 (API 36). **Not yet signed, released or tested on a device.** The last signed release is 1.19.1 (versionCode 40) in `release/`.
