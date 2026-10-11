@@ -1,0 +1,21 @@
+NPS,Schedule,Estimated exposure (Ci seconds),Status
+4,60,681,Interpolated
+8,60,1160,Interpolated
+8,100,1607,Interpolated
+8,140,2501,Interpolated
+10,100,2618,Interpolated
+10,140,5090,Same wall as existing XXH reference
+12,60,2372,Interpolated
+12,100,4732,Interpolated
+12,140,9584,Interpolated
+14,60,3090,Interpolated
+14,100,7316,Interpolated
+14,140,16037,Interpolated
+14,XXH / XXS,8563,Interpolated
+16,60,4352,Interpolated
+16,100,11268,Interpolated
+16,140,31526,Interpolated
+16,XXH / XXS,10416,Interpolated
+20,60,9811,Interpolated
+20,100,31459,Interpolated
+24,60,19646,Interpolated

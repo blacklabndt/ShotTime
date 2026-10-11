@@ -1,0 +1,14 @@
+[
+ {"id":"natural-spool","text":"Welder KL on spool CN-204B: a pair of three-inch extra strong welds.","items":[{"kind":"XF","cn":"CN-204B","count":2,"size":"3","schedule":"XH","welder":"KL","type":null}]},
+ {"id":"schedule-correction","text":"CN-55 has three 4 inch schedule 40 welds by CD. Sorry, schedule 80, not 40.","items":[{"kind":"XF","cn":"CN-55","count":3,"size":"4","schedule":"80","welder":"CD","type":null}]},
+ {"id":"socket-fitting","text":"On CN-302A, two 1 inch 6M socket welds by EF.","items":[{"kind":"MT","cn":"CN-302A","count":2,"size":"1","schedule":"6M","welder":"EF","type":"SW"}]},
+ {"id":"threadys","text":"CN-78 has a pair of 2 inch 9M threadys welded by GH.","items":[{"kind":"MT","cn":"CN-78","count":2,"size":"2","schedule":"9M","welder":"GH","type":"TOL"}]},
+ {"id":"two-groups","text":"CN-106, welder JK, one 6 inch standard wall weld and two 3 inch schedule 160 welds.","items":[{"kind":"XF","cn":"CN-106","count":1,"size":"6","schedule":"STD","welder":"JK","type":null},{"kind":"XF","cn":"CN-106","count":2,"size":"3","schedule":"160","welder":"JK","type":null}]},
+ {"id":"same-spool-fraction","text":"For the same spool, one two and a half inch schedule 40 weld by MN.","context":{"cn":"CN-901C"},"items":[{"kind":"XF","cn":"CN-901C","count":1,"size":"2 1/2","schedule":"40","welder":"MN","type":null}]},
+ {"id":"missing-wid","text":"CN-400 has two 8 inch STD welds. I do not know who welded them.","review":true,"items":[{"kind":"XF","cn":"CN-400","count":2,"size":"8","schedule":"STD","welder":null,"type":null}]},
+ {"id":"uncertain-size","text":"CN-401 has one weld by PQ, schedule 80, either 2 or 3 inch, I am not sure.","review":true,"items":[{"kind":"XF","cn":"CN-401","count":1,"size":null,"schedule":"80","welder":"PQ","type":null}]},
+ {"id":"percentage-no-total","text":"CN-402 6 inch STD welded by RS.","context":{"percentage":10},"review":true,"items":[{"kind":"XF","cn":"CN-402","count":null,"size":"6","schedule":"STD","welder":"RS","type":null}]},
+ {"id":"known-edit","text":"Make the last weld schedule 160 instead.","context":{"lastXfId":"xf-heldout-73"},"items":[],"edit":{"action":"set","target":"xf-heldout-73","field":"schedule","value":"160"}},
+ {"id":"unknown-delete","text":"Delete the last MT fitting.","review":true,"items":[]},
+ {"id":"irrelevant","text":"Can you bring the lunch cooler from the truck?","review":true,"items":[]}
+]

@@ -1,0 +1,17 @@
+{
+  "sourceUrl": "https://tg.government.bg/docu/dokladi2019/ASME%20BPVC.IX%20%28ASME%20BPVC%20Section%205%29%202025.pdf",
+  "pdfPage": 73,
+  "printedPage": 23,
+  "sourceSha256": "e5dee60ec657b8549a8af1ee7b79deb31c5b2c1cfa04a6fade883eccc7b1213f",
+  "svgSha256": "649d87465aab7f72e3768d8e4465bc7d2fdb14658dd0f2138af273997a5b72a9",
+  "pathCount": 387,
+  "viewBoxes": [
+    "96 123 438 82",
+    "96 237 438 87",
+    "96 355 438 102",
+    "96 488 438 100"
+  ],
+  "drawingPaths": 254,
+  "rasterImages": 0,
+  "note": "Original paths/transforms retained, text outlined; app colours applied. Separate red download-host advertising overlay excluded."
+}

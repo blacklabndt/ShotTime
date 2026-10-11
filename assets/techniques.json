@@ -811,7 +811,8 @@
         "d4",
         "mx125",
         "ix50",
-        "cr"
+        "cr",
+        "cr70"
       ]
     },
     "large": {
@@ -822,7 +823,8 @@
         "d5",
         "t200",
         "ix80",
-        "cr"
+        "cr",
+        "cr70"
       ]
     }
   },
@@ -851,9 +853,13 @@
       "name": "Fuji IX80",
       "note": "Calculator reference target on 4-inch STD. Verify with test shots."
     },
+    "cr70": {
+      "name": "Carestream CR Formula",
+      "note": "Independent CR baseline set to 70% of T200 at density 3.0. Uses total steel and actual SFD; no CR density target. CR calibration factors apply separately."
+    },
     "cr": {
       "name": "Carestream CR",
-      "note": "CR formula with a PMT slider on each pipe size; the suggested PMT approximates the former CR chart (median 6%). Same time at every target density. Internal = time \u00f7 8, offset = time \u00f7 3."
+      "note": "Owner\u2019s Carestream CR Ci\u00b7s chart, used as given. Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
 }

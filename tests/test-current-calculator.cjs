@@ -22,7 +22,7 @@ let correctedRows=0;for(const o of historical.techniques){const t=find(o.size,o.
 assert.equal(correctedRows,17);assert.ok(data.techniques.every(t=>!(t.wall in corrected)));assert.ok(data.techniques.every(t=>Object.keys(t).join()==='size,schedule,wall,sfd,group'));assert.equal(C.STEEL_HVL_MM,12.1);
 for(const [group,r] of [['small',ref3],['large',ref4]])assert.deepEqual(C.REFERENCE_GEOMETRY[group],{wall:r.wall,sfd:r.sfd});
 // Large films: calculator targets on 4-inch STD at 26 Ci.
-const large={d5:[11,15,19,23,27],t200:[14,18,22,25.5,29],ix80:[13,18,23,28,33]};
+const large={d5:[11,15,19,23,27],t200:[16.8,21.6,26.4,30.6,34.8],ix80:[13,18,23,28,33]};
 for(const [film,times] of Object.entries(large))C.DENSITIES.forEach((d,i)=>close(C.seconds(C.densityExposure(ref4,film,d),26),times[i]));
 // Small films: large partner x published Ir-192 ratio at the same geometry and every density (same-hanger pairs).
 const small={d4:['d5',3/1.5],mx125:['t200',2.8/1.7],ix50:['ix80',55/30]};
@@ -47,36 +47,25 @@ for(const film of ['d4','d5','ix80'])for(const t of [ref3,ref4].filter(t=>data.g
   close(C.exposureAtDensity(t,film,2.75),Math.sqrt(C.densityExposure(t,film,2.5)*C.densityExposure(t,film,3)));assert.ok(C.exposureAtDensity(t,film,2.7)>C.densityExposure(t,film,2.5)&&C.exposureAtDensity(t,film,2.7)<C.densityExposure(t,film,3));}
 for(const d of [1.99,4.01,NaN])assert.throws(()=>C.exposureAtDensity(ref3,'d4',d));
 assert.throws(()=>C.densityExposure(ref3,'d4',4.5));assert.throws(()=>C.densityExposure(ref4,'d4',3));assert.throws(()=>C.densityExposure(ref3,'d5',3));
-// Carestream CR formula: Ci·s = 523 × 2^((41 − PMT) ÷ 7.5) × (SFD ÷ 4.625)² × 2^((steel − 4" STD steel) ÷ 14.8 mm),
-// every row, both belts, same at every density, PMT defaults to the size's suggested setting.
-const crRef=0.237*25.4;close(C.crExposure(2*crRef,4.625,41),523);close(C.densityExposure(ref4,'cr',3),523);
-for(const t of data.techniques.filter(C.withinSteelRange))for(const pmt of [C.crPmtRange(t.size).min,C.crSuggestedPmt(t.size),C.crPmtRange(t.size).max]){
-  const want=523*Math.pow(2,(41-pmt)/7.5)*Math.pow(t.sfd/4.625,2)*Math.pow(2,(2*t.wall*25.4-2*crRef)/14.8);
-  for(const d of C.DENSITIES)close(C.densityExposure(t,'cr',d,pmt),want);close(C.exposureAtDensity(t,'cr',2.7,pmt),want);}
-for(const t of data.techniques)close(C.densityExposure(t,'cr',3),C.densityExposure(t,'cr',3,C.crSuggestedPmt(t.size)));
-// Same steel and distance give the same exposure; +7.5 PMT halves it; distance squared; steel doubles every 14.8 mm.
-close(C.crExposure(25.4,10,50),C.crExposure(2*12.7,10,50));close(C.crExposure(25.4,10,50)/C.crExposure(25.4,10,57.5),2);close(C.crExposure(25.4,20,50)/C.crExposure(25.4,10,50),4);close(C.crExposure(25.4+14.8,10,50)/C.crExposure(25.4,10,50),2);
-assert.throws(()=>C.crExposure(0,10,50));assert.throws(()=>C.crExposure(20,10,NaN));
-// Slider ranges: 1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70; whole numbers only; suggested PMT inside the range.
-const ranges={1:[20,50],2:[20,50],3:[20,50],4:[30,60],5:[30,60],6:[30,60],8:[30,60],10:[40,70],12:[40,70],14:[40,70],16:[40,70],18:[40,70],20:[40,70],24:[40,70]};
-for(const [size,[min,max]] of Object.entries(ranges)){const r=C.crPmtRange(Number(size));assert.deepEqual([r.min,r.max],[min,max],size);assert.ok(C.validPmt(Number(size),min)&&C.validPmt(Number(size),max)&&!C.validPmt(Number(size),min-1)&&!C.validPmt(Number(size),max+1)&&!C.validPmt(Number(size),min+.5)&&!C.validPmt(Number(size),String(min)));
-  assert.ok(C.validPmt(Number(size),C.crSuggestedPmt(Number(size))));}
-// Sizes not in the table get the middle of their range; a missing or invalid size is refused, not a TypeError.
-assert.equal(C.crSuggestedPmt(7),45);for(const size of [undefined,NaN,0,-1,'4'])assert.throws(()=>C.crSuggestedPmt(size),/Unsupported pipe size/);for(const size of [undefined,NaN,0])assert.equal(C.validPmt(size,41),false);
-assert.throws(()=>C.densityExposure({...ref4,size:undefined},'cr',3),/Unsupported pipe size/);
-// An explicit PMT must be a whole number in the size's range; undefined means the suggested setting.
-for(const pmt of [29,61,41.5,0,-1000,'41',null,NaN])assert.throws(()=>C.densityExposure(ref4,'cr',3,pmt),/PMT|Unsupported/);
-assert.deepEqual(data.techniques.map(t=>t.size).filter((v,i,a)=>a.indexOf(v)===i).map(C.crSuggestedPmt),[35,35,38,41,44,46,52,54,55,55,55,56,56,57]);
-// At the suggested PMT the formula reproduces the former chart (scripts/cr-chart.json): median within 7%, no bias,
-// every row within 35% except the three entries that disagree with their own size (6" XXH, 24" XH, 14" Sch 40).
-const crChart=require('../scripts/cr-chart.json').exposures,crDiff=[];
-for(const [key,cs] of Object.entries(crChart)){const t=data.techniques.find(t=>t.size+'|'+t.schedule===key);const d=C.densityExposure(t,'cr',3)/cs-1;if(['6|XXH / XXS','24|XH','14|40'].includes(key))continue;assert.ok(Math.abs(d)<.35,key+' '+d);crDiff.push(d);}
-assert.equal(crDiff.length,53);const crAbs=crDiff.map(Math.abs).sort((a,b)=>a-b);assert.ok(crAbs[26]<.07);assert.equal(crAbs.filter(d=>d<=.2).length,51);assert.ok(Math.abs(crDiff.reduce((a,b)=>a+b,0)/53)<.02);
-assert.equal(Object.keys(crChart).length,56);assert.equal(C.CHART_EXPOSURES,undefined);
+// Carestream CR: the owner's chart (EXPOSURE_CHART.xlsx, sheet CARESTREAM CR, column G) exactly, in both belts, same at every density.
+const crChart=[[2,'STD',234],[2,'XH',273],[2,'160',338],[2,'XXH',403],[3,'STD',481],[3,'XH',546],[3,'160',637],[3,'XXH',754],
+  [4,'STD',637],[4,'XH',741],[4,'120',845],[4,'160',975],[4,'XXH',1170],[6,'STD',845],[6,'XH',1080],[6,'120',1340],[6,'160',2070],[6,'XXH',1790],
+  [8,'STD',980],[8,'XH',1400],[8,'120',1930],[8,'160',3240],[8,'XXS',2980],[10,'STD',1340],[10,'XH',1590],[10,'80',2070],[10,'120',3310],[10,'160',7200],[10,'XXH',5090],
+  [12,'STD',1550],[12,'40',1690],[12,'XH',2050],[12,'80',3190],[12,'120',7020],[12,'160',15270],[12,'XXH',7020],
+  [14,'STD',1770],[14,'40',1770],[14,'XH',2450],[14,'80',4540],[14,'120',10870],[14,'160',23660],[16,'STD',2230],[16,'XH',2930],[16,'80',7010],[16,'120',18160],[16,'160',46700],
+  [20,'STD',3140],[20,'40',5830],[20,'XH',4490],[20,'80',16550],[20,'120',55220],[24,'STD',4520],[24,'40',9930],[24,'80',36050],[24,'XH',85610]];
+const crRows=new Set();for(const [size,schedule,cs] of crChart){const t=data.techniques.find(t=>t.size===size&&C.matchesSchedule(t,schedule));assert.ok(t&&C.withinSteelRange(t),size+' '+schedule);crRows.add(t);
+  for(const d of C.DENSITIES)assert.equal(C.densityExposure(t,'cr',d),cs);assert.equal(C.exposureAtDensity(t,'cr',2.7),cs);}
+assert.equal(crRows.size,56);assert.equal(Object.keys(C.CHART_EXPOSURES.cr).length,56);
+for(const t of data.techniques)if(!crRows.has(t))assert.equal(C.densityExposure(t,'cr',3),null,t.size+' '+t.schedule);
 for(const group of ['small','large'])assert.ok(data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
-assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'20s');
-// Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ×1.15÷4 rounded up.
+assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'25s');
+// Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ÷3.2 nearest.
 assert.equal(C.internalSeconds('cr',49),6);assert.equal(C.offsetSeconds('cr',49),17);assert.equal(C.offsetSeconds('cr',48),16);
-assert.equal(C.internalSeconds('d5',49),5);assert.equal(C.offsetSeconds('d5',49),15);assert.equal(C.internalSeconds('d5',90),10);assert.equal(C.offsetSeconds('d5',90),26);
+assert.equal(C.internalSeconds('d5',49),5);assert.equal(C.offsetSeconds('d5',49),15);assert.equal(C.internalSeconds('d5',90),10);assert.equal(C.offsetSeconds('d5',90),28);
+// Catch applying the CR divisor to films, retaining the old multiplier, or rounding the shot first.
+for(const film of ['d4','d5','mx125','t200','ix50','ix80']){
+  for(const [shot,want] of [[0,0],[32,10],[32.01,10],[33.59,10],[33.6,11],[49,15],[90,28]])assert.equal(C.offsetSeconds(film,shot),want,film+' offset for '+shot);
+}
 for(const s of ['','0','-1','1e3','NaN','1000'])assert.equal(C.parseActivity(s),null);assert.equal(C.parseActivity('26,5'),26.5);assert.equal(C.timeLabel(.1),'0s');assert.equal(C.timeLabel(59.5),'1m 0s');assert.equal(C.timeLabel(3599.5),'1h 0m 0s');assert.equal(C.decay(26,'2026-09-29','2026-09-29'),26);assert.equal(C.decay(26,'2026-09-30','2026-09-29'),null);assert.equal(C.dayNumber('2026-02-30'),null);
-console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation; Carestream CR formula on every row in both belts, PMT ranges and suggested settings, and agreement with the former CR chart.`);
+console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation; Carestream CR chart (56 rows) in both belts.`);

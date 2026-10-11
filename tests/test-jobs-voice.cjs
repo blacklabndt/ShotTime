@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),M=require('../assets/notes-model'),J=require('../assets/notes-jobs'),V=require('../assets/notes-voice'),P=require('../assets/notes-parser');
+let lib=J.createJob(J.empty(),{id:'a',name:'A',lsd:'A',start:1,mtStart:1});for(const id of ['mon','tue'])lib=J.createDailyList(lib,'a',{id,date:'2026-10-06'});
+lib=J.mutate(lib,'tue',l=>M.applyGroup(l,[{type:'addBatch',cn:'CN-1',count:2,size:'2',schedule:'80'}],'tue'));
+const session={id:'voice-a',listId:'mon',state:'stopped',events:[{text:'Unknown CN has one 2 inch STD weld unknown welder'}]};
+lib=J.mutate(lib,'mon',l=>V.reconcile(l,session).list);assert.equal(lib.lists[0].rows[0].sequence,3);
+const next=lib.jobs[0].nextSequence;lib=J.mutate(lib,'mon',l=>V.reconcile(l,session).list);assert.equal(lib.jobs[0].nextSequence,next);assert.equal(lib.lists[0].rows.length,1);
+lib=J.mutate(lib,'mon',l=>V.reconcile(l,{...session,id:'uncertain',uncertain:true}).list);assert.equal(lib.jobs[0].nextSequence,next);assert.equal(lib.lists[0].pending.length,1);
+const pending=lib.lists[0].pending[0];lib=J.mutate(lib,'mon',l=>{const r=P.parse(pending.text,l.context,l.rows,l.fieldRequirements,l.mtRows);l=M.applyGroup(l,r.commands,pending.id);l.pending=[];return l;});assert.equal(lib.lists[0].rows.at(-1).sequence,4);
+lib=J.mutate(lib,'tue',l=>V.reconcile(l,{...session,id:'undo-add',listId:'tue',events:[{text:'CN-9 has one 4 inch STD weld. Undo that. CN-10 has one 4 inch STD weld.'}]}).list);
+assert.equal(lib.lists[1].rows.at(-1).sequence,6);assert.equal(lib.jobs[0].nextSequence,7);
+console.log('PASS: cross-day voice allocation, replay, pending confirmation and add/undo/add');
