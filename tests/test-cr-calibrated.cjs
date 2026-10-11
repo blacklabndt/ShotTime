@@ -3,11 +3,14 @@
 const assert=require('node:assert/strict'),C=require('../assets/calculator.js'),data=require('../assets/techniques.json'),F=require('./fixtures/film-outputs-1.96.json');
 const close=(a,b,tol=1e-9)=>assert.ok(Math.abs(a/b-1)<tol,`${a} vs ${b}`);
 
-// Every existing film, the CR chart and cr70 give exactly the 1.96 outputs (T200 included, with its +20%).
-for(const [key,value] of Object.entries(F.densityExposure)){const [size,schedule,film,d]=key.split('|');const t=data.techniques.find(t=>String(t.size)===size&&t.schedule===schedule);assert.ok(Object.is(C.densityExposure(t,film,Number(d)),value),key);}
-for(const [key,value] of Object.entries(F.customExposure)){const [film,steel,sfd,d]=key.split('|');assert.ok(Object.is(C.customExposure(Number(steel),Number(sfd),film,Number(d)),value),key);}
-for(const [key,value] of Object.entries(F.internal)){const [film,s]=key.split('|');assert.equal(C.internalSeconds(film,Number(s)),value);assert.equal(C.offsetSeconds(film,Number(s)),F.offset[key]);}
-assert.equal(Object.keys(F.densityExposure).length,2825);
+// Every remaining film and the CR chart give exactly the 1.96 outputs (T200 included, with its +20%).
+// CR Formula (cr70, 70% of T200) was removed in 1.97 and is refused everywhere.
+let kept=0;for(const [key,value] of Object.entries(F.densityExposure)){const [size,schedule,film,d]=key.split('|');if(film==='cr70')continue;kept++;const t=data.techniques.find(t=>String(t.size)===size&&t.schedule===schedule);assert.ok(Object.is(C.densityExposure(t,film,Number(d)),value),key);}
+for(const [key,value] of Object.entries(F.customExposure)){const [film,steel,sfd,d]=key.split('|');if(film==='cr70'){assert.throws(()=>C.customExposure(Number(steel),Number(sfd),film,Number(d)));continue;}assert.ok(Object.is(C.customExposure(Number(steel),Number(sfd),film,Number(d)),value),key);}
+for(const [key,value] of Object.entries(F.internal)){const [film,s]=key.split('|');if(film==='cr70')continue;assert.equal(C.internalSeconds(film,Number(s)),value);assert.equal(C.offsetSeconds(film,Number(s)),F.offset[key]);}
+assert.equal(Object.keys(F.densityExposure).length,2825);assert.equal(kept,2280);
+for(const t of data.techniques)assert.throws(()=>C.densityExposure(t,'cr70',3));assert.ok(!C.CUSTOM_FILMS.includes('cr70'));assert.equal(C.crExposure,undefined);assert.equal(C.CR_REFERENCE,undefined);
+for(const g of ['small','large'])assert.ok(!data.groups[g].films.includes('cr70'));assert.equal(data.films.cr70,undefined);
 
 // Cleaning: valid entries kept, invalid ones dropped and counted, never repaired.
 const shot=(o={})=>({totalSteel:.5,sfd:10,activity:20,seconds:60,pmt:40,...o});
@@ -74,4 +77,4 @@ finally{Object.assign(C.CHART_EXPOSURES.cr,savedChart);savedT200.forEach((v,i)=>
 assert.equal(C.usesDensity('crcal'),false);assert.equal(C.internalSeconds('crcal',49),6);assert.equal(C.offsetSeconds('crcal',49),17);
 assert.ok(C.CUSTOM_FILMS.includes('crcal'));for(const g of ['small','large'])assert.ok(data.groups[g].films.includes('crcal'));
 assert.equal(data.films.crcal.name,'Carestream CR (calibrated)');
-console.log('PASS: 1.96 film/CR/cr70 outputs unchanged (2,825 rows, 600 custom), calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');
+console.log('PASS: 1.96 film and CR chart outputs unchanged (2,280 rows, 525 custom), CR Formula (70%) removed, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');

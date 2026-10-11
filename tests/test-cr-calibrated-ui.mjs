@@ -99,7 +99,20 @@ try{
   assert.match(await page.locator('#cr-cal-status').textContent(),/2 reference shots.* · 2 saved entries could not be read and are ignored$/);
   assert.match(await page.locator('#cr-check').textContent(),/2 checked\) is off by a median of 0\.0%, worst 0\.0%/);assert.match(await page.locator('#cr-hvl-hint').textContent(),/imply 13\.0 mm/);
   assert.deepEqual(page.errors,[]);await page.close();
+  // CR Formula (70%) was removed: a saved belt choice falls back to the default film, its saved factor stays in
+  // storage untouched, and a saved Custom Shot setup stays listed and loads its steel and SFD only.
+  page=await open({schemaVersion:2,source:{mode:'manual',activity:26},'film.large':'cr70','factor.cr70':1.4});
+  assert.equal(await page.locator('#film-large').inputValue(),'d5');assert.equal(await page.locator('#film-large option[value=cr70]').count(),0);assert.equal(await page.locator('#custom-film option[value=cr70]').count(),0);
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.settings'))['factor.cr70']),1.4);
+  await page.evaluate(()=>localStorage.setItem('shottime.customShots.v1',JSON.stringify({schemaVersion:1,presets:[{name:'Old CR',steel:1,sfd:24,film:'cr70',density:3},{name:'T200 shot',steel:1,sfd:24,film:'t200',density:3}]})));
+  await page.reload();await page.locator('#app-menu-button').click();await page.locator('#nav-custom').click();await page.evaluate(()=>{document.querySelector('#custom-shot details').open=true;});
+  assert.deepEqual(await page.locator('#custom-presets option').allTextContents(),['Choose a saved setup','Old CR (CR Formula removed)','T200 shot']);
+  await page.locator('#custom-presets').selectOption({label:'Old CR (CR Formula removed)'});await page.locator('#custom-load').click();
+  assert.match(await page.locator('#custom-save-status').textContent(),/used CR Formula \(70%\), which was removed in 1\.97/);assert.deepEqual([await page.locator('#custom-steel').inputValue(),await page.locator('#custom-sfd').inputValue()],['1','24']);
+  await page.locator('#custom-preset-name').fill('Another');await page.locator('#custom-film').selectOption('t200');await page.locator('#custom-save').click();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.customShots.v1')).presets.filter(p=>p.film==='cr70').length),1);
+  assert.deepEqual(page.errors,[]);await page.close();
   // A record with another schema version is not read as calibration.
   page=await open(seed,{schemaVersion:2,shots:[{totalSteel:.474,sfd:4.625,activity:26,seconds:20,pmt:40}]});assert.equal(await page.evaluate(()=>crCal.shots.length),0);await page.close();
 }finally{await browser.close();}
-console.log('PASS: calibrated CR refuses uncovered rows (screen, print, no timers), owner slider ranges, reference shot entry and validation, physics scaling, gain-only PMT conversion with no extrapolation, screen/print agreement and printed PMT, reference PMT reset and focus, steel curve and pixel target, persistence, helper refusal, Custom Shot with PMT and saved setups, narrow widths, unreadable stored entries, cross-check and suggested steel curve.');
+console.log('PASS: CR Formula (70%) removed with saved choices, factors and setups preserved; calibrated CR refuses uncovered rows (screen, print, no timers), owner slider ranges, reference shot entry and validation, physics scaling, gain-only PMT conversion with no extrapolation, screen/print agreement and printed PMT, reference PMT reset and focus, steel curve and pixel target, persistence, helper refusal, Custom Shot with PMT and saved setups, narrow widths, unreadable stored entries, cross-check and suggested steel curve.');

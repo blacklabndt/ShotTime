@@ -812,7 +812,6 @@
         "mx125",
         "ix50",
         "cr",
-        "cr70",
         "crcal"
       ]
     },
@@ -825,7 +824,6 @@
         "t200",
         "ix80",
         "cr",
-        "cr70",
         "crcal"
       ]
     }
@@ -854,10 +852,6 @@
     "ix80": {
       "name": "Fuji IX80",
       "note": "Calculator reference target on 4-inch STD. Verify with test shots."
-    },
-    "cr70": {
-      "name": "Carestream CR Formula",
-      "note": "Independent CR baseline set to 70% of T200 at density 3.0. Uses total steel and actual SFD; no CR density target. CR calibration factors apply separately."
     },
     "cr": {
       "name": "Carestream CR",

@@ -8,7 +8,7 @@ Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target
 
 ## Carestream CR (calibrated) — 1.97
 
-Film choice **Carestream CR (calibrated)** calculates from your own CR reference shots and measured scanner gain, with no chart values: Ci·s = K × SFD² × 2^(total steel mm ÷ H). Rows the calibration cannot cover show —. Enter shots under Source & film → Carestream CR calibration. Each pipe card has a PMT slider (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70), and Custom Shot has a PMT field. The original chart and CR Formula (70%) choices are unchanged. Details and what to measure: docs/CR-CALIBRATED.md.
+Film choice **Carestream CR (calibrated)** calculates from your own CR reference shots and measured scanner gain, with no chart values: Ci·s = K × SFD² × 2^(total steel mm ÷ H). Rows the calibration cannot cover show —. Enter shots under Source & film → Carestream CR calibration. Each pipe card has a PMT slider (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70), and Custom Shot has a PMT field. The original chart choice is unchanged. CR Formula (70%) was removed in 1.97; Custom Shot setups saved with it stay listed and load their steel and SFD only. Details and what to measure: docs/CR-CALIBRATED.md.
 
 ## Current calculation
 

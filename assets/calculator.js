@@ -38,16 +38,6 @@
   // Rows above this total steel lie beyond the Agfa Ir-192 chart (10-90 mm) the curve was measured from;
   // the app hides them rather than extrapolate.
   const MAX_STEEL_MM=90;
-  // Owner-selected CR baseline (2026-10-10): 70% of the current T200 density-3
-  // reference. Fixed separately so changes to film references cannot change CR.
-  const CR_REFERENCE=Object.freeze({curieSeconds:480.48,totalSteel:.474,sfd:4.625,steelHvlMm:12.1});
-  function crExposure(totalSteel,sfd){
-    if(!Number.isFinite(totalSteel)||totalSteel<=0||totalSteel*25.4>MAX_STEEL_MM)throw new Error('Enter total steel greater than 0 and no more than 90 mm (3.5433 inches).');
-    if(!Number.isFinite(sfd)||sfd<=0)throw new Error('Enter an SFD greater than zero.');
-    const r=CR_REFERENCE,value=r.curieSeconds*Math.pow(sfd/r.sfd,2)*Math.pow(2,(totalSteel-r.totalSteel)*25.4/r.steelHvlMm);
-    if(!Number.isFinite(value)||value<=0)throw new Error('Exposure is out of range.');
-    return value;
-  }
   function withinSteelRange(technique){return 2*technique.wall*25.4<=MAX_STEEL_MM;}
   const REFERENCE_GEOMETRY={small:{wall:0.216,sfd:3.625},large:{wall:0.237,sfd:4.625}};
   // Large films: approximate calculator targets at 26 Ci on 4-inch STD (index 3 interpolated).
@@ -82,12 +72,11 @@
       '14|STD':1770,'14|40':1770,'14|XH':2450,'14|80':4540,'14|120':10870,'14|160':23660,'16|STD':2230,'16|40 / XH':2930,'16|80':7010,'16|120':18160,'16|160':46700,
       '20|STD':3140,'20|40':5830,'20|XH':4490,'20|80':16550,'20|120':55220,'24|STD':4520,'24|40':9930,'24|80':36050,'24|XH':85610}
   };
-  function usesDensity(film){return film!=='cr70'&&film!=='crcal'&&!CHART_EXPOSURES[film];}
+  function usesDensity(film){return film!=='crcal'&&!CHART_EXPOSURES[film];}
   // crcal needs {pmt, calibration} (a clean calibration); it returns null when the calibration cannot cover the row.
   function densityExposure(technique,film,density,options){
     const index=DENSITIES.indexOf(density),chart=CHART_EXPOSURES[film];
     if(film==='crcal'){if(index<0||!technique||!options||!options.calibration)throw new Error('Unsupported density or film');return crCalibratedExposure(2*technique.wall,technique.sfd,options.pmt,options.calibration).curieSeconds;}
-    if(film==='cr70'){if(index<0||!technique)throw new Error('Unsupported density or film');return crExposure(2*technique.wall,technique.sfd);}
     if(chart){if(index<0||!technique)throw new Error('Unsupported density or film');const value=chart[technique.size+'|'+technique.schedule];return value===undefined?null:value;}
     const reference=FILM_REFERENCES[film];
     if(index<0||!reference||reference.group!==technique.group||!Number.isFinite(technique.wall)||!(technique.sfd>0))throw new Error('Unsupported density or film');
@@ -200,18 +189,17 @@
     }
     return best;
   }
-  const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','cr70','crcal'];
+  const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','crcal'];
   function customExposure(totalSteel,sfd,film,density,options){
     checkSteelAndSfd(totalSteel,sfd);
     if(film==='crcal'){if(!options||!options.calibration)throw new Error('Carestream CR (calibrated) needs its calibration.');const r=crCalibratedExposure(totalSteel,sfd,options.pmt,options.calibration);if(r.curieSeconds===null)throw new Error('Carestream CR (calibrated) needs calibration: '+r.reason+'.');return r.curieSeconds;}
     if(film==='d7')return customExposure(totalSteel,sfd,'d5',density)/1.5; // Published STRUCTURIX Ir-192 exposure factors: D7 1.0 / D5 1.5.
-    if(film==='cr70')return crExposure(totalSteel,sfd);
     if(!Object.prototype.hasOwnProperty.call(FILM_REFERENCES,film))throw new Error('Custom CR needs a reference exposure; choose a film.');
     const value=densityExposure({wall:totalSteel/2,sfd,group:FILM_REFERENCES[film].group},film,density);
     if(!Number.isFinite(value)||value<=0)throw new Error('Exposure is out of range.');
     return value;
   }
-  const api={CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CR_REFERENCE,crExposure,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

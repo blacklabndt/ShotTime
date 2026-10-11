@@ -1,5 +1,7 @@
 # Independent CR formula — 2026-10-10
 
+> **Removed in 1.97** (owner request, 2026-10-11). Replaced by Carestream CR (calibrated); see CR-CALIBRATED.md. Kept as history.
+
 The owner requested an independent CR formula producing approximately 70% of the equivalent T200 shot. The implementation uses the current T200 **density-3.0 default baseline** as the reference for setting CR's constants, then calculates CR independently. T200's formula, baseline and saved settings are unchanged.
 
 Select **Carestream CR Formula** in either belt of Shot Time Calc or in Custom Shot. The existing **Carestream CR** selection continues to use the original chart. Existing selections and chart corrections are preserved.

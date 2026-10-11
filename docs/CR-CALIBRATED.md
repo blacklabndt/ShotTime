@@ -1,6 +1,11 @@
 # Carestream CR (calibrated) — 1.97
 
-Prepared 2026-10-11. This is the independent CR calculation the owner asked for, in place of chart fitting or a T200 percentage. It adds a new film choice, **Carestream CR (calibrated)** (`crcal`), to both belts and to Custom Shot. The original chart (`cr`) and the 70% formula (`cr70`) are unchanged, as are their saved factors and every film's output. A test compares all 2,825 table values and 600 Custom Shot values against a 1.96 snapshot.
+Prepared 2026-10-11. This is the independent CR calculation the owner asked for, in place of chart fitting or a T200 percentage. It adds a new film choice, **Carestream CR (calibrated)** (`crcal`), to both belts and to Custom Shot. The original chart (`cr`) and every film's output are unchanged. A test compares all 2,280 table values and 525 Custom Shot values against a 1.96 snapshot.
+
+**CR Formula (70%), `cr70`, was removed in 1.97 at the owner's request.**
+- A belt saved on it falls back to that belt's default film.
+- Its saved `factor.cr70` and `weld.cr70.*` values stay in storage untouched but are no longer used.
+- Custom Shot setups saved with it stay listed as "(CR Formula removed)". They load their steel and SFD only and ask for a film.
 
 The calculation contains **no chart numbers and no invented calibration**. Until the owner records reference shots, every calibrated-CR row shows **—** with the reason, and Custom Shot refuses to calculate.
 
@@ -61,7 +66,7 @@ With two or more shots, the panel predicts each reference shot from the others a
   - Entries that fail validation are dropped and counted, never repaired. The status line reports how many could not be read.
   - Limits: 50 shots and 30 gain rows.
 - **Settings:** slider positions are stored as `pmt.<size>`, an additive key in the existing settings record (schema 2 unchanged). A missing or out-of-range value falls back to the default.
-- **Old CR settings:** existing `factor.cr`, `factor.cr70`, `weld.cr.*` and `weld.cr70.*` are untouched and still apply to their own choices. There is no automatic migration into `crcal`, because their values were set against the chart or the 70% formula, not against reference shots.
+- **Old CR settings:** existing `factor.cr` and `weld.cr.*` are untouched and still apply to the chart choice. `factor.cr70` and `weld.cr70.*` are left in storage but unused. There is no automatic migration into `crcal`, because their values were set against the chart or the 70% formula, not against reference shots.
 
 ## What the owner needs to collect
 
@@ -77,7 +82,7 @@ With two or more shots, the panel predicts each reference shot from the others a
 ## Not done
 
 - No device install, signed build or physical exposure validation.
-- Old `cr` and `cr70` remain selectable. Removing them is the owner's decision once calibrated CR is trusted.
+- The original chart (`cr`) remains selectable. Removing it is the owner's decision once calibrated CR is trusted.
 - There is no import or export of the calibration record. The notes backup does not include it.
 
 ## Tests
