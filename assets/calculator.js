@@ -73,10 +73,11 @@
       '14|STD':1770,'14|40':2060,'14|XH':2450,'14|80':4540,'14|120':10870,'14|160':23660,'16|STD':2230,'16|40 / XH':2930,'16|80':7010,'16|120':18160,'16|160':46700,
       '20|STD':3140,'20|40':5830,'20|XH':4490,'20|80':16550,'20|120':55220,'24|STD':4520,'24|40':9930,'24|80':36050,'24|XH':6390}
   };
-  function usesDensity(film){return film!=='crcal'&&!CHART_EXPOSURES[film];}
+  function usesDensity(film){return film!=='crfield'&&film!=='crcal'&&!CHART_EXPOSURES[film];}
   // crcal needs {pmt, calibration} (a clean calibration); it returns null when the calibration cannot cover the row.
   function densityExposure(technique,film,density,options){
     const index=DENSITIES.indexOf(density),chart=CHART_EXPOSURES[film];
+    if(film==='crfield'){if(index<0||!technique||!options)throw new Error('Field CR needs a PMT setting.');return crFieldExposure(2*technique.wall,technique.sfd,options.pmt);}
     if(film==='crcal'){if(index<0||!technique||!options)throw new Error('Unsupported density or film');return crDoseExposure(2*technique.wall,technique.sfd,options.doseR,options.calibration);}
     if(chart){if(index<0||!technique)throw new Error('Unsupported density or film');const value=chart[technique.size+'|'+technique.schedule];return value===undefined?null:value;}
     const reference=FILM_REFERENCES[film];
@@ -210,9 +211,24 @@
   // Plate exposure the owner's reference shots imply at a PMT (gain table and pixel target applied), or a reason.
   function crSuggestedDose(cal,pmt){const r=crCalibratedExposure(.5,10,pmt,cal);if(r.curieSeconds===null)return {doseR:null,reason:r.reason};
     return {doseR:r.curieSeconds/crGeometry(.5,10,r.hvlMm)/K_PER_R,shotsUsed:r.shotsUsed,spread:r.spread,gainScaled:r.gainScaled,pixelScaled:r.pixelScaled};}
-  const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','crcal'];
+  // Effective field response fitted to all 56 printed chart entries. PMTs are inferred in steps of 10,
+  // one per size, monotone with size. NOT a measured HPX-PRO gain curve or a calibrated pixel target.
+  // Reproduce with scripts/cr-field-fit.cjs; validation and alternative assignments in docs/CR-FIELD-FIT.json.
+  const CR_FIELD=Object.freeze({a:2.2984867845493637,b:.04646684406800626,c:.032323589322692484,
+    hvlMm:Math.LN2/.04646684406800626,minSteelMm:7.8232,maxSteelMm:80.9752,
+    pmts:Object.freeze({2:20,3:30,4:40,6:50,8:60,10:70,12:70,14:70,16:70,20:70,24:70})});
+  function crFieldPmt(size){if(size<=2)return 20;const keys=Object.keys(CR_FIELD.pmts).map(Number);if(CR_FIELD.pmts[size]!=null)return CR_FIELD.pmts[size];
+    for(let i=1;i<keys.length;i++)if(size<keys[i])return Math.round((CR_FIELD.pmts[keys[i-1]]+(CR_FIELD.pmts[keys[i]]-CR_FIELD.pmts[keys[i-1]])*(size-keys[i-1])/(keys[i]-keys[i-1]))/10)*10;
+    return size<2?20:70;}
+  function crFieldExposure(totalSteel,sfd,pmt){checkSteelAndSfd(totalSteel,sfd);
+    if(!Number.isInteger(pmt)||pmt<20||pmt>70||pmt%10!==0)throw new Error('Field CR PMT must be 20–70 in steps of 10.');
+    const value=sfd*sfd*Math.exp(CR_FIELD.a+CR_FIELD.b*totalSteel*25.4-CR_FIELD.c*(pmt-40));
+    if(!Number.isFinite(value)||value<=0)throw new Error('Exposure is out of range.');return value;}
+  function crFieldExtrapolated(totalSteel){return totalSteel*25.4<CR_FIELD.minSteelMm||totalSteel*25.4>CR_FIELD.maxSteelMm;}
+  const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','crcal','crfield'];
   function customExposure(totalSteel,sfd,film,density,options){
     checkSteelAndSfd(totalSteel,sfd);
+    if(film==='crfield'){if(!options)throw new Error('Field CR needs a PMT setting.');return crFieldExposure(totalSteel,sfd,options.pmt);}
     if(film==='crcal'){if(!options)throw new Error('Carestream CR (calibrated) needs a plate exposure.');return crDoseExposure(totalSteel,sfd,options.doseR,options.calibration);}
     if(film==='d7')return customExposure(totalSteel,sfd,'d5',density)/1.5; // Published STRUCTURIX Ir-192 exposure factors: D7 1.0 / D5 1.5.
     if(!Object.prototype.hasOwnProperty.call(FILM_REFERENCES,film))throw new Error('Custom CR needs a reference exposure; choose a film.');
@@ -221,6 +237,7 @@
     return value;
   }
   const api={CR_DOSE,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  Object.assign(api,{CR_FIELD,crFieldPmt,crFieldExposure,crFieldExtrapolated});
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

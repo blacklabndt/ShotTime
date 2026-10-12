@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+assert.ok(fs.existsSync(require('node:path').join(__dirname,'../scripts/cr-field-fit.cjs')),'Field fitting module must exist');
+const F=require('../scripts/cr-field-fit.cjs');
+const rows=[2,3,4,6,8,10,12,14,16,20,24].flatMap((size,i)=>[10,20,35].map(x=>({size,x,d:size+.125,p:[20,20,30,40,40,50,50,60,60,70,70][i]}))).map(r=>({...r,y:Math.exp(2+.05*r.x-.06*(r.p-40))*r.d*r.d}));
+const fit=F.fit(rows);
+assert.ok(fit.sse<1e-15,'Recover known synthetic response');
+assert.ok(Math.abs(fit.b-.05)<1e-10);
+assert.ok(Math.abs(fit.c-.06)<1e-10);
+for(const r of rows)assert.ok(Math.abs(F.predict(fit,r)/r.y-1)<1e-9);
+const altered=rows.map(r=>({...r,y:r.y*3})),f2=F.fit(altered);
+assert.ok(Math.abs(f2.a-fit.a-Math.log(3))<1e-9);
+assert.throws(()=>F.fit([]));
+assert.ok(Math.abs(F.metrics([{y:1,predicted:1.1},{y:1,predicted:1.3}]).median-20)<1e-10,'Even-count median averages the central pair');
+console.log('CR field fitting synthetic recovery passed');

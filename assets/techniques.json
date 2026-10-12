@@ -812,7 +812,8 @@
         "mx125",
         "ix50",
         "cr",
-        "crcal"
+        "crcal",
+        "crfield"
       ]
     },
     "large": {
@@ -824,7 +825,8 @@
         "t200",
         "ix80",
         "cr",
-        "crcal"
+        "crcal",
+        "crfield"
       ]
     }
   },
@@ -856,6 +858,10 @@
     "cr": {
       "name": "Carestream CR",
       "note": "Owner\u2019s Carestream CR Ci\u00b7s chart, used as given. Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
+    },
+    "crfield": {
+      "name": "Carestream CR (field estimate)",
+      "note": "Fitted to 56 field-chart entries with estimated PMT settings. Withheld sizes: median error 11.3%, worst 44.5%. Select your actual PMT in steps of 10. No calibrated pixel target. Internal and offset times retain the chart's approximate divisors."
     },
     "crcal": {
       "name": "Carestream CR (calibrated)",

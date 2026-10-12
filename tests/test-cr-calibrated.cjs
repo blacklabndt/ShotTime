@@ -7,10 +7,11 @@ const close=(a,b,tol=1e-9)=>assert.ok(Math.abs(a/b-1)<tol,`${a} vs ${b}`);
 // where the owner asked: 2"-6" are the printed values (1.96 ÷ 1.3, except 6" XXH, already printed), and 14" Sch 40
 // and 24" XH are corrected from the printed chart. Every other chart row is unchanged.
 // CR Formula (cr70, 70% of T200) was removed in 1.97 and is refused everywhere.
+// Serialized Math.pow results can differ by one ULP between JS runtimes; use a 1e-12 relative tolerance.
 let kept=0;for(const [key,value] of Object.entries(F.densityExposure)){const [size,schedule,film,d]=key.split('|');if(film==='cr70')continue;kept++;const t=data.techniques.find(t=>String(t.size)===size&&t.schedule===schedule);const k=size+'|'+schedule;
   const want=film!=='cr'||value===null?value:k==='24|XH'?6390:k==='14|40'?2060:Number(size)<=6&&k!=='6|XXH / XXS'?Math.round(value/1.3/10)*10:value;
-  if(film==='cr'&&Number(size)<=6&&k!=='6|XXH / XXS'&&value!==null)assert.ok(Math.abs(want*1.3-value)<=5,key);assert.ok(Object.is(C.densityExposure(t,film,Number(d)),want),key);}
-for(const [key,value] of Object.entries(F.customExposure)){const [film,steel,sfd,d]=key.split('|');if(film==='cr70'){assert.throws(()=>C.customExposure(Number(steel),Number(sfd),film,Number(d)));continue;}assert.ok(Object.is(C.customExposure(Number(steel),Number(sfd),film,Number(d)),value),key);}
+  if(film==='cr'&&Number(size)<=6&&k!=='6|XXH / XXS'&&value!==null)assert.ok(Math.abs(want*1.3-value)<=5,key);assert.ok(want===null?C.densityExposure(t,film,Number(d))===null:Math.abs(C.densityExposure(t,film,Number(d))/want-1)<1e-12,key);}
+for(const [key,value] of Object.entries(F.customExposure)){const [film,steel,sfd,d]=key.split('|');if(film==='cr70'){assert.throws(()=>C.customExposure(Number(steel),Number(sfd),film,Number(d)));continue;}assert.ok(Math.abs(C.customExposure(Number(steel),Number(sfd),film,Number(d))/value-1)<1e-12,key);}
 for(const [key,value] of Object.entries(F.internal)){const [film,s]=key.split('|');if(film==='cr70')continue;assert.equal(C.internalSeconds(film,Number(s)),value);assert.equal(C.offsetSeconds(film,Number(s)),F.offset[key]);}
 assert.equal(Object.keys(F.densityExposure).length,2825);assert.equal(kept,2280);
 for(const t of data.techniques)assert.throws(()=>C.densityExposure(t,'cr70',3));assert.ok(!C.CUSTOM_FILMS.includes('cr70'));assert.equal(C.crExposure,undefined);assert.equal(C.CR_REFERENCE,undefined);

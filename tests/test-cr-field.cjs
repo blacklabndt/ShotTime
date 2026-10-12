@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('node:assert/strict'),C=require('../assets/calculator.js'),T=require('../assets/techniques.json'),F=require('../scripts/cr-field-fit.cjs');
+assert.equal(typeof C.crFieldExposure,'function','Field exposure API exists');
+const close=(a,b)=>assert.ok(Math.abs(a/b-1)<1e-10,`${a} != ${b}`);
+const base=C.crFieldExposure(1,4,40);
+close(C.crFieldExposure(2*.5,4,40),base);
+close(C.crFieldExposure(1,8,40),base*4);
+close(C.seconds(base,40),C.seconds(base,20)/2);
+close(C.crFieldExposure(1+C.CR_FIELD.hvlMm/25.4,4,40),base*2);
+assert.ok(C.crFieldExposure(1,4,50)<base);
+for(const p of [10,25,80,NaN,'40',null])assert.throws(()=>C.crFieldExposure(1,4,p),/PMT/);
+for(const [x,d] of [[0,4],[4,4],[1,0],[1,Infinity]])assert.throws(()=>C.crFieldExposure(x,d,40));
+assert.equal(C.usesDensity('crfield'),false);assert.ok(C.CUSTOM_FILMS.includes('crfield'));
+const rows=F.chartRows(),model=F.fit(rows);
+close(C.CR_FIELD.minSteelMm,Math.min(...rows.map(r=>r.x)));close(C.CR_FIELD.maxSteelMm,Math.max(...rows.map(r=>r.x)));
+assert.equal(C.crFieldPmt(1),20);assert.equal(C.crFieldPmt(5),50);assert.equal(C.crFieldPmt(18),70);
+for(const r of rows){const p=F.pmtAt(model,r.size);assert.equal(C.crFieldPmt(r.size),p);close(C.crFieldExposure(r.x/25.4,r.d,p),F.predict(model,r));}
+const t=T.techniques.find(t=>t.size===4&&t.schedule==='40 / STD');
+close(C.densityExposure(t,'crfield',3,{pmt:40}),C.customExposure(2*t.wall,t.sfd,'crfield',2,{pmt:40}));
+assert.throws(()=>C.customExposure(1,4,'crfield',3));
+const before=C.crFieldExposure(1,4,40),chart=C.CHART_EXPOSURES.cr['4|40 / STD'];
+C.CHART_EXPOSURES.cr['4|40 / STD']=999999;assert.equal(C.crFieldExposure(1,4,40),before);C.CHART_EXPOSURES.cr['4|40 / STD']=chart;
+assert.equal(C.crFieldExtrapolated(.05),true);assert.equal(C.crFieldExtrapolated(1),false);
+console.log('CR field physics, PMT constraints and fitted coefficient parity passed');
