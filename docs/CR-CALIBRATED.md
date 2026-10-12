@@ -13,7 +13,7 @@ Prepared 2026-10-11. This is the independent CR calculation the owner asked for,
     - 6" XXH 1,790 → 2,327 (the sheet's +30% was missed on this one cell).
   - The printed chart's PMT column gives scanning ranges per size band (2"–3" 20–50, 4"–8" 30–60, 10"+ 40–70), not a PMT per value.
 
-The calculation uses physics. Its defaults come from the owner's Carestream chart, treated as known good shots: the starting plate exposure per size band and the steel curve. The owner adjusts the exposure with a slider or replaces it with their own reference shots.
+The calculation uses physics. Its defaults come from the owner's Carestream chart, treated as known good shots: the starting plate exposure per pipe size and the steel curve. The owner adjusts the exposure with a slider or replaces it with their own reference shots.
 
 ## Model
 
@@ -23,16 +23,16 @@ time = Ci·s ÷ current activity × CR film factor × size/schedule factor
 ```
 
 - **R** is the plate exposure target in roentgen, set per pipe size with a slider from 0.5 to 6 R in 0.05 R steps.
-  - The default is the value the owner's reference shots imply at that card's PMT (kept within the slider range). Without reference shots, the band's start applies.
-  - **Band starts** are the geometric mean plate exposure of the Carestream chart rows in each band, at H = 14.5 mm, rounded to 0.05 R:
+  - The default is the value the owner's reference shots imply at that card's PMT (kept within the slider range). Without reference shots, the size's start applies.
+  - **Per-size starts** are the geometric mean plate exposure of that size's Carestream chart rows, at H = 14.5 mm, rounded to 0.05 R (`CR_DOSE.starts`). The chart has no 1", 5" or 18" rows: 1" uses the 2" value (no extrapolation), and 5" and 18" use the geometric mean of their neighbours.
 
-    | Band | Start | Chart rows |
-    |---|---|---|
-    | 2"–3" | 4.30 R | 2.8–5.3 R |
-    | 4"–8" | 1.65 R | 0.9–3.5 R |
-    | 10"+ | 0.75 R | 0.6–1.0 R |
+    | Size | 1" | 2" | 3" | 4" | 5" | 6" | 8" | 10" | 12" | 14" | 16" | 18" | 20" | 24" |
+    |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+    | Start (R) | 5.00 | 5.00 | 3.65 | 2.80 | 2.15 | 1.60 | 1.05 | 0.85 | 0.75 | 0.75 | 0.75 | 0.70 | 0.70 | 0.65 |
 
-  - The 10"+ band agrees with published CR work: Jelfs (QSA Global), "Optimized Digital Radiography Using Co-60, Ir-192 and Se-75 Sources", NDE 2009, found "a dose of 800mR to 1.2R on the imaging plates delivered acceptable image quality" (https://www.ndt.net/article/nde-india2009/pdf/18-C-1.pdf).
+  - These replaced the 1.98 draft's three bands (4.3 / 1.65 / 0.75 R) at the owner's request. An independent review found that one 4"–8" value made 4" shots about half the chart time and 8" shots 30–45% long. Against the chart, the worst 10% of rows drop from about 48% to about 20% error. The chart's own scatter within a size is about 5%.
+
+  - The 10"+ starts agree with published CR work: Jelfs (QSA Global), "Optimized Digital Radiography Using Co-60, Ir-192 and Se-75 Sources", NDE 2009, found "a dose of 800mR to 1.2R on the imaging plates delivered acceptable image quality" (https://www.ndt.net/article/nde-india2009/pdf/18-C-1.pdf).
   - Small pipes get more exposure in the chart. That is partly a higher-sensitivity PMT band, and partly because short chart times behave like practical minimums: inside 2"–4", the implied exposure falls as the wall gets thicker.
   - Rows under 10 s are flagged "Short shot: under 10 s", because source travel time is a larger share of a short exposure.
 - **Γ** = 0.48 R·m² per Ci·h, QSA Global's published Ir-192 output.
@@ -42,15 +42,16 @@ time = Ci·s ÷ current activity × CR film factor × size/schedule factor
   - QSA's published narrow-beam steel HVL is about 13 mm, and broad-beam film exposure charts give 12–13.6 mm. CR is more sensitive to scatter, so a slightly higher value is plausible.
   - A single exponential fits over the app's range.
   - The owner can enter a measured value (5–30 mm). If the owner's shots at one PMT span at least 6 mm of steel, the app shows the H they imply; it is only shown, never applied automatically.
-- **Example times at 26 Ci at the band starts:**
+- **Example times at 26 Ci at the per-size starts:**
 
   | Row | Calibrated CR | Carestream chart |
   |---|---|---|
-  | 2" XH | 8 s | 11 s |
-  | 4" STD | 12 s | 25 s |
-  | 10" STD | 40 s | 52 s |
+  | 2" XH | 10 s | 11 s |
+  | 4" STD | 20 s | 25 s |
+  | 8" STD | 33 s | 38 s |
+  | 10" STD | 45 s | 52 s |
   | 12" Sch 160 | 9 m 20 s | 9 m 47 s |
-  | 24" STD | 3 m 22 s | 2 m 54 s |
+  | 24" STD | 2 m 55 s | 2 m 54 s |
 
 ### Reference shots
 
@@ -69,7 +70,7 @@ Here P is the linear pixel value, B the unexposed-plate value, and G the relativ
 - **Same PMT as a reference shot:** that shot is used directly.
 - **Another PMT:** the shot is converted by `G(shot PMT) ÷ G(target PMT)`. G comes **only** from the owner's gain measurements: identical fresh plates read at different PMT settings, giving G = pixel − unexposed value.
   - Between measured settings, G is interpolated log-linearly and B linearly.
-  - Outside the measured range nothing is extrapolated, and the card falls back to its band's start with the reason.
+  - Outside the measured range nothing is extrapolated, and the card falls back to its size's start with the reason.
   - The displayed PMT number is never assumed to be a multiplier or a voltage.
 - **Optional target pixel value:** time scales by `(P_target − B) ÷ (P_shot − B)`. This needs each reference shot's pixel value and the unexposed values. Without a target, the app aims at the brightness of the reference shots.
 
@@ -90,9 +91,9 @@ With two or more shots, the panel predicts each reference shot from the others a
 - **Results:** each pipe card has a PMT slider and a plate exposure slider (0.5–6 R, saved per size as `dose.<size>`; "Use suggested" clears it). The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
   - The default PMT is that of the reference shot nearest in SFD whose PMT falls inside the range; otherwise the middle of the range.
   - "Use reference PMT" restores the default.
-  - Every row has a time and timer links. The note under the plate exposure slider says where its value comes from: your setting, reference shots (and whether gain-converted), or the band start with the reason.
+  - Every row has a time and timer links. The note under the plate exposure slider says where its value comes from: your setting, reference shots (and whether gain-converted), or the size's chart start with the reason.
 - **Print:** the pipe cell shows `PMT nn` and the plate exposure (`1.00 R`) under the size for calibrated-CR rows. It is not a new column.
-- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–6) replace target density. A blank plate exposure uses the reference shots at that PMT; without them, Custom Shot asks for a value and quotes the band starts. The summary says which basis was used. Saved setups keep both.
+- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–6) replace target density. A blank plate exposure uses the reference shots at that PMT; without them, Custom Shot asks for a value. **Fill from chart for pipe size** puts that size's start into the plate exposure field. The summary says which basis was used. Saved setups keep both.
 - **Factors:** CR film-wide and size/schedule factors (`factor.crcal`, `weld.crcal.<size>.<schedule>`) still multiply the result. The factor helper refuses calibrated CR and points to reference shots instead.
 
 ## Storage and migration
@@ -122,7 +123,7 @@ With two or more shots, the panel predicts each reference shot from the others a
 
 ## Tests
 
-- `node tests/test-cr-calibrated.cjs` — every 1.96 output unchanged except the three corrected chart cells; band starts match the chart; calibration cleaning; refusal without data; inverse square and activity; total steel; published and measured H; gain conversion only inside the measured range; pixel target and offsets; geometric mean; cross-check; suggested H; independence from chart and film numbers.
+- `node tests/test-cr-calibrated.cjs` — every 1.96 output unchanged except the three corrected chart cells; per-size starts match the chart; calibration cleaning; refusal without data; inverse square and activity; total steel; published and measured H; gain conversion only inside the measured range; pixel target and offsets; geometric mean; cross-check; suggested H; independence from chart and film numbers.
 - `CHROME_BINARY=… node tests/test-cr-calibrated-ui.mjs` — the full workflow in the app, including print, Custom Shot, persistence, helper refusal, narrow widths and unreadable stored entries.
 
 Both are in `npm test`.

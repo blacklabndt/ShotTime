@@ -5,14 +5,14 @@
 Read docs/CR-CALIBRATED.md (1.98 section). Owner decisions after supplying the Carestream chart (EXPOSURE CHART.xlsx, sheet CARESTREAM CR):
 - Chart `cr` is that sheet: the printed Fuji ST-VI values with +30% on 2"–6", plus three corrected cells: 24" XH 6,390, 14" Sch 40 2,060, and 6" XXH 2,327 (the +30% the sheet missed). This supersedes the 1.97 "printed values" change below.
 - Calibrated CR (`crcal`) uses the chart only for its defaults:
-  - Each card starts at the band's chart-implied plate exposure: 2"–3" 4.3 R, 4"–8" 1.65 R, 10"+ 0.75 R (`CR_DOSE.bands`, `crStartDose`).
+  - Each card starts at its pipe size's chart-implied plate exposure (`CR_DOSE.starts`, `crStartDose`): the geometric mean of that size's chart rows at H 14.5 mm, from 5 R at 1"–2" to 0.65 R at 24". 1" uses 2"; 5" and 18" use their neighbours' geometric mean. These replaced three bands (4.3/1.65/0.75 R) after an independent review found the 4"–8" band about 2× off.
   - The default H is 14.5 mm (`CR_DEFAULT_HVL_MM`). QSA's 13 mm stays as `CR_PUBLISHED_HVL_MM` for reference.
   - The slider runs 0.5–6 R.
   - Rows under 10 s show "Short shot: under 10 s".
-  - Custom Shot with a blank plate exposure and no reference shots at that PMT asks for a value.
+  - Custom Shot with a blank plate exposure and no reference shots at that PMT asks for a value. "Fill from chart for pipe size" enters a size's start; it is UI only and is not stored in setups.
   - Reference shots still override the defaults.
 - Codex's CR field estimate (`crfield`, commit e98916f) is removed. Its PMT gain is not identifiable from the chart: scaling the inferred PMT steps ×0.5/×1/×2 refits with identical SSE. Saved belts fall back, `fieldPmt.*` keys stay unused, and Custom Shot presets load geometry only. docs/CR-FIELD-MODEL.md is kept as history.
-- The chart sheet names the scanner HPX-1/HPX-1 Plus in places and HPX-PRO in others; the owner has not confirmed which.
+- The owner confirmed the scanner is the Carestream HPX-PRO with Flex HR plates; the chart sheet also mentions HPX-1/HPX-1 Plus. The owner is requesting a Carestream technique sheet; measured data from it or from step-wedge shots should replace the chart-derived starts.
 - Not a signed release; no device check or physical validation.
 
 ## Carestream CR (calibrated) — 1.97, versionCode 119, 2026-10-11 (unreleased)

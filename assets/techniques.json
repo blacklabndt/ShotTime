@@ -859,7 +859,7 @@
     },
     "crcal": {
       "name": "Carestream CR (calibrated)",
-      "note": "Physics: plate exposure (R) \u00d7 SFD\u00b2 \u00f7 Ir-192 output \u00d7 steel curve (14.5 mm). Each pipe card has PMT and plate exposure sliders (0.5\u20136 R), starting at what your Carestream chart implies for its size band (2\"\u20133\" 4.3 R, 4\"\u20138\" 1.65 R, 10\"+ 0.75 R) or what your reference shots imply. Internal = time \u00f7 8, offset = time \u00f7 3."
+      "note": "Physics: plate exposure (R) \u00d7 SFD\u00b2 \u00f7 Ir-192 output \u00d7 steel curve (14.5 mm). Each pipe card has PMT and plate exposure sliders (0.5\u20136 R), starting at what your Carestream chart implies for that pipe size (5 R at 2\" down to 0.65 R at 24\") or what your reference shots imply. Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
 }

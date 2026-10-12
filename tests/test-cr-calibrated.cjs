@@ -24,12 +24,15 @@ assert.deepEqual(C.crCleanCalibration(null),{shots:[],gain:[],hvlMm:null,targetP
 assert.equal(C.crCleanCalibration({shots:Array(60).fill(shot())}).shots.length,60);
 
 // Plate exposure model: Ci·s = R × (SFD m)² × 3600 ÷ 0.48 × 2^(steel mm ÷ H), H 14.5 mm by default (from the owner's
-// Carestream chart). Starting R per size band from that chart: 2"–3" 4.3 R, 4"–8" 1.65 R, 10"+ 0.75 R. Slider 0.5–6 R.
+// Carestream chart). Starting R per pipe size from that chart (5 R at 2" down to 0.65 R at 24"). Slider 0.5–6 R.
 assert.equal(C.CR_DOSE.minR,.5);assert.equal(C.CR_DOSE.maxR,6);assert.equal(C.CR_DOSE.stepR,.05);assert.equal(C.CR_DOSE.gamma,.48);assert.equal(C.CR_DEFAULT_HVL_MM,14.5);
-for(const [size,r] of [[1,4.3],[2,4.3],[3,4.3],[4,1.65],[5,1.65],[8,1.65],[10,.75],[24,.75]])assert.equal(C.crStartDose(size),r);for(const s of [0,NaN,undefined])assert.throws(()=>C.crStartDose(s));
-// The band starts are the geometric mean plate exposure of the chart rows in each band at H = 14.5 mm (to 0.05 R).
-{const gm=a=>Math.exp(a.reduce((s,x)=>s+Math.log(x),0)/a.length),R=t=>C.crShotDose({totalSteel:2*t.wall,sfd:t.sfd,activity:1,seconds:C.CHART_EXPOSURES.cr[t.size+'|'+t.schedule]},C.crCleanCalibration({}));
- for(const [lo,hi,r] of [[2,3,4.3],[4,8,1.65],[10,24,.75]]){const rows=data.techniques.filter(t=>t.size>=lo&&t.size<=hi&&C.CHART_EXPOSURES.cr[t.size+'|'+t.schedule]!=null);assert.ok(Math.abs(Math.round(gm(rows.map(R))/.05)*.05-r)<1e-9,lo+'–'+hi);}}
+assert.deepEqual(C.CR_DOSE.starts,{1:5,2:5,3:3.65,4:2.8,5:2.15,6:1.6,8:1.05,10:.85,12:.75,14:.75,16:.75,18:.7,20:.7,24:.65});
+for(const [size,r] of [[1,5],[2,5],[4,2.8],[5,2.15],[8,1.05],[10,.85],[18,.7],[24,.65]])assert.equal(C.crStartDose(size),r);for(const s of [0,NaN,undefined,7,2.5,30])assert.throws(()=>C.crStartDose(s));
+assert.deepEqual([...new Set(data.techniques.map(t=>t.size))].sort((a,b)=>a-b),Object.keys(C.CR_DOSE.starts).map(Number).sort((a,b)=>a-b));
+// Each start is the geometric mean plate exposure of that size's chart rows at H = 14.5 mm (to 0.05 R); 1" uses 2", 5" and 18" their neighbours.
+{const gm=a=>Math.exp(a.reduce((s,x)=>s+Math.log(x),0)/a.length),R=t=>C.crShotDose({totalSteel:2*t.wall,sfd:t.sfd,activity:1,seconds:C.CHART_EXPOSURES.cr[t.size+'|'+t.schedule]},C.crCleanCalibration({})),g={};
+ for(const s of [2,3,4,6,8,10,12,14,16,20,24]){const rows=data.techniques.filter(t=>t.size===s&&C.CHART_EXPOSURES.cr[t.size+'|'+t.schedule]!=null);assert.ok(rows.length>=4,s);g[s]=gm(rows.map(R));}
+ g[1]=g[2];g[5]=Math.sqrt(g[4]*g[6]);g[18]=Math.sqrt(g[16]*g[20]);for(const s in g)assert.ok(Math.abs(Math.round(g[s]/.05)*.05-C.crStartDose(Number(s)))<1e-9,s);}
 cal=C.crCleanCalibration({});const sfdM=10*.0254;
 close(C.crDoseExposure(.5,10,1,cal),1*sfdM*sfdM*3600/.48*Math.pow(2,.5*25.4/14.5));
 close(C.crDoseExposure(.5,10,2,cal)/C.crDoseExposure(.5,10,1,cal),2);close(C.crDoseExposure(.5,20,1,cal)/C.crDoseExposure(.5,10,1,cal),4);
@@ -40,8 +43,8 @@ const ref4=data.techniques.find(t=>t.size===4&&t.schedule==='40 / STD');
 close(C.densityExposure(ref4,'crcal',3,{doseR:1,calibration:cal}),C.crDoseExposure(2*.237,4.625,1,cal));close(C.densityExposure(ref4,'crcal',2,{doseR:1.5,calibration:cal}),1.5*C.crDoseExposure(2*.237,4.625,1,cal));
 assert.throws(()=>C.densityExposure(ref4,'crcal',3));assert.throws(()=>C.densityExposure(ref4,'crcal',3,{calibration:cal}));
 close(C.customExposure(.5,10,'crcal',3,{doseR:1,calibration:cal}),C.crDoseExposure(.5,10,1,cal));assert.throws(()=>C.customExposure(.5,10,'crcal',3),/needs a plate exposure/);
-// At 26 Ci and the band starts: 2" XH 8s, 4" STD 12s, 10" STD 40s, 12" Sch 160 9m 20s, 24" STD 3m 22s (chart: 11s, 25s, 52s, 9m 47s, 2m 54s).
-for(const [s,sch,label] of [[2,'80 / XH','8s'],[4,'40 / STD','12s'],[10,'40 / STD','40s'],[12,'160','9m 20s'],[24,'STD','3m 22s']]){const t=data.techniques.find(t=>t.size===s&&t.schedule===sch);assert.equal(C.timeLabel(C.seconds(C.densityExposure(t,'crcal',3,{doseR:C.crStartDose(s),calibration:cal}),26)),label,s+' '+sch);}
+// At 26 Ci and the per-size starts (chart in brackets): 2" XH 10s (11s), 4" STD 20s (25s), 8" STD 33s (38s), 10" STD 45s (52s), 12" Sch 160 9m 20s (9m 47s), 24" STD 2m 55s (2m 54s).
+for(const [s,sch,label] of [[2,'80 / XH','10s'],[4,'40 / STD','20s'],[8,'40 / STD','33s'],[10,'40 / STD','45s'],[12,'160','9m 20s'],[24,'STD','2m 55s']]){const t=data.techniques.find(t=>t.size===s&&t.schedule===sch);assert.equal(C.timeLabel(C.seconds(C.densityExposure(t,'crcal',3,{doseR:C.crStartDose(s),calibration:cal}),26)),label,s+' '+sch);}
 // A reference shot's plate exposure by the same physics; the suggestion from shots at a PMT (no shots: none).
 let shotDose=C.crShotDose({totalSteel:.5,sfd:10,activity:26,seconds:C.crDoseExposure(.5,10,1.3,cal)/26},cal);close(shotDose,1.3);
 assert.equal(C.crSuggestedDose(cal,40).doseR,null);assert.equal(C.crSuggestedDose(cal,40).reason,'no reference shots');
@@ -106,4 +109,4 @@ finally{Object.assign(C.CHART_EXPOSURES.cr,savedChart);savedT200.forEach((v,i)=>
 assert.equal(C.usesDensity('crcal'),false);assert.equal(C.internalSeconds('crcal',49),6);assert.equal(C.offsetSeconds('crcal',49),17);
 assert.ok(C.CUSTOM_FILMS.includes('crcal'));for(const g of ['small','large'])assert.ok(data.groups[g].films.includes('crcal'));
 assert.equal(data.films.crcal.name,'Carestream CR (calibrated)');
-console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart band starts, 14.5 mm, 0.5–6 R, inverse square, steel, activity), shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');
+console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart per-size starts, 14.5 mm, 0.5–6 R, inverse square, steel, activity), shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');

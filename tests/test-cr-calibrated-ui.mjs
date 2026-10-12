@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {loadApp} from './load-app.mjs';
-// Carestream CR (calibrated) in the app: plate exposure slider (Carestream-chart band starts, 0.5–6 R) per pipe card, PMT sliders,
+// Carestream CR (calibrated) in the app: plate exposure slider (Carestream-chart per-size starts, 0.5–6 R) per pipe card, PMT sliders,
 // reference shots and measured gain as suggestions only; print, Custom Shot, helper and persistence.
 const browser=await chromium.launch({executablePath:process.env.CHROME_BINARY});
 const html=await loadApp();
@@ -12,31 +12,31 @@ async function open(seed,cal){const page=await browser.newPage({viewport:{width:
 const seed={schemaVersion:2,source:{mode:'manual',activity:26},'film.small':'crcal','film.large':'crcal'};
 const close=(a,b,tol=1e-9)=>assert.ok(Math.abs(a/b-1)<tol,`${a} vs ${b}`);
 try{
-  // No reference shots: every row has a time from its band's start (from the Carestream chart); timers and print work.
+  // No reference shots: every row has a time from its size's start (from the Carestream chart); timers and print work.
   let page=await open(seed);
   const row=(size,schedule='40 / STD')=>page.locator('.shot[data-size="'+size+'"][data-schedule="'+schedule+'"]');
   const secs=async(size,schedule)=>Number(await row(size,schedule).getAttribute('data-seconds'));
   const lab=x=>Math.round(x)+'s',physics=(steelIn,sfdIn,r,hvl=14.5)=>r*(sfdIn*.0254)**2*3600/.48*2**(steelIn*25.4/hvl)/26;
   assert.equal(await page.locator('.shot[data-film="crcal"]').count(),109);
   assert.equal(await page.locator('.shot[data-film="crcal"] .time',{hasText:'—'}).count(),0);
-  close(await secs(4),physics(.474,4.625,1.65));assert.equal(await row(4).locator('.time').textContent(),lab(physics(.474,4.625,1.65)));close(await secs(24,'STD'),physics(.75,24.125,.75));close(await secs(2,'80 / XH'),physics(2*.218,2.5,4.3));
-  assert.equal(await page.locator('#dose-4-note').textContent(),'From your Carestream chart (4"–8" band)');assert.equal(await page.locator('#dose-2-note').textContent(),'From your Carestream chart (2"–3" band)');assert.equal(await page.locator('#dose-12-note').textContent(),'From your Carestream chart (10" and up band)');
+  close(await secs(4),physics(.474,4.625,2.8));assert.equal(await row(4).locator('.time').textContent(),lab(physics(.474,4.625,2.8)));close(await secs(24,'STD'),physics(.75,24.125,.65));close(await secs(2,'80 / XH'),physics(2*.218,2.5,5));close(await secs(5,'40 / STD'),physics(2*.258,5.688,2.15));
+  assert.equal(await page.locator('#dose-4-note').textContent(),'From your Carestream chart (4" rows)');assert.equal(await page.locator('#dose-2-note').textContent(),'From your Carestream chart (2" rows)');assert.equal(await page.locator('#dose-12-note').textContent(),'From your Carestream chart (12" rows)');assert.equal(await page.locator('#dose-1-note').textContent(),'From your Carestream chart (2" rows; none for 1")');assert.equal(await page.locator('#dose-18-note').textContent(),'From your Carestream chart (between 16" and 20")');
   // Shots under 10 s are flagged (source travel time is a larger share).
   assert.match(await row(2,'80 / XH').textContent(),/Short shot: under 10 s/);assert.doesNotMatch(await row(12,'STD').textContent(),/Short shot/);
   assert.ok(await row(12,'STD').locator('a.shot-timer-link').count()>0);
-  let print=await browser.newPage();await print.setContent(await page.evaluate(()=>makePrintDocument()));assert.equal(await print.locator('td.time',{hasText:'—'}).count(),0);assert.equal(await print.locator('tbody tr').first().locator('td').first().textContent(),'1"PMT 354.30 R');await print.close();
-  // Sliders: PMT with the owner's ranges; plate exposure 0.5–6 R in 0.05 R steps, starting at the band value.
+  let print=await browser.newPage();await print.setContent(await page.evaluate(()=>makePrintDocument()));assert.equal(await print.locator('td.time',{hasText:'—'}).count(),0);assert.equal(await print.locator('tbody tr').first().locator('td').first().textContent(),'1"PMT 355.00 R');await print.close();
+  // Sliders: PMT with the owner's ranges; plate exposure 0.5–6 R in 0.05 R steps, starting at the size's chart value.
   for(const [size,min,max,value] of [[1,20,50,35],[3,20,50,35],[4,30,60,45],[8,30,60,45],[10,40,70,55],[24,40,70,55]]){const s=page.locator('#pmt-'+size);assert.deepEqual([await s.getAttribute('min'),await s.getAttribute('max'),await s.inputValue(),await s.getAttribute('aria-label')],[String(min),String(max),String(value),'PMT for '+size+'-inch pipe']);}
-  const dose=page.locator('#dose-4');assert.deepEqual([await dose.getAttribute('min'),await dose.getAttribute('max'),await dose.getAttribute('step'),await dose.inputValue(),await dose.getAttribute('aria-label')],['0.5','6','0.05','1.65','Plate exposure in roentgen for 4-inch pipe']);
+  const dose=page.locator('#dose-4');assert.deepEqual([await dose.getAttribute('min'),await dose.getAttribute('max'),await dose.getAttribute('step'),await dose.inputValue(),await dose.getAttribute('aria-label')],['0.5','6','0.05','2.8','Plate exposure in roentgen for 4-inch pipe']);
   assert.equal(await page.locator('.dose-reset').first().isDisabled(),true);
   // Moving the plate exposure slider scales that size only, is saved, and survives a restart; Use suggested clears it.
   await dose.fill('3');close(await secs(4),physics(.474,4.625,3));assert.equal(await page.locator('#dose-4-value').textContent(),'3.00');await dose.fill('6');close(await secs(4),physics(.474,4.625,6));assert.equal(await dose.evaluate(n=>{n.value='6.5';return n.value;}),'6');
   await dose.fill('2');close(await secs(4),physics(.474,4.625,2));assert.equal(await page.locator('#dose-4-value').textContent(),'2.00');assert.equal(await page.locator('#dose-4-note').textContent(),'Your setting');
-  close(await secs(3),physics(2*.216,3.625,4.3));await dose.dispatchEvent('change');
+  close(await secs(3),physics(2*.216,3.625,3.65));await dose.dispatchEvent('change');
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.settings'))['dose.4']),2);
   await page.reload();assert.equal(await page.locator('#dose-4').inputValue(),'2');close(await secs(4),physics(.474,4.625,2));
   await page.getByRole('button',{name:'Use suggested plate exposure for 4-inch pipe'}).focus();await page.keyboard.press('Enter');
-  assert.equal(await page.evaluate(()=>document.activeElement.id),'dose-4');assert.equal(await page.locator('#dose-4').inputValue(),'1.65');close(await secs(4),physics(.474,4.625,1.65));
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'dose-4');assert.equal(await page.locator('#dose-4').inputValue(),'2.8');close(await secs(4),physics(.474,4.625,2.8));
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.settings'))['dose.4']),null);
 
   // A reference shot (4" STD, 26 Ci, 9 s, PMT 40) shows the plate exposure it delivered and becomes the suggestion at PMT 40.
@@ -51,7 +51,7 @@ try{
   close(await secs(4),9);assert.equal(await row(4).locator('.time').textContent(),'9s');close(await secs(12,'STD'),physics(.75,12.875,shotR));
   assert.equal(await page.locator('#dose-4-note').textContent(),'From 1 reference shot at PMT 40');assert.equal(await page.locator('#dose-4-value').textContent(),shotR.toFixed(2));
   // At a PMT the shots do not cover, the starting point applies and the note says why.
-  await page.locator('#pmt-4').fill('50');close(await secs(4),physics(.474,4.625,1.65));assert.equal(await page.locator('#dose-4-note').textContent(),'From your Carestream chart (4"–8" band) · reference shots: no gain measurements covering PMT 40 and PMT 50');
+  await page.locator('#pmt-4').fill('50');close(await secs(4),physics(.474,4.625,2.8));assert.equal(await page.locator('#dose-4-note').textContent(),'From your Carestream chart (4" rows) · reference shots: no gain measurements covering PMT 40 and PMT 50');
   // Measured gain converts the shot to another PMT, inside the measured range only; outside the slider range it is clamped and said.
   await page.locator('#edit-source').click();await page.evaluate(()=>{$('cr-cal').open=true;$('cr-gain-panel').open=true;});
   for(const [pmt,signal,offset] of [['40','2100','100'],['55','6100','100']]){await page.locator('#cr-gain-pmt').fill(pmt);await page.locator('#cr-gain-signal').fill(signal);await page.locator('#cr-gain-offset').fill(offset);await page.locator('#cr-gain-form button[type=submit]').click();}
@@ -60,7 +60,7 @@ try{
   await page.locator('#close-sheet').click();await page.locator('#pmt-4').fill('51');await page.locator('#pmt-4').fill('50');
   const r50=shotR*2000/(2000*3**(10/15));close(await secs(4),physics(.474,4.625,r50));assert.equal(await page.locator('#dose-4-note').textContent(),'From 1 reference shot (gain-converted) at PMT 50');
   await page.locator('#pmt-4').fill('55');close(await secs(4),physics(.474,4.625,.5));assert.match(await page.locator('#dose-4-note').textContent(),new RegExp('they imply '+(shotR/3).toFixed(2)+' R, outside the slider range$'));
-  await page.locator('#pmt-4').fill('60');close(await secs(4),physics(.474,4.625,1.65));assert.match(await page.locator('#dose-4-note').textContent(),/no gain measurements covering PMT 40 and PMT 60/);
+  await page.locator('#pmt-4').fill('60');close(await secs(4),physics(.474,4.625,2.8));assert.match(await page.locator('#dose-4-note').textContent(),/no gain measurements covering PMT 40 and PMT 60/);
   await page.locator('#pmt-4').fill('50');await page.locator('#pmt-4').dispatchEvent('change');await page.locator('#dose-12').fill('1.5');await page.locator('#dose-12').dispatchEvent('change');
   // Screen and print agree at non-default PMT and plate exposure; the printed pipe cell names both.
   print=await browser.newPage();await print.setContent(await page.evaluate(()=>makePrintDocument()));
@@ -98,7 +98,8 @@ try{
   await page.locator('#custom-steel').fill('.474');await page.locator('#custom-sfd').fill('4.625');await page.locator('#custom-pmt').fill('40');await page.locator('#custom-form button').click();
   assert.equal(await page.locator('#custom-time').textContent(),'9s');assert.match(await page.locator('#custom-summary').textContent(),new RegExp('Carestream CR \\(calibrated\\) · PMT 40 · '+shotR.toFixed(2)+' R plate exposure \\(from reference shots\\)'));
   await page.locator('#custom-dose').fill('2');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),lab(physics(.474,4.625,2)));assert.match(await page.locator('#custom-summary').textContent(),/2\.00 R plate exposure \(entered\)/);
-  await page.locator('#custom-dose').fill('');await page.locator('#custom-pmt').fill('47');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/Enter a plate exposure: there are no reference shots for PMT 47\. Your Carestream chart implies about 4\.3 R/);assert.equal(await page.locator('#custom-result').isHidden(),true);
+  await page.locator('#custom-dose').fill('');await page.locator('#custom-pmt').fill('47');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/Enter a plate exposure: there are no reference shots for PMT 47\. Pick a pipe size/);assert.equal(await page.locator('#custom-result').isHidden(),true);
+  assert.ok(await page.locator('#custom-dose-size').isVisible());assert.equal(await page.locator('#custom-dose-size option').count(),15);await page.locator('#custom-dose-size').selectOption('8');assert.equal(await page.locator('#custom-dose').inputValue(),'1.05');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),lab(physics(.474,4.625,1.05)));assert.match(await page.locator('#custom-summary').textContent(),/1\.05 R plate exposure \(entered\)/);
   await page.locator('#custom-dose').fill('2.5');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),lab(physics(.474,4.625,2.5)));
   await page.locator('#custom-dose').fill('6.5');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/plate exposure from 0\.5 to 6 R/);
   await page.locator('#custom-dose').fill('1.5');await page.locator('#custom-pmt').fill('x');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/PMT as a whole number/);
@@ -124,11 +125,11 @@ try{
   assert.deepEqual(await page.locator('#custom-presets option').allTextContents(),['Choose a saved setup','Old CR (CR Formula removed)','T200 shot','Field (field estimate removed)']);
   await page.locator('#custom-presets').selectOption({label:'Old CR (CR Formula removed)'});await page.locator('#custom-load').click();
   assert.match(await page.locator('#custom-save-status').textContent(),/used CR Formula \(70%\), which was removed in 1\.97/);assert.deepEqual([await page.locator('#custom-steel').inputValue(),await page.locator('#custom-sfd').inputValue()],['1','24']);
-  await page.locator('#custom-preset-name').fill('Another');await page.locator('#custom-film').selectOption('t200');await page.locator('#custom-save').click();
+  await page.locator('#custom-preset-name').fill('Another');await page.locator('#custom-film').selectOption('t200');assert.ok(await page.locator('#custom-dose-size').isHidden());assert.ok(await page.locator('label[for="custom-dose-size"]').isHidden());await page.locator('#custom-save').click();
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.customShots.v1')).presets.filter(p=>p.film==='cr70'||p.film==='crfield').length),2);
   await page.locator('#custom-presets').selectOption({label:'Field (field estimate removed)'});await page.locator('#custom-load').click();assert.match(await page.locator('#custom-save-status').textContent(),/used the CR field estimate, which was removed in 1\.98/);assert.deepEqual([await page.locator('#custom-steel').inputValue(),await page.locator('#custom-sfd').inputValue()],['0.75','12']);
   assert.deepEqual(page.errors,[]);await page.close();
   // A record with another schema version is not read as calibration.
   page=await open(seed,{schemaVersion:2,shots:[{totalSteel:.474,sfd:4.625,activity:26,seconds:20,pmt:40}]});assert.equal(await page.evaluate(()=>crCal.shots.length),0);await page.close();
 }finally{await browser.close();}
-console.log('PASS: CR field estimate and CR Formula (70%) removed with saved choices, factors and setups preserved; calibrated CR times from Carestream-chart band starts with short-shot flag, plate exposure slider (range, save, restart, Use suggested, focus), owner PMT ranges, reference shot entry and plate exposure, shot-based and gain-converted suggestions with fallback and clamping, screen/print agreement with PMT and R printed, reference PMT reset and focus, steel curve and pixel target, persistence, helper refusal, Custom Shot with PMT and saved setups, narrow widths, unreadable stored entries, cross-check and suggested steel curve.');
+console.log('PASS: CR field estimate and CR Formula (70%) removed with saved choices, factors and setups preserved; calibrated CR times from Carestream-chart per-size starts with short-shot flag, plate exposure slider (range, save, restart, Use suggested, focus), owner PMT ranges, reference shot entry and plate exposure, shot-based and gain-converted suggestions with fallback and clamping, screen/print agreement with PMT and R printed, reference PMT reset and focus, steel curve and pixel target, persistence, helper refusal, Custom Shot with PMT, chart fill by pipe size and saved setups, narrow widths, unreadable stored entries, cross-check and suggested steel curve.');
