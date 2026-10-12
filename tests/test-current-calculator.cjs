@@ -47,10 +47,10 @@ for(const film of ['d4','d5','ix80'])for(const t of [ref3,ref4].filter(t=>data.g
   close(C.exposureAtDensity(t,film,2.75),Math.sqrt(C.densityExposure(t,film,2.5)*C.densityExposure(t,film,3)));assert.ok(C.exposureAtDensity(t,film,2.7)>C.densityExposure(t,film,2.5)&&C.exposureAtDensity(t,film,2.7)<C.densityExposure(t,film,3));}
 for(const d of [1.99,4.01,NaN])assert.throws(()=>C.exposureAtDensity(ref3,'d4',d));
 assert.throws(()=>C.densityExposure(ref3,'d4',4.5));assert.throws(()=>C.densityExposure(ref4,'d4',3));assert.throws(()=>C.densityExposure(ref3,'d5',3));
-// Carestream CR: the owner's printed chart (titled Fuji CR ST-VI) exactly, in both belts, same at every density. 1.97: 2"-6"
-// are the printed values (the workbook's x1.3 removed), 14" Sch 40 and 24" XH corrected from the printed chart.
-const crChart=[[2,'STD',180],[2,'XH',210],[2,'160',260],[2,'XXH',310],[3,'STD',370],[3,'XH',420],[3,'160',490],[3,'XXH',580],
-  [4,'STD',490],[4,'XH',570],[4,'120',650],[4,'160',750],[4,'XXH',900],[6,'STD',650],[6,'XH',830],[6,'120',1030],[6,'160',1590],[6,'XXH',1790],
+// Carestream CR: the owner's Carestream chart (EXPOSURE CHART.xlsx, sheet CARESTREAM CR, column G), in both belts, same at every
+// density. 1.98: three cells corrected (24" XH and 14" Sch 40 copied from the wrong Fuji column; 6" XXH given the sheet's +30%).
+const crChart=[[2,'STD',234],[2,'XH',273],[2,'160',338],[2,'XXH',403],[3,'STD',481],[3,'XH',546],[3,'160',637],[3,'XXH',754],
+  [4,'STD',637],[4,'XH',741],[4,'120',845],[4,'160',975],[4,'XXH',1170],[6,'STD',845],[6,'XH',1080],[6,'120',1340],[6,'160',2070],[6,'XXH',2327],
   [8,'STD',980],[8,'XH',1400],[8,'120',1930],[8,'160',3240],[8,'XXS',2980],[10,'STD',1340],[10,'XH',1590],[10,'80',2070],[10,'120',3310],[10,'160',7200],[10,'XXH',5090],
   [12,'STD',1550],[12,'40',1690],[12,'XH',2050],[12,'80',3190],[12,'120',7020],[12,'160',15270],[12,'XXH',7020],
   [14,'STD',1770],[14,'40',2060],[14,'XH',2450],[14,'80',4540],[14,'120',10870],[14,'160',23660],[16,'STD',2230],[16,'XH',2930],[16,'80',7010],[16,'120',18160],[16,'160',46700],
@@ -60,7 +60,7 @@ const crRows=new Set();for(const [size,schedule,cs] of crChart){const t=data.tec
 assert.equal(crRows.size,56);assert.equal(Object.keys(C.CHART_EXPOSURES.cr).length,56);
 for(const t of data.techniques)if(!crRows.has(t))assert.equal(C.densityExposure(t,'cr',3),null,t.size+' '+t.schedule);
 for(const group of ['small','large'])assert.ok(data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
-assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'19s');
+assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'25s');
 // Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ÷3.2 nearest.
 assert.equal(C.internalSeconds('cr',49),6);assert.equal(C.offsetSeconds('cr',49),17);assert.equal(C.offsetSeconds('cr',48),16);
 assert.equal(C.internalSeconds('d5',49),5);assert.equal(C.offsetSeconds('d5',49),15);assert.equal(C.internalSeconds('d5',90),10);assert.equal(C.offsetSeconds('d5',90),28);

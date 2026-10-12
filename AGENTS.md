@@ -1,9 +1,19 @@
 # AGENTS.md — ShotTime
 
-## Field CR estimate — unreleased after 1.97
+## Carestream CR 1.98 — versionCode 120, 2026-10-12 (unreleased)
 
-The owner now explicitly authorizes using the printed chart and inferred PMTs to fit a field model. Read docs/CR-FIELD-MODEL.md and docs/CR-FIELD-FIT.json. New crfield option in both belts and Custom Shot uses independent physical coefficients fitted to all 56 chart entries, constrained PMTs in steps of 10, with no T200 dependency. It is an estimated effective gain curve, not measured scanner calibration or a calibrated pixel target. Whole-size holdout median error 11.3%, worst 44.5%; do not describe it as universally accurate or better than a manufacturer curve. crcal and film calculations stay unchanged. Field PMT storage is separate. No APK release or upload.
-
+Read docs/CR-CALIBRATED.md (1.98 section). Owner decisions after supplying the Carestream chart (EXPOSURE CHART.xlsx, sheet CARESTREAM CR):
+- Chart `cr` is that sheet: the printed Fuji ST-VI values with +30% on 2"–6", plus three corrected cells: 24" XH 6,390, 14" Sch 40 2,060, and 6" XXH 2,327 (the +30% the sheet missed). This supersedes the 1.97 "printed values" change below.
+- Calibrated CR (`crcal`) uses the chart only for its defaults:
+  - Each card starts at the band's chart-implied plate exposure: 2"–3" 4.3 R, 4"–8" 1.65 R, 10"+ 0.75 R (`CR_DOSE.bands`, `crStartDose`).
+  - The default H is 14.5 mm (`CR_DEFAULT_HVL_MM`). QSA's 13 mm stays as `CR_PUBLISHED_HVL_MM` for reference.
+  - The slider runs 0.5–6 R.
+  - Rows under 10 s show "Short shot: under 10 s".
+  - Custom Shot with a blank plate exposure and no reference shots at that PMT asks for a value.
+  - Reference shots still override the defaults.
+- Codex's CR field estimate (`crfield`, commit e98916f) is removed. Its PMT gain is not identifiable from the chart: scaling the inferred PMT steps ×0.5/×1/×2 refits with identical SSE. Saved belts fall back, `fieldPmt.*` keys stay unused, and Custom Shot presets load geometry only. docs/CR-FIELD-MODEL.md is kept as history.
+- The chart sheet names the scanner HPX-1/HPX-1 Plus in places and HPX-PRO in others; the owner has not confirmed which.
+- Not a signed release; no device check or physical validation.
 
 ## Carestream CR (calibrated) — 1.97, versionCode 119, 2026-10-11 (unreleased)
 

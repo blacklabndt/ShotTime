@@ -812,8 +812,7 @@
         "mx125",
         "ix50",
         "cr",
-        "crcal",
-        "crfield"
+        "crcal"
       ]
     },
     "large": {
@@ -825,8 +824,7 @@
         "t200",
         "ix80",
         "cr",
-        "crcal",
-        "crfield"
+        "crcal"
       ]
     }
   },
@@ -857,15 +855,11 @@
     },
     "cr": {
       "name": "Carestream CR",
-      "note": "Owner\u2019s Carestream CR Ci\u00b7s chart, used as given. Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
-    },
-    "crfield": {
-      "name": "Carestream CR (field estimate)",
-      "note": "Fitted to 56 field-chart entries with estimated PMT settings. Withheld sizes: median error 11.3%, worst 44.5%. Select your actual PMT in steps of 10. No calibrated pixel target. Internal and offset times retain the chart's approximate divisors."
+      "note": "Your Carestream CR chart (EXPOSURE CHART.xlsx), used as given except three corrected cells (24\" XS, 14\" Sch 40, 6\" XXH). Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
     },
     "crcal": {
       "name": "Carestream CR (calibrated)",
-      "note": "Physics: plate exposure (R) \u00d7 SFD\u00b2 \u00f7 Ir-192 output \u00d7 steel curve. Each pipe card has PMT and plate exposure sliders (0.5\u20132 R, starting at the published 1.0 R or what your reference shots imply). No chart values. Internal = time \u00f7 8, offset = time \u00f7 3."
+      "note": "Physics: plate exposure (R) \u00d7 SFD\u00b2 \u00f7 Ir-192 output \u00d7 steel curve (14.5 mm). Each pipe card has PMT and plate exposure sliders (0.5\u20136 R), starting at what your Carestream chart implies for its size band (2\"\u20133\" 4.3 R, 4\"\u20138\" 1.65 R, 10\"+ 0.75 R) or what your reference shots imply. Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
 }

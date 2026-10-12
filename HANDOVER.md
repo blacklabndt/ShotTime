@@ -1,6 +1,6 @@
 # ShotTime handover — 1.21.1 (versionCode 43)
 
-> **Newest first:** 1.97 / versionCode 119 (2026-10-11, unreleased) adds Carestream CR (calibrated). See AGENTS.md (top entry) and docs/CR-CALIBRATED.md. Older sections below are historical.
+> **Newest first:** 1.98 / versionCode 120 (2026-10-12, unreleased) restores the Carestream CR chart with fixes, starts calibrated CR from the chart's band exposures and removes the CR field estimate. Before that, 1.97 / versionCode 119 (2026-10-11, unreleased) adds Carestream CR (calibrated). See AGENTS.md (top entry) and docs/CR-CALIBRATED.md. Older sections below are historical.
 
 
 

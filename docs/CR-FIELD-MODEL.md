@@ -1,5 +1,7 @@
 # Field CR exposure estimate
 
+> **Removed in 1.98** at the owner's request (2026-10-12). Kept as history. A review showed its PMT gain law is not identifiable from the chart: rescaling the inferred PMT steps refits with identical error and a different gain, so the PMT slider changed times by an unsupported rule. Carestream CR (calibrated) replaces it.
+
 The owner authorized using the printed chart as field reference data and inferring PMT settings from its ranges on 2026-10-11. This supersedes the earlier prohibition on fitting that chart for this new, explicitly estimated option. The measured-calibration option and T200 remain unchanged.
 
 ## Formula
