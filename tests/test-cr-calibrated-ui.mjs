@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {loadApp} from './load-app.mjs';
-// Carestream CR (calibrated) in the app: plate exposure slider (1.0 R start, 0.5–2 R) per pipe card, PMT sliders,
+// Carestream CR (calibrated) in the app: plate exposure slider (1.0 R start, 0.5–3 R) per pipe card, PMT sliders,
 // reference shots and measured gain as suggestions only; print, Custom Shot, helper and persistence.
 const browser=await chromium.launch({executablePath:process.env.CHROME_BINARY});
 const html=await loadApp();
@@ -23,11 +23,12 @@ try{
   assert.match(await page.locator('#dose-4-note').textContent(),/^Starting point \(published 0\.8–1\.2 R, not verified for Flex HR\)$/);
   assert.ok(await row(12,'STD').locator('a.shot-timer-link').count()>0);
   let print=await browser.newPage();await print.setContent(await page.evaluate(()=>makePrintDocument()));assert.equal(await print.locator('td.time',{hasText:'—'}).count(),0);assert.equal(await print.locator('tbody tr').first().locator('td').first().textContent(),'1"PMT 351.00 R');await print.close();
-  // Sliders: PMT with the owner's ranges; plate exposure 0.5–2 R in 0.05 R steps, starting at 1.0 R.
+  // Sliders: PMT with the owner's ranges; plate exposure 0.5–3 R in 0.05 R steps, starting at 1.0 R.
   for(const [size,min,max,value] of [[1,20,50,35],[3,20,50,35],[4,30,60,45],[8,30,60,45],[10,40,70,55],[24,40,70,55]]){const s=page.locator('#pmt-'+size);assert.deepEqual([await s.getAttribute('min'),await s.getAttribute('max'),await s.inputValue(),await s.getAttribute('aria-label')],[String(min),String(max),String(value),'PMT for '+size+'-inch pipe']);}
-  const dose=page.locator('#dose-4');assert.deepEqual([await dose.getAttribute('min'),await dose.getAttribute('max'),await dose.getAttribute('step'),await dose.inputValue(),await dose.getAttribute('aria-label')],['0.5','2','0.05','1','Plate exposure in roentgen for 4-inch pipe']);
+  const dose=page.locator('#dose-4');assert.deepEqual([await dose.getAttribute('min'),await dose.getAttribute('max'),await dose.getAttribute('step'),await dose.inputValue(),await dose.getAttribute('aria-label')],['0.5','3','0.05','1','Plate exposure in roentgen for 4-inch pipe']);
   assert.equal(await page.locator('.dose-reset').first().isDisabled(),true);
   // Moving the plate exposure slider scales that size only, is saved, and survives a restart; Use suggested clears it.
+  await dose.fill('3');close(await secs(4),physics(.474,4.625,3));assert.equal(await page.locator('#dose-4-value').textContent(),'3.00');assert.equal(await dose.evaluate(n=>{n.value='3.5';return n.value;}),'3');
   await dose.fill('2');close(await secs(4),physics(.474,4.625,2));assert.equal(await page.locator('#dose-4-value').textContent(),'2.00');assert.equal(await page.locator('#dose-4-note').textContent(),'Your setting');
   close(await secs(3),physics(2*.216,3.625,1));await dose.dispatchEvent('change');
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.settings'))['dose.4']),2);
@@ -96,7 +97,8 @@ try{
   assert.equal(await page.locator('#custom-time').textContent(),'9s');assert.match(await page.locator('#custom-summary').textContent(),new RegExp('Carestream CR \\(calibrated\\) · PMT 40 · '+shotR.toFixed(2)+' R plate exposure \\(from reference shots\\)'));
   await page.locator('#custom-dose').fill('2');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),'15s');assert.match(await page.locator('#custom-summary').textContent(),/2\.00 R plate exposure \(entered\)/);
   await page.locator('#custom-dose').fill('');await page.locator('#custom-pmt').fill('47');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),'8s');assert.match(await page.locator('#custom-summary').textContent(),/1\.00 R plate exposure \(starting point\)/);
-  await page.locator('#custom-dose').fill('2.5');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/plate exposure from 0\.5 to 2 R/);
+  await page.locator('#custom-dose').fill('2.5');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),'19s');
+  await page.locator('#custom-dose').fill('3.5');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/plate exposure from 0\.5 to 3 R/);
   await page.locator('#custom-dose').fill('1.5');await page.locator('#custom-pmt').fill('x');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/PMT as a whole number/);
   await page.locator('#custom-pmt').fill('47');await page.evaluate(()=>{document.querySelector('#custom-shot details').open=true;});await page.locator('#custom-preset-name').fill('CR 47');await page.locator('#custom-save').click();assert.match(await page.locator('#custom-save-status').textContent(),/Setup saved/);
   await page.reload();await page.locator('#app-menu-button').click();await page.locator('#nav-custom').click();await page.evaluate(()=>{document.querySelector('#custom-shot details').open=true;});

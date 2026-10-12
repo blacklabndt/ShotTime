@@ -7,7 +7,7 @@ Prepared 2026-10-11. This is the independent CR calculation the owner asked for,
 - Its saved `factor.cr70` and `weld.cr70.*` values stay in storage untouched but are no longer used.
 - Custom Shot setups saved with it stay listed as "(CR Formula removed)". They load their steel and SFD only and ask for a film.
 
-The calculation contains **no chart numbers**. Its one target, the plate exposure, starts at a published value (1.0 R) that the owner adjusts with a slider (0.5–2 R) or replaces with reference shots.
+The calculation contains **no chart numbers**. Its one target, the plate exposure, starts at a published value (1.0 R) that the owner adjusts with a slider (0.5–3 R) or replaces with reference shots.
 
 **Chart (`cr`), 1.97, at the owner's request.** The printed chart is titled "FUJI CR ST-VI CURIE-SECOND CHART", although the plates used are Carestream Flex HR.
 - 2"–6" now use the printed values. The workbook's ×1.3 is removed; 6" XXH was already printed.
@@ -23,7 +23,7 @@ Ci·s = R × (SFD in m)² × 3600 ÷ Γ × 2^(total steel mm ÷ H)
 time = Ci·s ÷ current activity × CR film factor × size/schedule factor
 ```
 
-- **R** is the plate exposure target in roentgen, set per pipe size with a slider from 0.5 to 2 R in 0.05 R steps.
+- **R** is the plate exposure target in roentgen, set per pipe size with a slider from 0.5 to 3 R in 0.05 R steps.
   - The default is the value the owner's reference shots imply at that card's PMT (kept within the slider range), or else the starting point.
   - **Starting point: 1.0 R.** Jelfs (QSA Global), "Optimized Digital Radiography Using Co-60, Ir-192 and Se-75 Sources", NDE 2009, found "a dose of 800mR to 1.2R on the imaging plates delivered acceptable image quality". That study used high- and mid-performance plates from several manufacturers on a SENTINEL Vision HR scanner, with optimised but unstated PMT. It is **not verified for Flex HR / HPX-1**, and the app labels it so.
   - The required plate exposure depends on PMT: higher gain needs less exposure, with more noise. That is why the slider is per card, beside the PMT slider.
@@ -34,7 +34,7 @@ time = Ci·s ÷ current activity × CR film factor × size/schedule factor
 
 ### Reference shots
 
-Each reference shot shows the plate exposure it delivered by the same physics: `R = activity × time × Γ ÷ 3600 × 2^(−steel ÷ H) ÷ SFD²`. At a card's PMT, usable shots are combined by geometric mean into the suggested R, and the spread between them is kept. Shots at another PMT are converted as below. When the shots cannot cover a PMT, the card falls back to 1.0 R and says why. When they imply more than 2 R or less than 0.5 R, the slider stops at the limit and says what they imply.
+Each reference shot shows the plate exposure it delivered by the same physics: `R = activity × time × Γ ÷ 3600 × 2^(−steel ÷ H) ÷ SFD²`. At a card's PMT, usable shots are combined by geometric mean into the suggested R, and the spread between them is kept. Shots at another PMT are converted as below. When the shots cannot cover a PMT, the card falls back to 1.0 R and says why. When they imply more than 3 R or less than 0.5 R, the slider stops at the limit and says what they imply.
 
 ### Scanner (PMT, pixel value)
 
@@ -67,12 +67,12 @@ With two or more shots, the panel predicts each reference shot from the others a
   - **Steel curve and pixel target.**
 
   The panel's status line names the basis: number of shots, gain PMTs, H and its source, and the target.
-- **Results:** each pipe card has a PMT slider and a plate exposure slider (0.5–2 R, saved per size as `dose.<size>`; "Use suggested" clears it). The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
+- **Results:** each pipe card has a PMT slider and a plate exposure slider (0.5–3 R, saved per size as `dose.<size>`; "Use suggested" clears it). The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
   - The default PMT is that of the reference shot nearest in SFD whose PMT falls inside the range; otherwise the middle of the range.
   - "Use reference PMT" restores the default.
   - Every row has a time and timer links. The note under the plate exposure slider says where its value comes from: your setting, reference shots (and whether gain-converted), or the starting point with the reason.
 - **Print:** the pipe cell shows `PMT nn` and the plate exposure (`1.00 R`) under the size for calibrated-CR rows. It is not a new column.
-- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–2) replace target density. A blank plate exposure uses the reference shots at that PMT, else 1.0 R; the summary says which. Saved setups keep both.
+- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–3) replace target density. A blank plate exposure uses the reference shots at that PMT, else 1.0 R; the summary says which. Saved setups keep both.
 - **Factors:** CR film-wide and size/schedule factors (`factor.crcal`, `weld.crcal.<size>.<schedule>`) still multiply the result. The factor helper refuses calibrated CR and points to reference shots instead.
 
 ## Storage and migration

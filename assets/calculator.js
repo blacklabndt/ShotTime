@@ -111,8 +111,8 @@
   // Plate exposure target (R at the plate). Ci·s = R × (SFD m)² × 3600 ÷ Γ × 2^(steel mm ÷ H), Γ = 0.48 R·m²/(Ci·h)
   // (QSA Global, Ir-192). Starting point 1.0 R: Jelfs (QSA), NDE 2009, found 0.8–1.2 R at the plate gave
   // acceptable weld images with high/mid-performance plates; different scanner, plates and PMT, so unverified for
-  // Flex HR / HPX-1. The owner's slider range is 0.5–2.0 R.
-  const CR_DOSE=Object.freeze({startR:1,minR:.5,maxR:2,stepR:.05,gamma:.48});
+  // Flex HR / HPX-1. The owner's slider range is 0.5–3.0 R.
+  const CR_DOSE=Object.freeze({startR:1,minR:.5,maxR:3,stepR:.05,gamma:.48});
   const IN_M=.0254,K_PER_R=IN_M*IN_M*3600/CR_DOSE.gamma;
   function validDose(r){return typeof r==='number'&&Number.isFinite(r)&&r>=CR_DOSE.minR-1e-9&&r<=CR_DOSE.maxR+1e-9;}
   function crHvl(cal){return cal&&Number.isFinite(cal.hvlMm)?cal.hvlMm:CR_PUBLISHED_HVL_MM;}

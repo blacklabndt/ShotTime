@@ -8,7 +8,7 @@ Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target
 
 ## Carestream CR (calibrated) — 1.97
 
-Film choice **Carestream CR (calibrated)** calculates from physics, with no chart values: Ci·s = plate exposure (R) × SFD² ÷ Ir-192 output × 2^(total steel mm ÷ H). Each pipe card has a plate exposure slider (0.5–2 R), starting at the published 1.0 R or at what your reference shots imply. Enter shots under Source & film → Carestream CR calibration. Each pipe card has a PMT slider (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70), and Custom Shot has a PMT field. The chart choice now uses the printed values (2"–6" without the ×1.3; 24" XH 6,390 and 14" Sch 40 2,060 corrected). CR Formula (70%) was removed in 1.97; Custom Shot setups saved with it stay listed and load their steel and SFD only. Details and what to measure: docs/CR-CALIBRATED.md.
+Film choice **Carestream CR (calibrated)** calculates from physics, with no chart values: Ci·s = plate exposure (R) × SFD² ÷ Ir-192 output × 2^(total steel mm ÷ H). Each pipe card has a plate exposure slider (0.5–3 R), starting at the published 1.0 R or at what your reference shots imply. Enter shots under Source & film → Carestream CR calibration. Each pipe card has a PMT slider (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70), and Custom Shot has a PMT field. The chart choice now uses the printed values (2"–6" without the ×1.3; 24" XH 6,390 and 14" Sch 40 2,060 corrected). CR Formula (70%) was removed in 1.97; Custom Shot setups saved with it stay listed and load their steel and SFD only. Details and what to measure: docs/CR-CALIBRATED.md.
 
 ## Current calculation
 

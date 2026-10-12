@@ -23,14 +23,14 @@ assert.equal(cal.shots.length,1);assert.equal(cal.gain.length,1);assert.equal(ca
 assert.deepEqual(C.crCleanCalibration(null),{shots:[],gain:[],hvlMm:null,targetPixel:null,dropped:0});
 assert.equal(C.crCleanCalibration({shots:Array(60).fill(shot())}).shots.length,60);
 
-// Plate exposure model: Ci·s = R × (SFD m)² × 3600 ÷ 0.48 × 2^(steel mm ÷ H). Starting point 1.0 R; slider 0.5–2 R.
-assert.deepEqual({...C.CR_DOSE},{startR:1,minR:.5,maxR:2,stepR:.05,gamma:.48});
+// Plate exposure model: Ci·s = R × (SFD m)² × 3600 ÷ 0.48 × 2^(steel mm ÷ H). Starting point 1.0 R; slider 0.5–3 R.
+assert.deepEqual({...C.CR_DOSE},{startR:1,minR:.5,maxR:3,stepR:.05,gamma:.48});
 cal=C.crCleanCalibration({});const sfdM=10*.0254;
 close(C.crDoseExposure(.5,10,1,cal),1*sfdM*sfdM*3600/.48*Math.pow(2,.5*25.4/13));
 close(C.crDoseExposure(.5,10,2,cal)/C.crDoseExposure(.5,10,1,cal),2);close(C.crDoseExposure(.5,20,1,cal)/C.crDoseExposure(.5,10,1,cal),4);
 close(C.crDoseExposure(.5+13/25.4,10,1,cal)/C.crDoseExposure(.5,10,1,cal),2);close(C.crDoseExposure(1,10,1,cal),C.crDoseExposure(2*.5,10,1,cal));
 close(C.crDoseExposure(.5+16/25.4,10,1,C.crCleanCalibration({hvlMm:16}))/C.crDoseExposure(.5,10,1,C.crCleanCalibration({hvlMm:16})),2);
-for(const r of [.49,2.01,0,NaN,'1',null,undefined])assert.throws(()=>C.crDoseExposure(.5,10,r,cal),/0\.5 to 2 R/);for(const r of [.5,1,2])assert.ok(C.validDose(r));
+for(const r of [.49,3.01,0,NaN,'1',null,undefined])assert.throws(()=>C.crDoseExposure(.5,10,r,cal),/0\.5 to 3 R/);for(const r of [.5,1,2,2.5,3])assert.ok(C.validDose(r));
 const ref4=data.techniques.find(t=>t.size===4&&t.schedule==='40 / STD');
 close(C.densityExposure(ref4,'crcal',3,{doseR:1,calibration:cal}),C.crDoseExposure(2*.237,4.625,1,cal));close(C.densityExposure(ref4,'crcal',2,{doseR:1.5,calibration:cal}),1.5*C.crDoseExposure(2*.237,4.625,1,cal));
 assert.throws(()=>C.densityExposure(ref4,'crcal',3));assert.throws(()=>C.densityExposure(ref4,'crcal',3,{calibration:cal}));
@@ -102,4 +102,4 @@ finally{Object.assign(C.CHART_EXPOSURES.cr,savedChart);savedT200.forEach((v,i)=>
 assert.equal(C.usesDensity('crcal'),false);assert.equal(C.internalSeconds('crcal',49),6);assert.equal(C.offsetSeconds('crcal',49),17);
 assert.ok(C.CUSTOM_FILMS.includes('crcal'));for(const g of ['small','large'])assert.ok(data.groups[g].films.includes('crcal'));
 assert.equal(data.films.crcal.name,'Carestream CR (calibrated)');
-console.log('PASS: 1.96 film outputs unchanged and CR chart changed only to printed values (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (1.0 R start, 0.5–2 R, inverse square, steel, activity), shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');
+console.log('PASS: 1.96 film outputs unchanged and CR chart changed only to printed values (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (1.0 R start, 0.5–3 R, inverse square, steel, activity), shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');
