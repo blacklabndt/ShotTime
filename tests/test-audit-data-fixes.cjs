@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),M=require('../assets/notes-model'),J=require('../assets/notes-jobs'),S=require('../assets/notes-storage'),V=require('../assets/notes-voice'),C=require('../assets/code-calculator');
+// Exact inclusive IQI boundaries remain equivalent after decimal arithmetic.
+for(const bound of [6.4,9.5,12.7,19,25.4,38.1,50.8,63.5,101.6,152.4,203.2,254,304.8,406.4,508])for(const unit of ['mm','in']){
+ const scale=unit==='mm'?1:25.4,wall=Number((bound-.3).toFixed(8)),iqi=C.calculate({id:'b313-normal',unit,thickness:String(wall/scale),reinforcement:String(.3/scale)}).iqi;
+ assert.equal(iqi?.source,C.asmeIqi(bound).source,'boundary '+bound+' '+unit);assert.equal(iqi?.film,C.asmeIqi(bound).film);
+ const above=C.calculate({id:'b313-normal',unit,thickness:String((wall+.001)/scale),reinforcement:String(.3/scale)}).iqi;assert.equal(above?.source,C.asmeIqi(bound+.001)?.source);
+}
+function fresh(){let l=J.createJob(J.empty(),{id:'a',name:'A',lsd:'Site'});return J.createDailyList(l,'a',{id:'day',date:'2026-10-07'});}
+for(const kind of ['xf','mt']){let lib=fresh();const add=(list,id,cn,count)=>M.apply(list,{id,type:kind==='xf'?'addBatch':'addMt',cn,count,size:'2',schedule:'STD',fittingType:'Plate'});for(const [id,cn]of [['x','1'],['y','2']])lib=J.mutate(lib,'day',l=>add(l,id,cn,1000));const before=J.workingList(lib,'day'),after=add(before,'z','1',1);assert.ok(after.history.length<before.history.length);assert.equal(J.duplicateCNs(lib,before,after).length,1);}
+let lib=fresh();lib=J.updateJob(lib,'a',{cnFormat:{prefix:'S',separator:':',width:4}});lib=J.mutate(lib,'day',l=>M.applyGroup(l,[{type:'addBatch',cn:'12A',count:1,size:'2',schedule:'STD'},{type:'addMt',cn:'12A',count:1,size:'2',fittingType:'Plate'}],'suffix'));
+// Upgrade old saved rows before a future-only change, preserving visible labels.
+let old=structuredClone(lib);old.schemaVersion=6;for(const l of old.lists)for(const s of [l,...l.history])for(const r of [...s.rows,...s.mtRows])delete r.cnSourceFormat;
+let raw=JSON.stringify(old);lib=S.load({getItem:()=>raw}).library;assert.equal(lib.schemaVersion,7);assert.equal(raw,JSON.stringify(old));
+lib=J.updateJob(lib,'a',{cnFormat:{prefix:'B',separator:'-',width:0}},{existing:false});assert.equal(lib.lists[0].rows[0].cn,'S:0012A');const before=J.workingList(lib,'day'),after=M.apply(before,{id:'dup',type:'addBatch',cn:'12A',count:1,size:'2',schedule:'STD'});assert.equal(J.duplicateCNs(lib,before,after).length,1);
+let reformatted=J.updateJob(lib,'a',{cnFormat:{prefix:'Q',separator:'/',width:2}},{existing:true});assert.equal(reformatted.lists[0].rows[0].cn,'Q/0012A');assert.equal(reformatted.lists[0].mtRows[0].cn,'Q/0012A');
+lib=J.createJob(lib,{id:'b',name:'B',lsd:'Other'});lib=J.createDailyList(lib,'b',{id:'dest',date:'2026-10-07'});lib=J.bulkCNs(lib,{jobId:'a',selection:[{listId:'day',cn:'S:0012A'}],action:'move',destinationId:'dest',numbering:'renumber'}).library;assert.equal(lib.lists[1].rows[0].cn,'CN-12A');assert.equal(lib.lists[1].mtRows[0].cn,'CN-12A');
+let voiceLib=fresh();const session={id:'long',listId:'day',state:'stopped',events:Array.from({length:500},()=>({text:'this unrecognized statement describes a spool and needs review'}))};voiceLib=J.mutate(voiceLib,'day',l=>V.reconcile(l,session).list);assert.ok(voiceLib.lists[0].pending.length>1);assert.ok(voiceLib.lists[0].pending.every(p=>p.text.length<=19000));assert.equal(voiceLib.lists[0].pending.map(p=>p.text).join(' '),V.normalize(session.events.map(e=>e.text).join(' ')));assert.equal(V.reconcile(voiceLib.lists[0],session).changed,false);J.validate(voiceLib);
+console.log('PASS: IQI arithmetic boundaries, trimmed-history duplicates, suffix identity migration/format/move, bounded offline recovery and replay');

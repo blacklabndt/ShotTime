@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';import {chromium} from 'playwright';import {loadApp} from './load-app.mjs';
+const b=await chromium.launch({executablePath:process.env.CHROME_BINARY});try{
+ const p=await b.newPage({viewport:{width:360,height:800}}),html=await loadApp();await p.route('https://shottime.local/**',r=>r.fulfill({body:html,contentType:'text/html'}));await p.goto('https://shottime.local/');await p.evaluate(()=>{const M=ShotNotesModel;let l=M.createList({id:'float',date:'2026-10-04',lsd:'Floating recorder',start:1});l=M.apply(l,{id:'rows',type:'addBatch',cn:'CN-1',count:30,size:'2',schedule:'80',welder:'DD'});ShotNotesStorage.save(localStorage,ShotNotesJobs.fromLegacy({schemaVersion:4,lists:[l],selectedListId:l.id}));});await p.reload();
+ const notes=async()=>{await p.locator('#app-menu-button').click();await p.locator('#nav-notes').click();};await notes();await p.evaluate(()=>ShotNotesUI.receiveVoice(JSON.stringify({id:'float-voice',listId:'float',available:true,state:'stopped',events:[]})));
+ const mic=p.locator('#notes-microphone');assert.equal(await mic.count(),1);assert.equal(await p.locator('.notes-recorder #notes-microphone').count(),0);
+ for(const width of [320,393,600]){await p.setViewportSize({width,height:800});await p.evaluate(()=>scrollTo(0,document.body.scrollHeight));const box=await mic.boundingBox(),last=await p.locator('[data-weld-row]').last().boundingBox();assert.ok(Math.abs(box.x+box.width/2-width/2)<1);assert.ok(box.y+box.height<800);assert.ok(last.y+last.height<box.y);assert.ok(await mic.isEnabled());}
+ await p.setViewportSize({width:393,height:852});await p.evaluate(()=>scrollTo(0,document.body.scrollHeight));await p.screenshot({path:'build/floating-recorder-test37.png'});
+ await p.evaluate(()=>ShotNotesUI.receiveVoice(JSON.stringify({id:'float-review',listId:'float',available:true,state:'stopped',events:[{text:'CN-2 has some welds'}]})));assert.ok(await mic.isDisabled());
+ await p.evaluate(()=>scrollTo(0,0));await p.locator('#app-menu-button').click();await p.locator('#nav-calculator').click();assert.equal(await mic.isVisible(),false);await notes();assert.equal(await mic.isVisible(),true);
+ console.log('PASS: single centred floating recorder, long-list clearance at 3 widths, review lock and calculator hiding');
+}finally{await b.close();}

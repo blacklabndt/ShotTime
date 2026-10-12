@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'),M=require('../assets/notes-model.js'),S=require('../assets/notes-storage.js');
+let l=M.createList({id:'spacing',date:'2026-10-04',lsd:'Test',start:1});
+for(const [id,cn,count] of [['a','CN-1',2],['b','CN-2',1],['c','CN-1',1]])l=M.apply(l,{id,type:'addBatch',cn,count,size:'2',schedule:'80',welder:'DD'});
+l=M.apply(l,{id:'m',type:'addMt',cn:'CN-2',count:2,size:'1',schedule:'3M',fittingType:'TOL',welder:'DD'});
+l=M.apply(l,{id:'n',type:'addMt',cn:'CN-3A',count:1,size:'1',schedule:'3M',fittingType:'WOL',welder:'DD'});
+const lines=s=>s.slice(1).trimEnd().split('\r\n').map(x=>JSON.parse('['+x+']'));
+const old=S.toCSV(l.rows,l.mtRows,l.mtFormat),before=JSON.stringify(l),order={xf:['spacer','number','cn','welder','size','schedule'],mt:['number','cn','welder','size','schedule','spacer']};
+const spaced=lines(S.toCSV(l.rows,l.mtRows,l.mtFormat,order,true));
+assert.equal(spaced.length,7);assert.equal(spaced[1][2],'CN-1');assert.equal(spaced[1][8],'CN-2');assert.equal(spaced[2][1],'XF-2');assert.equal(spaced[2][7],'MT-2');assert.ok(spaced[3].every(x=>x===''));assert.equal(spaced[4][2],'CN-2');assert.equal(spaced[4][8],'CN-3A');assert.ok(spaced[5].every(x=>x===''));assert.equal(spaced[6][1],'XF-4');assert.ok(spaced.every(r=>r.length===13));
+// Each table inserts its own gaps, even when the other table still has data.
+const different=lines(S.toCSV(l.rows.slice(0,3),[l.mtRows[0],l.mtRows[2]],l.mtFormat,undefined,true));
+assert.equal(different[2][1],'XF-2');assert.ok(different[2].slice(6).every(x=>x===''));assert.ok(different[3].slice(0,5).every(x=>x===''));assert.equal(different[3][6],'CN-3A');
+assert.deepEqual(spaced.slice(1).map(r=>r[1]).filter(Boolean),['XF-1','XF-2','XF-3','XF-4']);
+assert.deepEqual(spaced.slice(1).map(r=>r[7]).filter(Boolean),['MT-1','MT-2','MT-3']);
+assert.equal(JSON.stringify(l),before);assert.equal(S.toCSV(l.rows,l.mtRows,l.mtFormat,undefined,false),old);
+assert.equal(lines(S.toCSV([],l.mtRows,l.mtFormat,undefined,true)).filter(r=>r.every(x=>x==='')).length,1);
+assert.equal(lines(S.toCSV(l.rows,[],l.mtFormat,undefined,true)).filter(r=>r.every(x=>x==='')).length,2);
+assert.equal(lines(S.toCSV([],[],l.mtFormat,undefined,true)).length,1);
+l.csvSpoolSpacing=true;const memory={getItem:()=>memory.value,setItem:(k,v)=>memory.value=v};S.save(memory,require('../assets/notes-jobs').fromLegacy({schemaVersion:4,lists:[l],selectedListId:l.id}));assert.equal(S.load(memory).library.lists[0].csvSpoolSpacing,true);assert.equal(M.undo(l).csvSpoolSpacing,true);delete l.csvSpoolSpacing;assert.equal(M.validateList(l),true);l.csvSpoolSpacing='yes';assert.throws(()=>M.validateList(l));
+console.log('PASS: spool CSV transitions, independent table gaps, custom columns, independent XF/MT counts, no renumbering, persistence and undo');

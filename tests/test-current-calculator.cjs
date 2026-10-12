@@ -22,7 +22,7 @@ let correctedRows=0;for(const o of historical.techniques){const t=find(o.size,o.
 assert.equal(correctedRows,17);assert.ok(data.techniques.every(t=>!(t.wall in corrected)));assert.ok(data.techniques.every(t=>Object.keys(t).join()==='size,schedule,wall,sfd,group'));assert.equal(C.STEEL_HVL_MM,12.1);
 for(const [group,r] of [['small',ref3],['large',ref4]])assert.deepEqual(C.REFERENCE_GEOMETRY[group],{wall:r.wall,sfd:r.sfd});
 // Large films: calculator targets on 4-inch STD at 26 Ci.
-const large={d5:[11,15,19,23,27],t200:[14,18,22,25.5,29],ix80:[13,18,23,28,33]};
+const large={d5:[11,15,19,23,27],t200:[16.8,21.6,26.4,30.6,34.8],ix80:[13,18,23,28,33]};
 for(const [film,times] of Object.entries(large))C.DENSITIES.forEach((d,i)=>close(C.seconds(C.densityExposure(ref4,film,d),26),times[i]));
 // Small films: large partner x published Ir-192 ratio at the same geometry and every density (same-hanger pairs).
 const small={d4:['d5',3/1.5],mx125:['t200',2.8/1.7],ix50:['ix80',55/30]};
@@ -47,21 +47,26 @@ for(const film of ['d4','d5','ix80'])for(const t of [ref3,ref4].filter(t=>data.g
   close(C.exposureAtDensity(t,film,2.75),Math.sqrt(C.densityExposure(t,film,2.5)*C.densityExposure(t,film,3)));assert.ok(C.exposureAtDensity(t,film,2.7)>C.densityExposure(t,film,2.5)&&C.exposureAtDensity(t,film,2.7)<C.densityExposure(t,film,3));}
 for(const d of [1.99,4.01,NaN])assert.throws(()=>C.exposureAtDensity(ref3,'d4',d));
 assert.throws(()=>C.densityExposure(ref3,'d4',4.5));assert.throws(()=>C.densityExposure(ref4,'d4',3));assert.throws(()=>C.densityExposure(ref3,'d5',3));
-// Carestream CR: the owner's chart (EXPOSURE_CHART.xlsx, sheet CARESTREAM CR, column G) exactly, in both belts, same at every density.
-const crChart=[[2,'STD',234],[2,'XH',273],[2,'160',338],[2,'XXH',403],[3,'STD',481],[3,'XH',546],[3,'160',637],[3,'XXH',754],
-  [4,'STD',637],[4,'XH',741],[4,'120',845],[4,'160',975],[4,'XXH',1170],[6,'STD',845],[6,'XH',1080],[6,'120',1340],[6,'160',2070],[6,'XXH',1790],
+// Carestream CR: the owner's printed chart (titled Fuji CR ST-VI) exactly, in both belts, same at every density. 1.97: 2"-6"
+// are the printed values (the workbook's x1.3 removed), 14" Sch 40 and 24" XH corrected from the printed chart.
+const crChart=[[2,'STD',180],[2,'XH',210],[2,'160',260],[2,'XXH',310],[3,'STD',370],[3,'XH',420],[3,'160',490],[3,'XXH',580],
+  [4,'STD',490],[4,'XH',570],[4,'120',650],[4,'160',750],[4,'XXH',900],[6,'STD',650],[6,'XH',830],[6,'120',1030],[6,'160',1590],[6,'XXH',1790],
   [8,'STD',980],[8,'XH',1400],[8,'120',1930],[8,'160',3240],[8,'XXS',2980],[10,'STD',1340],[10,'XH',1590],[10,'80',2070],[10,'120',3310],[10,'160',7200],[10,'XXH',5090],
   [12,'STD',1550],[12,'40',1690],[12,'XH',2050],[12,'80',3190],[12,'120',7020],[12,'160',15270],[12,'XXH',7020],
-  [14,'STD',1770],[14,'40',1770],[14,'XH',2450],[14,'80',4540],[14,'120',10870],[14,'160',23660],[16,'STD',2230],[16,'XH',2930],[16,'80',7010],[16,'120',18160],[16,'160',46700],
-  [20,'STD',3140],[20,'40',5830],[20,'XH',4490],[20,'80',16550],[20,'120',55220],[24,'STD',4520],[24,'40',9930],[24,'80',36050],[24,'XH',85610]];
+  [14,'STD',1770],[14,'40',2060],[14,'XH',2450],[14,'80',4540],[14,'120',10870],[14,'160',23660],[16,'STD',2230],[16,'XH',2930],[16,'80',7010],[16,'120',18160],[16,'160',46700],
+  [20,'STD',3140],[20,'40',5830],[20,'XH',4490],[20,'80',16550],[20,'120',55220],[24,'STD',4520],[24,'40',9930],[24,'80',36050],[24,'XH',6390]];
 const crRows=new Set();for(const [size,schedule,cs] of crChart){const t=data.techniques.find(t=>t.size===size&&C.matchesSchedule(t,schedule));assert.ok(t&&C.withinSteelRange(t),size+' '+schedule);crRows.add(t);
   for(const d of C.DENSITIES)assert.equal(C.densityExposure(t,'cr',d),cs);assert.equal(C.exposureAtDensity(t,'cr',2.7),cs);}
 assert.equal(crRows.size,56);assert.equal(Object.keys(C.CHART_EXPOSURES.cr).length,56);
 for(const t of data.techniques)if(!crRows.has(t))assert.equal(C.densityExposure(t,'cr',3),null,t.size+' '+t.schedule);
 for(const group of ['small','large'])assert.ok(data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
-assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'25s');
-// Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ×1.15÷4 rounded up.
+assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'19s');
+// Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ÷3.2 nearest.
 assert.equal(C.internalSeconds('cr',49),6);assert.equal(C.offsetSeconds('cr',49),17);assert.equal(C.offsetSeconds('cr',48),16);
-assert.equal(C.internalSeconds('d5',49),5);assert.equal(C.offsetSeconds('d5',49),15);assert.equal(C.internalSeconds('d5',90),10);assert.equal(C.offsetSeconds('d5',90),26);
+assert.equal(C.internalSeconds('d5',49),5);assert.equal(C.offsetSeconds('d5',49),15);assert.equal(C.internalSeconds('d5',90),10);assert.equal(C.offsetSeconds('d5',90),28);
+// Catch applying the CR divisor to films, retaining the old multiplier, or rounding the shot first.
+for(const film of ['d4','d5','mx125','t200','ix50','ix80']){
+  for(const [shot,want] of [[0,0],[32,10],[32.01,10],[33.59,10],[33.6,11],[49,15],[90,28]])assert.equal(C.offsetSeconds(film,shot),want,film+' offset for '+shot);
+}
 for(const s of ['','0','-1','1e3','NaN','1000'])assert.equal(C.parseActivity(s),null);assert.equal(C.parseActivity('26,5'),26.5);assert.equal(C.timeLabel(.1),'0s');assert.equal(C.timeLabel(59.5),'1m 0s');assert.equal(C.timeLabel(3599.5),'1h 0m 0s');assert.equal(C.decay(26,'2026-09-29','2026-09-29'),26);assert.equal(C.decay(26,'2026-09-30','2026-09-29'),null);assert.equal(C.dayNumber('2026-02-30'),null);
 console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation; Carestream CR chart (56 rows) in both belts.`);

@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'),J=require('../assets/notes-jobs'),M=require('../assets/notes-model');
+let lib=J.createJob(J.empty(),{id:'j',name:'Client',lsd:'Site'});lib=J.createDailyList(lib,'j',{id:'a',date:'2026-10-01'});lib=J.createDailyList(lib,'j',{id:'b',date:'2026-10-02'});
+const add=(l,cn,id='add')=>M.apply(l,{id,type:'addBatch',cn,count:2,size:'2',schedule:'STD'});
+lib=J.mutate(lib,'a',l=>add(l,'CN-007'));
+let before=J.workingList(lib,'b'),after=add(before,'CN-7','other');
+assert.equal(J.duplicateCNs(lib,before,after)[0].dates[0],'2026-10-01');
+for(const cn of ['?','CN-7A','CN-8'])assert.equal(J.duplicateCNs(lib,before,add(before,cn)).length,0);
+assert.equal(J.duplicateCNs(lib,before,before).length,0);
+lib=J.createJob(lib,{id:'other',name:'Other',lsd:'Other'});lib=J.createDailyList(lib,'other',{id:'c',date:'2026-10-02'});before=J.workingList(lib,'c');assert.equal(J.duplicateCNs(lib,before,add(before,'CN-7')).length,0);
+console.log('PASS duplicate CN scope, numeric padding, placeholders, suffixes and grouped additions');
+
+const V=require('../assets/notes-voice');
+let voiceLib=J.createJob(J.empty(),{id:'v',name:'Voice',lsd:'Site'});voiceLib=J.createDailyList(voiceLib,'v',{id:'day',date:'2026-10-06'});
+const session={id:'dup',listId:'day',state:'stopped',events:[{text:'CN-12 has two 2 inch STD welds. CN-12 has one 2 inch STD weld.'}]};
+const guarded=V.reconcile(J.workingList(voiceLib,'day'),session,null,(before,after)=>{if(J.duplicateCNs(voiceLib,before,after).length){const e=Error('Duplicate CN');e.duplicateCN=true;throw e;}});
+assert.equal(guarded.list.rows.length,2);assert.equal(guarded.list.nextSequence,3);assert.equal(guarded.list.pending[0].duplicateCN,true);
+const replay=V.reconcile(guarded.list,session);assert.equal(replay.changed,false);assert.equal(replay.list.pending.length,1);
+const extra=add(guarded.list,'CN-20','new');const edited=M.apply(extra,{id:'edit',type:'updateRows',rowIds:[extra.rows.at(-1).id],patch:{cn:'CN-12'}});
+assert.equal(J.duplicateCNs(voiceLib,extra,edited).length,1);assert.equal(J.duplicateCNs(voiceLib,edited,M.undo(edited),{undo:true}).length,0);
+console.log('PASS: same-session voice duplicate deferral/replay, changed CN and undo');

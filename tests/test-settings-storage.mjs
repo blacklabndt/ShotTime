@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';import assert from 'node:assert/strict';import {chromium} from 'playwright';
-const root=new URL('../',import.meta.url);let html=await fs.readFile(new URL('assets/index.html',root),'utf8');for(const [m,f] of [['/*__TECHNIQUES__*/','techniques.json'],['/*__CALCULATOR__*/','calculator.js']]){const x=await fs.readFile(new URL('assets/'+f,root),'utf8');html=html.replace(m,()=>x);}
+import {loadApp} from './load-app.mjs';const html=await loadApp();
 const browser=await chromium.launch({executablePath:process.env.CHROME_BINARY,args:['--no-sandbox']});const errors=[];
 async function open(seed){const context=await browser.newContext();await context.route('https://shottime.local/**',r=>r.fulfill({body:html,contentType:'text/html'}));if(seed)await context.addInitScript(s=>{if(localStorage.getItem('seeded'))return;localStorage.setItem('seeded','1');localStorage.setItem('shottime.settings',s);},JSON.stringify(seed));const page=await context.newPage();page.on('pageerror',e=>errors.push(String(e)));await page.goto('https://shottime.local/');return page;}
 const stored=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.settings')));
@@ -8,11 +8,11 @@ const factorsAt=page=>page.evaluate(()=>({...factors}));
 let page=await open({'source':{mode:'manual',activity:26},'film.small':'d4','factor.baseline-six-v1.3.ix50':2,'factor.agfa-densities-v1.3.d4':1.3,'weld.original-adjusted-v3.3.ix50.3.40 / STD':2});
 assert.ok(Object.values(await factorsAt(page)).every(v=>v===1));assert.equal(await page.evaluate(()=>activeCi),null);assert.equal(await page.locator('#film-small').inputValue(),'ix50');
 // Film factors are saved per density as factor.<density>.<film>, with the schema version, and survive reload.
-await page.locator('#setup-panel>summary').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;});
+await page.locator('#edit-source').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;});
 const set=[['2','d4','1.3'],['2.5','ix50','1.4'],['3','d5','0.5'],['3.5','mx125','2'],['4','t200','1.5']];
 for(const [density,film,value] of set){await page.locator('#target-density').selectOption(density);await page.locator('#factor-'+film).fill(value);await page.locator('#calibration-form button[type="submit"]').click();assert.equal(await page.locator('#calibration-error').textContent(),'');}
 let record=await stored(page);assert.equal(record.schemaVersion,2);for(const [density,film,value] of set)assert.equal(record['factor.'+density+'.'+film],Number(value));assert.ok(!Object.keys(record).some(k=>/densities-v1|baseline-six|original-adjusted|migrated/.test(k)));
-await page.locator('#close-sheet').click();await page.reload();await page.locator('#setup-panel>summary').click();for(const [density,film,value] of set){await page.locator('#target-density').selectOption(density);assert.equal(await page.locator('#factor-'+film).inputValue(),value);assert.equal(Object.values(await factorsAt(page)).filter(v=>v!==1).length,1);}
+await page.locator('#close-sheet').click();await page.reload();await page.locator('#edit-source').click();for(const [density,film,value] of set){await page.locator('#target-density').selectOption(density);assert.equal(await page.locator('#factor-'+film).inputValue(),value);assert.equal(Object.values(await factorsAt(page)).filter(v=>v!==1).length,1);}
 // An out-of-range edit names the film and changes nothing.
 await page.evaluate(()=>{document.querySelector('.settings').open=true;});await page.locator('#factor-d4').fill('0.05');await page.locator('#factor-ix50').fill('1.1');await page.locator('#calibration-form button[type="submit"]').click();assert.equal(await page.locator('#calibration-error').textContent(),'Enter a factor from 0.10 to 10.00 for Agfa D4. Nothing has been changed.');assert.equal(await page.evaluate(()=>document.activeElement.id),'factor-d4');assert.equal((await factorsAt(page)).ix50,1);
 // Size/schedule factors are saved as weld.<density>.<film>.<size>.<schedule>.
@@ -37,11 +37,11 @@ assert.ok(!Object.keys(await stored(page)).some(k=>k.startsWith('weld.')));asser
 page=await open(draft({'helper-ci':'99','helper-size':'3','helper-schedule':'0'},'six-film-density-drafts-v1'));assert.equal(await page.locator('#helper-ci').inputValue(),'');
 // The helper pre-fills today's activity rounded to 3 decimals, labelled with its date, including after a restart.
 page=await open({schemaVersion:2,'source':{mode:'manual',activity:25.87654}});const day=await page.evaluate(()=>today());
-await page.locator('#setup-panel>summary').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=false;});await page.locator('#cal-helper>summary').click();
+await page.locator('#edit-source').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=false;});await page.locator('#cal-helper>summary').click();
 assert.equal(await page.locator('#helper-ci').inputValue(),'25.877');assert.equal(await page.locator('#helper-ci-hint').textContent(),'Pre-filled with the source activity for '+day+'. Change it if the shot was on another day.');assert.equal(await page.locator('#helper-ci-hint').isVisible(),true);
 await page.locator('#helper-time').fill('30');await page.locator('#helper-form button[type="submit"]').click();assert.match(await page.locator('#helper-review-text').textContent(),new RegExp('Shot activity: 25.877 Ci \\(pre-filled for '+day+'\\)'));
 await page.locator('#close-sheet').click();await page.reload();assert.equal(await page.locator('#helper-ci').inputValue(),'25.877');assert.match(await page.locator('#helper-ci-hint').textContent(),new RegExp(day));
-await page.locator('#setup-panel>summary').click();await page.locator('#helper-ci').fill('27.8');assert.equal(await page.locator('#helper-ci-hint').isHidden(),true);await page.locator('#helper-form button[type="submit"]').click();assert.doesNotMatch(await page.locator('#helper-review-text').textContent(),/pre-filled/);
+await page.locator('#edit-source').click();await page.locator('#helper-ci').fill('27.8');assert.equal(await page.locator('#helper-ci-hint').isHidden(),true);await page.locator('#helper-form button[type="submit"]').click();assert.doesNotMatch(await page.locator('#helper-review-text').textContent(),/pre-filled/);
 // In decay mode the activity box is recalculated, not restored from an older draft; manual drafts still restore it.
 const monthAgo=new Date(Date.now()-30*86400000),refDate=monthAgo.getFullYear()+'-'+String(monthAgo.getMonth()+1).padStart(2,'0')+'-'+String(monthAgo.getDate()).padStart(2,'0');
 page=await open({schemaVersion:2,'source':{mode:'decay',activity:30,date:refDate},draft:{model:'drafts-v2',values:{'source-mode':'decay','reference-ci':'30','reference-date':refDate,'activity':'99'},sourceDirty:false}});
@@ -50,11 +50,11 @@ const decayed=await page.evaluate(()=>String(Number(activeCi.toFixed(6))));asser
 await page.evaluate(()=>document.querySelector('.shot').dataset.marker='kept');await page.evaluate(()=>refreshDecay());assert.equal(await page.locator('.shot[data-marker="kept"]').count(),1);
 const earlier=new Date(monthAgo.getTime()-86400000),earlierDate=earlier.getFullYear()+'-'+String(earlier.getMonth()+1).padStart(2,'0')+'-'+String(earlier.getDate()).padStart(2,'0');
 assert.ok(await page.evaluate(d=>{const before=activeCi;appliedSource.date=d;refreshDecay();return activeCi<before;},earlierDate));assert.equal(await page.locator('.shot[data-marker="kept"]').count(),0);await page.evaluate(d=>{appliedSource.date=d;refreshDecay();},refDate);
-await page.locator('#setup-panel>summary').click();await page.locator('#source-mode').selectOption('manual');assert.equal(await page.locator('#activity').inputValue(),decayed);await page.locator('button[form="activity-form"]').click();assert.equal(String(await page.evaluate(()=>activeCi)),decayed);
+await page.locator('#edit-source').click();await page.locator('#source-mode').selectOption('manual');assert.equal(await page.locator('#activity').inputValue(),decayed);await page.locator('button[form="activity-form"]').click();assert.equal(String(await page.evaluate(()=>activeCi)),decayed);
 page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},draft:{model:'drafts-v2',values:{'source-mode':'manual','activity':'30'},sourceDirty:true}});assert.equal(await page.locator('#activity').inputValue(),'30');assert.equal(await page.evaluate(()=>activeCi),null);
 // Displays of the current film-wide factor show the factor in use, not an invalid stored value.
 page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'factor.3.ix50':'abc','factor.2.d5':0.05,'factor.3.mx125':1.25});
-await page.locator('#setup-panel>summary').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=true;$('weld-panel').open=true;});
+await page.locator('#edit-source').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=true;$('weld-panel').open=true;});
 for(const [size,film,density,shown] of [['3','ix50','3','1.0000'],['3','mx125','3','1.2500'],['4','d5','2','1.0000']]){await page.locator('#helper-size').selectOption(size);await page.locator('#helper-film').selectOption(film);await page.locator('#helper-density').selectOption(density);await page.locator('#helper-ci').fill('26');await page.locator('#helper-time').fill('30');await page.locator('#helper-form button[type="submit"]').click();assert.match(await page.locator('#helper-review-text').textContent(),new RegExp('Current factor: ×'+shown.replace('.','\\.')));
  await page.locator('#weld-size').selectOption(size);await page.locator('#weld-film').selectOption(film);await page.locator('#weld-density').selectOption(density);assert.match(await page.locator('#weld-summary').textContent(),new RegExp('Film-wide factor ×'+shown.slice(0,5).replace('.','\\.')+'$'));}
 // Version 1 records (previous exposure model): film-wide and size/schedule factors and drafts reset, everything else is kept.
@@ -63,10 +63,37 @@ record=await stored(page);assert.equal(record.schemaVersion,2);assert.ok(!Object
 assert.equal(record['film.small'],'d4');assert.equal(record.density,2.5);assert.deepEqual(record['filter.pipe'],['3','4']);
 assert.ok(Object.values(await factorsAt(page)).every(v=>v===1));assert.equal(await page.evaluate(()=>activeCi),26);assert.equal(await page.locator('#helper-ci').inputValue(),'');assert.match(await page.locator('#toast').textContent(),/Film and size\/schedule factors reset to 1\.00/);
 await page.reload();assert.doesNotMatch(await page.locator('#toast').textContent(),/factors reset/);assert.equal((await stored(page)).schemaVersion,2);
-// Filters: a saved pre-1.21 full list means "all" (new sizes and Sch 10 appear); "All" is stored as null; partial lists stay partial.
-page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'filter.pipe':['1','2','3','4','5','6','8','10','12','14','16'],'filter.schedule':['STD','40','60','XH','80','100','120','140','160','XXH']});
+// Filters: only schema 1 migration interprets a pre-1.21 full list as "all" (new sizes and Sch 10 appear); "All" is stored as null; partial lists stay partial.
+page=await open({schemaVersion:1,'source':{mode:'manual',activity:26},'filter.pipe':['1','2','3','4','5','6','8','10','12','14','16'],'filter.schedule':['STD','40','60','XH','80','100','120','140','160','XXH']});
 assert.equal(await page.locator('#pipe-summary').textContent(),'All pipe sizes');assert.equal(await page.locator('#schedule-summary').textContent(),'All schedules');assert.equal(await page.locator('.shot[data-schedule="10"]').count(),14);assert.equal(await page.locator('.shot[data-size="24"][data-schedule="STD"]').count(),1);
 page=await open({schemaVersion:2,'source':{mode:'manual',activity:26},'filter.schedule':['STD','XH']});assert.equal(await page.locator('#schedule-summary').textContent(),'STD, XH');assert.equal(await page.locator('.shot[data-schedule="10"]').count(),0);
 await page.locator('#schedule-filter>summary').click();await page.locator('#sheet-content .choice-actions button',{hasText:'All'}).click();assert.equal((await stored(page))['filter.schedule'],null);assert.equal(await page.locator('.shot[data-schedule="10"]').count(),14);
 await page.locator('#sheet-content .choice-actions button',{hasText:'Clear'}).click();assert.deepEqual((await stored(page))['filter.schedule'],[]);
+// Current explicit exclusions survive reload even when all original choices remain selected.
+page=await open({schemaVersion:2,source:{mode:'manual',activity:26}});
+await page.locator('#schedule-filter>summary').click();await page.locator('#schedule-filter input[value="10"]').uncheck();await page.locator('#close-sheet').click();
+await page.locator('#pipe-filter>summary').click();await page.locator('#pipe-filter input[value="24"]').uncheck();await page.locator('#close-sheet').click();
+const excluded=await stored(page);await page.reload();
+assert.equal(await page.locator('#schedule-filter input[value="10"]').isChecked(),false);assert.equal(await page.locator('#pipe-filter input[value="24"]').isChecked(),false);
+assert.equal(await page.locator('.shot[data-schedule="10"]').count(),0);assert.equal(await page.locator('.shot[data-size="24"]').count(),0);
+assert.deepEqual((await stored(page))['filter.schedule'],excluded['filter.schedule']);assert.deepEqual((await stored(page))['filter.pipe'],excluded['filter.pipe']);
+// Restoring a normal CR helper draft refreshes both density inputs, their labels and hint.
+await page.locator('#edit-source').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=true;});
+await page.locator('#helper-size').selectOption('4');await page.locator('#helper-film').selectOption('cr');await page.reload();
+assert.equal(await page.locator('#helper-film').inputValue(),'cr');
+for(const selector of ['#helper-measured','#helper-density','label[for="helper-measured"]','label[for="helper-density"]','#helper-measured-hint'])assert.equal(await page.locator(selector).evaluate(el=>el.hidden),true);
+await page.locator('#helper-film').selectOption('d5');
+for(const selector of ['#helper-measured','#helper-density','label[for="helper-measured"]','label[for="helper-density"]','#helper-measured-hint'])assert.equal(await page.locator(selector).evaluate(el=>el.hidden),false);
+// Saving or resetting a dependent size/schedule correction invalidates the reviewed proposal.
+await page.evaluate(()=>{$('weld-panel').open=true;});
+await page.locator('#helper-ci').fill('26');await page.locator('#helper-time').fill('30');
+await page.locator('#weld-size').selectOption('4');await page.locator('#weld-film').selectOption('d5');await page.locator('#weld-density').selectOption('3');
+for(const action of ['save','reset']){
+ await page.locator('#helper-form button[type="submit"]').click();assert.equal(await page.locator('#helper-review').isVisible(),true);
+ const previous=await page.evaluate(()=>storedFilmFactor('d5',3));
+ if(action==='save'){await page.locator('#weld-factor').fill('2');await page.locator('#weld-form button[type="submit"]').click();}else await page.locator('#weld-reset').click();
+ assert.equal(await page.locator('#helper-review').isHidden(),true);await page.evaluate(()=>$('helper-save').click());assert.equal(await page.evaluate(()=>storedFilmFactor('d5',3)),previous);
+ await page.locator('#helper-form button[type="submit"]').click();await page.locator('#helper-save').click();
+ assert.ok(await page.evaluate(()=>{const t=selectedTechnique('helper');return Math.abs(C.densityExposure(t,'d5',3)*storedFilmFactor('d5',3)*weldFactor(t,'d5',3)/26-30)<1e-10;}));
+}
 assert.deepEqual(errors,[]);await browser.close();console.log('PASS: filters saved as all/null and pre-1.21 full lists, unversioned records ignored, version 1 migration, per-density factor and size/schedule keys, schema version, persistence, range checks, resets across five densities, validated draft restoration, the labelled helper activity pre-fill, decay-mode activity restoration, once-a-day decay re-rendering and displayed factors matching the factors in use.');

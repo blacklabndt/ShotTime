@@ -1,0 +1,33 @@
+import {beginJob,finishJob} from './notes-actions.mjs';
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';import {loadApp} from './load-app.mjs';
+const b=await chromium.launch({executablePath:process.env.CHROME_BINARY});
+try{const p=await b.newPage({viewport:{width:360,height:800}}),errors=[];p.on('pageerror',e=>errors.push(e.message));const html=(await loadApp()).replaceAll("location.href='shottime://voice/stop'","root.__voiceCommands.push('stop')").replace("location.href='shottime://voice/start?list='+encodeURIComponent(list.id)+'&previous='+encodeURIComponent(previous)+'&input='+voiceInput+(ids?'&ids='+encodeURIComponent(ids):'')+(recordingMode==='hold'?'&hold=1':'')","root.__voiceCommands.push('start')");await p.addInitScript(()=>{window.__voiceCommands=[];});await p.route('https://shottime.local/**',r=>r.fulfill({body:html,contentType:'text/html'}));await p.goto('https://shottime.local/');await p.locator('#app-menu-button').click();await p.locator('#nav-notes').click();await beginJob(p);await p.getByLabel('LSD',{exact:true}).fill('Bunker A');await finishJob(p);
+
+const listId=await p.evaluate(()=>JSON.parse(localStorage.getItem('shottime.notes')).selectedListId);
+let serial=0;const receive=async(state)=>p.evaluate(s=>ShotNotesUI.receiveVoice(JSON.stringify(s)),{available:true,id:'hold-'+serial,listId,state,events:[]});
+await receive('stopped');
+assert.equal(await p.getByRole('button',{name:'Hold to speak',exact:true}).count(),1);
+assert.equal(await p.locator('#notes-app .notes-record-modes').count(),0);
+assert.equal(await p.locator('#notes-microphone').textContent(),'Hold to speak');
+const down=async()=>{const box=await p.locator('#notes-microphone').boundingBox();await p.mouse.move(box.x+box.width/2,box.y+box.height/2);await p.mouse.down();};
+await down();assert.deepEqual(await p.evaluate(()=>__voiceCommands),['start']);
+await receive('preparing');await receive('listening');
+assert.equal(await p.getByRole('button',{name:'Settings',exact:true}).isDisabled(),true);
+await p.evaluate(()=>{for(let i=0;i<40;i++)ShotNotesUI.receiveLevel(i%3/3);});await p.screenshot({path:'build/hold-to-speak.png',animations:'disabled'});
+await p.mouse.move(0,0);await p.mouse.up();
+assert.deepEqual(await p.evaluate(()=>__voiceCommands),['start','stop']);
+assert.equal(await p.locator('#notes-microphone').textContent(),'Processing…');
+serial++;await receive('stopped');await down();await p.mouse.up();
+assert.deepEqual(await p.evaluate(()=>__voiceCommands),['start','stop','start','stop']);
+serial++;await receive('stopped');await down();await p.evaluate(()=>window.dispatchEvent(new Event('blur')));await p.mouse.up();
+assert.equal(await p.evaluate(()=>__voiceCommands.at(-1)),'stop');
+serial++;await receive('stopped');await p.reload();await p.locator('#app-menu-button').click();await p.locator('#nav-notes').click();await receive('stopped');
+assert.equal(await p.locator('#notes-microphone').textContent(),'Hold to speak');
+await p.locator('#notes-microphone').focus();await p.keyboard.down('Space');await receive('listening');await p.keyboard.up('Space');
+assert.deepEqual(await p.evaluate(()=>__voiceCommands),['start','stop']);
+serial++;await receive('stopped');await p.getByRole('button',{name:'Settings',exact:true}).click();await p.getByRole('button',{name:'Continuous recording',exact:true}).click();await p.getByRole('button',{name:'Close settings',exact:true}).click();await p.locator('#notes-microphone').click();await receive('listening');await p.locator('#notes-microphone').click();
+assert.deepEqual(await p.evaluate(()=>__voiceCommands),['start','stop','start','stop']);
+serial++;await receive('stopped');await p.reload();await p.locator('#app-menu-button').click();await p.locator('#nav-notes').click();assert.equal(await p.locator('#notes-microphone').textContent(),'Start recording');
+assert.deepEqual(errors,[]);console.log('PASS: hold release across rerenders, early release, blur, keyboard, persistence, mode lock and continuous recording');
+}finally{await b.close();}

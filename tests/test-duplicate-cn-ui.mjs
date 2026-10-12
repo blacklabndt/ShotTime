@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';import {chromium} from 'playwright';import {loadApp} from './load-app.mjs';import {beginJob,finishJob,instruction,submitInstruction} from './notes-actions.mjs';
+const b=await chromium.launch({executablePath:process.env.CHROME_BINARY});try{
+const p=await b.newPage({viewport:{width:360,height:800}}),errors=[];p.on('pageerror',e=>errors.push(e.message));const html=await loadApp();await p.route('https://shottime.local/**',r=>r.fulfill({body:html,contentType:'text/html'}));await p.goto('https://shottime.local/');const notes=async()=>{await p.locator('#app-menu-button').click();await p.locator('#nav-notes').click();};await notes();await beginJob(p);await p.getByLabel('LSD',{exact:true}).fill('Duplicates');await finishJob(p);
+const add=async text=>{await (await instruction(p)).fill(text);await submitInstruction(p,false);};const disk=()=>p.evaluate(()=>JSON.parse(localStorage.getItem('shottime.notes')));const popup=p.getByRole('dialog',{name:'Duplicate CN#',exact:true});
+await add('CN-7 has two 2 inch STD welds');assert.equal(await popup.count(),0);
+await p.evaluate(()=>closeTopSheet());await p.getByRole('button',{name:'Add daily list',exact:true}).click();await p.getByLabel('Date',{exact:true}).fill('2026-10-08');await p.getByRole('button',{name:'Create daily list',exact:true}).click();
+await add('CN-007 has one 2 inch STD weld');assert.equal(await popup.count(),1);await p.screenshot({path:'build/duplicate-cn-confirmation.png',fullPage:true,animations:'disabled'});assert.match(await popup.textContent(),/CN-007.*Daily lists/s);assert.equal((await disk()).jobs[0].nextSequence,3);assert.equal(await p.locator('[data-weld-row]').count(),0);
+await popup.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal((await disk()).jobs[0].nextSequence,3);
+await submitInstruction(p,false);await popup.getByRole('button',{name:'Add anyway',exact:true}).click();assert.equal((await disk()).jobs[0].nextSequence,4);assert.equal(await p.locator('[data-weld-row]').count(),1);
+const lib=await disk(),id=lib.selectedListId,session={available:true,id:'duplicate-voice',listId:id,state:'stopped',events:[{text:'CN-7 has one 2 inch STD weld'}]};
+await p.evaluate(s=>ShotNotesUI.receiveVoice(JSON.stringify(s)),session);assert.equal(await popup.count(),1);assert.equal((await disk()).jobs[0].nextSequence,4);assert.equal((await disk()).lists.find(l=>l.id===id).pending.length,1);
+await p.reload();await notes();await p.evaluate(s=>ShotNotesUI.receiveVoice(JSON.stringify(s)),session);assert.equal(await popup.count(),1);await popup.getByRole('button',{name:'Add anyway',exact:true}).click();assert.equal((await disk()).jobs[0].nextSequence,5);
+await p.evaluate(s=>ShotNotesUI.receiveVoice(JSON.stringify(s)),session);assert.equal(await popup.count(),0);assert.equal((await disk()).jobs[0].nextSequence,5);
+await p.getByRole('button',{name:'Add manually',exact:true}).click();await p.getByRole('button',{name:'Add MT fitting',exact:true}).click();await p.getByLabel('CN',{exact:true}).fill('CN-7');await p.getByLabel('MT size',{exact:true}).fill('2');await p.getByRole('button',{name:'Save MT fittings',exact:true}).click();assert.equal(await popup.count(),1);assert.equal((await disk()).jobs[0].nextMtSequence,1);await popup.getByRole('button',{name:'Add anyway',exact:true}).click();assert.equal((await disk()).jobs[0].nextMtSequence,2);
+await add('Unknown CN has one 2 inch STD weld');await add('Unknown CN has one 2 inch STD weld');assert.equal(await popup.count(),0);
+
+// A failed confirmation save keeps the allocation staged until retry, without adding twice.
+const prior=(await disk()).jobs[0].nextSequence;await add('CN-7 has one 2 inch STD weld');
+await p.evaluate(()=>{window.originalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw Error('full');};});
+await popup.getByRole('button',{name:'Add anyway',exact:true}).click();assert.equal((await disk()).jobs[0].nextSequence,prior);assert.match(await p.locator('#notes-save-status').textContent(),/Not saved/);
+await p.evaluate(()=>Storage.prototype.setItem=window.originalSetItem);await p.locator('#notes-retry').click();assert.equal((await disk()).jobs[0].nextSequence,prior+1);
+// A cancelled voice entry keeps its correction fields, including through reload.
+const corrected={...session,id:'corrected-duplicate'};await p.evaluate(s=>ShotNotesUI.receiveVoice(JSON.stringify(s)),corrected);await popup.getByRole('button',{name:'Cancel',exact:true}).click();await p.getByLabel('Group 1 CN#',{exact:true}).fill('CN-99');await p.evaluate(()=>ShotNotesUI.flush());await p.reload();await notes();await p.evaluate(s=>ShotNotesUI.receiveVoice(JSON.stringify(s)),corrected);assert.equal(await popup.count(),0);await p.getByRole('button',{name:'Confirm and add',exact:true}).click();assert.equal((await disk()).lists.find(l=>l.id===id).rows.at(-1).cn,'CN-99');
+assert.deepEqual(errors,[]);console.log('PASS: typed cancel/confirm, cross-day padding, voice pending/reload/replay, manual MT and unknown placeholders');
+}finally{await b.close();}

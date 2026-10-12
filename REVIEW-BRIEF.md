@@ -1,3 +1,5 @@
+> **Historical:** this file describes the finished 1.19.1/1.21.1 calculator review. For the current RT Helper app read AGENTS.md ("Current state") and HANDOVER.md.
+
 # Review brief
 
 ## Intended behavior to preserve
@@ -10,7 +12,7 @@ SFD is 12 inches for 1-inch pipe and OD +0.125 inches otherwise. 73 geometry row
 
 Film-wide and size/schedule correction factors multiply together and are density-specific. Reset means 1.00 against the current built-in baseline. Settings use one record with `schemaVersion: 1` and keys `factor.<density>.<film>` and `weld.<density>.<film>.<size>.<schedule>`. Pre-release records without a schema version are ignored; there is no legacy migration. Approximate external-calculator targets are not measured film-density calibrations.
 
-Normal and Internal times round to nearest second. Internal = unrounded final time /9; Internal offset = unrounded final time ×1.15 /4 rounded upward. Both internal columns apply only to 6-inch and larger pipes. The owner explicitly chose to retain possible 0-second display values.
+Normal and Internal times round to nearest second. Internal = unrounded final time /9; Internal offset = unrounded final time /3.2 rounded to the nearest second. Both internal columns apply only to 6-inch and larger pipes. The owner explicitly chose to retain possible 0-second display values.
 
 Print only activity, target density and local date above a narrow vertical table. Table columns: Pipe, Schedule, Time, Internal, Internal offset, with centered time headers/values. No film column, wall/SFD columns, notes or footer. Do not reintroduce the removed Starting estimates banner or Detailed view.
 

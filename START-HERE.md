@@ -1,3 +1,5 @@
+> **Historical:** this file describes the finished 1.19.1/1.21.1 calculator review. For the current RT Helper app read AGENTS.md ("Current state") and HANDOVER.md.
+
 # ShotTime review handoff
 
 Source version: 1.21.1, Android versionCode 43, package ca.kylekeith.shottime (not yet built, signed or device-tested). The last signed release is 1.19.1, versionCode 40, in release/.
