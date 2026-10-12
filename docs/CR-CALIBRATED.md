@@ -34,7 +34,7 @@ time = Ci·s ÷ current activity × CR film factor × size/schedule factor
 
   - The 10"+ starts agree with published CR work: Jelfs (QSA Global), "Optimized Digital Radiography Using Co-60, Ir-192 and Se-75 Sources", NDE 2009, found "a dose of 800mR to 1.2R on the imaging plates delivered acceptable image quality" (https://www.ndt.net/article/nde-india2009/pdf/18-C-1.pdf).
   - Small pipes get more exposure in the chart. That is partly a higher-sensitivity PMT band, and partly because short chart times behave like practical minimums: inside 2"–4", the implied exposure falls as the wall gets thicker.
-  - Rows under 10 s are flagged "Short shot: under 10 s", because source travel time is a larger share of a short exposure.
+  - There is no short-shot warning; the owner asked for none.
 - **Γ** = 0.48 R·m² per Ci·h, QSA Global's published Ir-192 output.
 - **Total steel** is the full beam path: both walls for double wall, one for single wall. The same total steel at the same SFD gives the same time.
 - **SFD** is the actual source-to-plate distance. Inverse square applies, and doubling activity halves the time.

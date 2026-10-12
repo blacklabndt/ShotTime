@@ -8,7 +8,7 @@ Read docs/CR-CALIBRATED.md (1.98 section). Owner decisions after supplying the C
   - Each card starts at its pipe size's chart-implied plate exposure (`CR_DOSE.starts`, `crStartDose`): the geometric mean of that size's chart rows at H 14.5 mm, from 5 R at 1"–2" to 0.65 R at 24". 1" uses 2"; 5" and 18" use their neighbours' geometric mean. These replaced three bands (4.3/1.65/0.75 R) after an independent review found the 4"–8" band about 2× off.
   - The default H is 14.5 mm (`CR_DEFAULT_HVL_MM`). QSA's 13 mm stays as `CR_PUBLISHED_HVL_MM` for reference.
   - The slider runs 0.5–6 R.
-  - Rows under 10 s show "Short shot: under 10 s".
+  - No short-shot warning (removed at the owner's request).
   - Custom Shot with a blank plate exposure and no reference shots at that PMT asks for a value. "Fill from chart for pipe size" enters a size's start; it is UI only and is not stored in setups.
   - Reference shots still override the defaults.
 - Codex's CR field estimate (`crfield`, commit e98916f) is removed. Its PMT gain is not identifiable from the chart: scaling the inferred PMT steps ×0.5/×1/×2 refits with identical SSE. Saved belts fall back, `fieldPmt.*` keys stay unused, and Custom Shot presets load geometry only. docs/CR-FIELD-MODEL.md is kept as history.
