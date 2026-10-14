@@ -1,5 +1,9 @@
 # AGENTS.md — ShotTime
 
+## Next task for Codex — release 1.98 (owner request, 2026-10-14)
+
+The default branch at commit 2167e58 or later is release-ready: versionCode 120, versionName 1.98, full `npm test` and `build-review.sh` passing. Do exactly what was done for 1.96 (see that section and dist/BUILD-VERIFICATION-1.96.md): `build-voice`, then `build.sh` with the owner's existing `signing/` backup (alias `shottime`, certificate `af4e70b2…`), verify signature, 16 KB alignment, manifest (`versionCode='120' versionName='1.98'`, targetSdk 36) and packaged-asset equality, write dist/BUILD-VERIFICATION-1.98.md, upload dist/RT-Handbook-v1.98.apk to Google Drive My Drive (private), confirm the upload completed and the byte size matches, then record the result (file ID, SHA-256) in a "1.98 signed release" section here and in HANDOVER.md. Do not change code, tests or the version. Never generate, commit or redistribute the signing key. Handset installation remains unverified unless the owner confirms it.
+
 ## Carestream CR 1.98 — versionCode 120, 2026-10-12 (unreleased)
 
 Read docs/CR-CALIBRATED.md (1.98 section). Owner decisions after supplying the Carestream chart (EXPOSURE CHART.xlsx, sheet CARESTREAM CR):
