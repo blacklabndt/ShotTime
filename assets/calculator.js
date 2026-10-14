@@ -115,10 +115,10 @@
   // (QSA Global, Ir-192). Starting plate exposure per size band: the geometric mean the owner's Carestream chart
   // (known good shots) implies at H = 14.5 mm, rounded to 0.05 R: 2"–3" 4.30 R (rows 2.8–5.3), 4"–8" 1.65 R
   // (0.9–3.5), 10"+ 0.75 R (0.6–1.0). Small pipes need more partly because short chart times look like practical
-  // minimums. Published CR work (Jelfs, QSA, NDE 2009: 0.8–1.2 R) agrees with the 10"+ band. Slider 0.5–6 R.
+  // minimums. Published CR work (Jelfs, QSA, NDE 2009: 0.8–1.2 R) agrees with the 10"+ band. Slider 0.5–12 R (the owner's PMT 20 shots deliver 7–8 R).
   // Starting plate exposure per pipe size: geometric mean of that size's Carestream chart rows at H 14.5 mm, to 0.05 R.
   // No 1", 5" or 18" rows: 1" uses 2" (no extrapolation); 5" and 18" are the geometric mean of their neighbours.
-  const CR_DOSE=Object.freeze({minR:.5,maxR:6,stepR:.05,gamma:.48,starts:Object.freeze({1:5,2:5,3:3.65,4:2.8,5:2.15,6:1.6,8:1.05,10:.85,12:.75,14:.75,16:.75,18:.7,20:.7,24:.65}),startBasis:Object.freeze({1:'2" rows; none for 1"',5:'between 4" and 6"',18:'between 16" and 20"'})});
+  const CR_DOSE=Object.freeze({minR:.5,maxR:12,stepR:.05,gamma:.48,starts:Object.freeze({1:5,2:5,3:3.65,4:2.8,5:2.15,6:1.6,8:1.05,10:.85,12:.75,14:.75,16:.75,18:.7,20:.7,24:.65}),startBasis:Object.freeze({1:'2" rows; none for 1"',5:'between 4" and 6"',18:'between 16" and 20"'})});
   function crStartDose(size){const r=CR_DOSE.starts[size];if(r===undefined)throw new Error('Unsupported pipe size');return r;}
   const IN_M=.0254,K_PER_R=IN_M*IN_M*3600/CR_DOSE.gamma;
   function validDose(r){return typeof r==='number'&&Number.isFinite(r)&&r>=CR_DOSE.minR-1e-9&&r<=CR_DOSE.maxR+1e-9;}

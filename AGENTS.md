@@ -7,12 +7,13 @@ Read docs/CR-CALIBRATED.md (1.98 section). Owner decisions after supplying the C
 - Calibrated CR (`crcal`) uses the chart only for its defaults:
   - Each card starts at its pipe size's chart-implied plate exposure (`CR_DOSE.starts`, `crStartDose`): the geometric mean of that size's chart rows at H 14.5 mm, from 5 R at 1"–2" to 0.65 R at 24". 1" uses 2"; 5" and 18" use their neighbours' geometric mean. These replaced three bands (4.3/1.65/0.75 R) after an independent review found the 4"–8" band about 2× off.
   - The default H is 14.5 mm (`CR_DEFAULT_HVL_MM`). QSA's 13 mm stays as `CR_PUBLISHED_HVL_MM` for reference.
-  - The slider runs 0.5–6 R.
+  - The slider runs 0.5–12 R (raised from 6 R on 2026-10-14 after the owner's PMT 20 field shots delivered 7–8 R).
   - No short-shot warning (removed at the owner's request).
   - Custom Shot with a blank plate exposure and no reference shots at that PMT asks for a value. "Fill from chart for pipe size" enters a size's start; it is UI only and is not stored in setups.
   - Reference shots still override the defaults.
 - Codex's CR field estimate (`crfield`, commit e98916f) is removed. Its PMT gain is not identifiable from the chart: scaling the inferred PMT steps ×0.5/×1/×2 refits with identical SSE. Saved belts fall back, `fieldPmt.*` keys stay unused, and Custom Shot presets load geometry only. docs/CR-FIELD-MODEL.md is kept as history.
 - The owner confirmed the scanner is the Carestream HPX-PRO with Flex HR plates; the chart sheet also mentions HPX-1/HPX-1 Plus. The owner is requesting a Carestream technique sheet; measured data from it or from step-wedge shots should replace the chart-derived starts.
+- 2026-10-14: the owner's first three field shots (72 Ci; 2" XH 6 s PMT 20 ~3255 px; 3" STD 11 s PMT 20 ~3265 px; 6" STD 15 s PMT 40 ~3140 px; scan delay 20–30 min; target 2500–3200 px) are recorded in docs/CR-CALIBRATED.md. They imply about 415 px/R at PMT 20, 7–8 R per shot, and chart-derived starts about 1.5× low. Unexposed-plate values are in the low hundreds per the owner, not yet read exactly. Nothing from these shots is hard-coded; they go in through the calibration panel.
 - Not a signed release; no device check or physical validation.
 
 ## Carestream CR (calibrated) — 1.97, versionCode 119, 2026-10-11 (unreleased)

@@ -24,8 +24,8 @@ assert.deepEqual(C.crCleanCalibration(null),{shots:[],gain:[],hvlMm:null,targetP
 assert.equal(C.crCleanCalibration({shots:Array(60).fill(shot())}).shots.length,60);
 
 // Plate exposure model: Ci·s = R × (SFD m)² × 3600 ÷ 0.48 × 2^(steel mm ÷ H), H 14.5 mm by default (from the owner's
-// Carestream chart). Starting R per pipe size from that chart (5 R at 2" down to 0.65 R at 24"). Slider 0.5–6 R.
-assert.equal(C.CR_DOSE.minR,.5);assert.equal(C.CR_DOSE.maxR,6);assert.equal(C.CR_DOSE.stepR,.05);assert.equal(C.CR_DOSE.gamma,.48);assert.equal(C.CR_DEFAULT_HVL_MM,14.5);
+// Carestream chart). Starting R per pipe size from that chart (5 R at 2" down to 0.65 R at 24"). Slider 0.5–12 R.
+assert.equal(C.CR_DOSE.minR,.5);assert.equal(C.CR_DOSE.maxR,12);assert.equal(C.CR_DOSE.stepR,.05);assert.equal(C.CR_DOSE.gamma,.48);assert.equal(C.CR_DEFAULT_HVL_MM,14.5);
 assert.deepEqual(C.CR_DOSE.starts,{1:5,2:5,3:3.65,4:2.8,5:2.15,6:1.6,8:1.05,10:.85,12:.75,14:.75,16:.75,18:.7,20:.7,24:.65});
 for(const [size,r] of [[1,5],[2,5],[4,2.8],[5,2.15],[8,1.05],[10,.85],[18,.7],[24,.65]])assert.equal(C.crStartDose(size),r);for(const s of [0,NaN,undefined,7,2.5,30])assert.throws(()=>C.crStartDose(s));
 assert.deepEqual([...new Set(data.techniques.map(t=>t.size))].sort((a,b)=>a-b),Object.keys(C.CR_DOSE.starts).map(Number).sort((a,b)=>a-b));
@@ -38,7 +38,7 @@ close(C.crDoseExposure(.5,10,1,cal),1*sfdM*sfdM*3600/.48*Math.pow(2,.5*25.4/14.5
 close(C.crDoseExposure(.5,10,2,cal)/C.crDoseExposure(.5,10,1,cal),2);close(C.crDoseExposure(.5,20,1,cal)/C.crDoseExposure(.5,10,1,cal),4);
 close(C.crDoseExposure(.5+14.5/25.4,10,1,cal)/C.crDoseExposure(.5,10,1,cal),2);close(C.crDoseExposure(1,10,1,cal),C.crDoseExposure(2*.5,10,1,cal));
 close(C.crDoseExposure(.5+16/25.4,10,1,C.crCleanCalibration({hvlMm:16}))/C.crDoseExposure(.5,10,1,C.crCleanCalibration({hvlMm:16})),2);
-for(const r of [.49,6.01,0,NaN,'1',null,undefined])assert.throws(()=>C.crDoseExposure(.5,10,r,cal),/0\.5 to 6 R/);for(const r of [.5,1,3,4.3,6])assert.ok(C.validDose(r));
+for(const r of [.49,12.01,0,NaN,'1',null,undefined])assert.throws(()=>C.crDoseExposure(.5,10,r,cal),/0\.5 to 12 R/);for(const r of [.5,1,3,4.3,6,8.4,12])assert.ok(C.validDose(r));
 const ref4=data.techniques.find(t=>t.size===4&&t.schedule==='40 / STD');
 close(C.densityExposure(ref4,'crcal',3,{doseR:1,calibration:cal}),C.crDoseExposure(2*.237,4.625,1,cal));close(C.densityExposure(ref4,'crcal',2,{doseR:1.5,calibration:cal}),1.5*C.crDoseExposure(2*.237,4.625,1,cal));
 assert.throws(()=>C.densityExposure(ref4,'crcal',3));assert.throws(()=>C.densityExposure(ref4,'crcal',3,{calibration:cal}));
@@ -109,4 +109,4 @@ finally{Object.assign(C.CHART_EXPOSURES.cr,savedChart);savedT200.forEach((v,i)=>
 assert.equal(C.usesDensity('crcal'),false);assert.equal(C.internalSeconds('crcal',49),6);assert.equal(C.offsetSeconds('crcal',49),17);
 assert.ok(C.CUSTOM_FILMS.includes('crcal'));for(const g of ['small','large'])assert.ok(data.groups[g].films.includes('crcal'));
 assert.equal(data.films.crcal.name,'Carestream CR (calibrated)');
-console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart per-size starts, 14.5 mm, 0.5–6 R, inverse square, steel, activity), shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');
+console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart per-size starts, 14.5 mm, 0.5–12 R, inverse square, steel, activity), shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');

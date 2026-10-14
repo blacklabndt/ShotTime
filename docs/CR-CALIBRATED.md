@@ -22,7 +22,7 @@ Ci·s = R × (SFD in m)² × 3600 ÷ Γ × 2^(total steel mm ÷ H)
 time = Ci·s ÷ current activity × CR film factor × size/schedule factor
 ```
 
-- **R** is the plate exposure target in roentgen, set per pipe size with a slider from 0.5 to 6 R in 0.05 R steps.
+- **R** is the plate exposure target in roentgen, set per pipe size with a slider from 0.5 to 12 R in 0.05 R steps (raised from 6 R on 2026-10-14: the owner's PMT 20 field shots deliver 7–8 R).
   - The default is the value the owner's reference shots imply at that card's PMT (kept within the slider range). Without reference shots, the size's start applies.
   - **Per-size starts** are the geometric mean plate exposure of that size's Carestream chart rows, at H = 14.5 mm, rounded to 0.05 R (`CR_DOSE.starts`). The chart has no 1", 5" or 18" rows: 1" uses the 2" value (no extrapolation), and 5" and 18" use the geometric mean of their neighbours.
 
@@ -52,6 +52,19 @@ time = Ci·s ÷ current activity × CR film factor × size/schedule factor
   | 10" STD | 45 s | 52 s |
   | 12" Sch 160 | 9 m 20 s | 9 m 47 s |
   | 24" STD | 2 m 55 s | 2 m 54 s |
+
+### Owner's field shots, 2026-10-14 (HPX-PRO, Flex HR, scanned 20–30 min after exposure)
+
+| Shot | Ci | Time | PMT | Weld-area pixel value | Total steel | SFD | Plate exposure delivered (H 14.5) | Pixels per R |
+|---|---|---|---|---|---|---|---|---|
+| 2" XH | 72 | 6 s | 20 | 3150–3360 (mid 3255) | 11.1 mm | 2.5" | 8.4 R | 387 |
+| 3" STD | 72 | 11 s | 20 | 3220–3310 (mid 3265) | 11.0 mm | 3.625" | 7.4 R | 443 |
+| 6" STD | 72 | 15 s | 40 | 3050–3230 (mid 3140) | 14.2 mm | 6.75" | 2.5 R | 1265 |
+
+- The two PMT 20 shots agree within 14%: about 415 pixels per R at PMT 20. The 6" shot gives about 3× that at PMT 40: one point, not a gain measurement.
+- The Carestream chart gives 4, 7 and 12 s for these at 72 Ci; the owner's shots are 1.3–1.6× longer and landed just above the 3200 target ceiling. The chart-derived starts are therefore low by roughly 1.5× for this owner's practice.
+- The owner's pixel target is 2500–3200 (aim 2850). The owner says unexposed-plate values are in the low hundreds (not yet read exactly); at that level the 2850 times are about 5, 10 and 14 s at 72 Ci.
+- These are entered on the phone through the calibration panel (shots with pixel values, target pixel 2850); they are not shipped in the app.
 
 ### Reference shots
 
@@ -88,12 +101,12 @@ With two or more shots, the panel predicts each reference shot from the others a
   - **Steel curve and pixel target.**
 
   The panel's status line names the basis: number of shots, gain PMTs, H and its source, and the target.
-- **Results:** each pipe card has a PMT slider and a plate exposure slider (0.5–6 R, saved per size as `dose.<size>`; "Use suggested" clears it). The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
+- **Results:** each pipe card has a PMT slider and a plate exposure slider (0.5–12 R, saved per size as `dose.<size>`; "Use suggested" clears it). The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
   - The default PMT is that of the reference shot nearest in SFD whose PMT falls inside the range; otherwise the middle of the range.
   - "Use reference PMT" restores the default.
   - Every row has a time and timer links. The note under the plate exposure slider says where its value comes from: your setting, reference shots (and whether gain-converted), or the size's chart start with the reason.
 - **Print:** the pipe cell shows `PMT nn` and the plate exposure (`1.00 R`) under the size for calibrated-CR rows. It is not a new column.
-- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–6) replace target density. A blank plate exposure uses the reference shots at that PMT; without them, Custom Shot asks for a value. **Fill from chart for pipe size** puts that size's start into the plate exposure field. The summary says which basis was used. Saved setups keep both.
+- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–12) replace target density. A blank plate exposure uses the reference shots at that PMT; without them, Custom Shot asks for a value. **Fill from chart for pipe size** puts that size's start into the plate exposure field. The summary says which basis was used. Saved setups keep both.
 - **Factors:** CR film-wide and size/schedule factors (`factor.crcal`, `weld.crcal.<size>.<schedule>`) still multiply the result. The factor helper refuses calibrated CR and points to reference shots instead.
 
 ## Storage and migration
