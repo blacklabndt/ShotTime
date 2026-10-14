@@ -106,6 +106,7 @@ With two or more shots, the panel predicts each reference shot from the others a
   - The default PMT is that of the reference shot nearest in SFD whose PMT falls inside the range; otherwise the middle of the range.
   - "Use reference PMT" restores the default.
   - Every row has a time and timer links. The note under the plate exposure slider says where its value comes from: your setting, reference shots (and whether gain-converted), or the size's chart start with the reason.
+- **Target pixel slider:** in Source & film, under Target density, a 2000–4000 slider in steps of 50 appears when a belt uses calibrated CR; the density select hides when both belts do. It is the same `targetPixel` as the calibration panel's field, so the two stay in sync, and a blank target shows "off". It only affects reference shots that carry pixel and unexposed values.
 - **Print:** the pipe cell shows `PMT nn` and the plate exposure (`1.00 R`) under the size for calibrated-CR rows. It is not a new column.
 - **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–12) replace target density. A blank plate exposure uses the reference shots at that PMT; without them, Custom Shot asks for a value. **Fill from chart for pipe size** puts that size's start into the plate exposure field. The summary says which basis was used. Saved setups keep both.
 - **Factors:** CR film-wide and size/schedule factors (`factor.crcal`, `weld.crcal.<size>.<schedule>`) still multiply the result. The factor helper refuses calibrated CR and points to reference shots instead.
