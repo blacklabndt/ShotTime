@@ -48,7 +48,7 @@ for(const [s,sch,label] of [[2,'80 / XH','10s'],[4,'40 / STD','20s'],[8,'40 / ST
 // Built-in field shots (2026-10-14): three shots, 2850 target, clean as-is; crWithBuiltIn adds missing shots and a missing target only.
 {const b=C.crCleanCalibration(C.CR_BUILT_IN_CALIBRATION);assert.equal(b.dropped,0);assert.equal(b.shots.length,3);assert.equal(b.targetPixel,2850);assert.equal(b.hvlMm,null);assert.deepEqual(b.shots.map(s=>s.pmt),[20,20,40]);
  close(C.crShotDose(b.shots[0],b),8.41,2e-3);close(C.crShotDose(b.shots[1],b),7.37,2e-3);close(C.crShotDose(b.shots[2],b),2.48,3e-3);
- close(C.crSuggestedDose(b,20).doseR,6.82,2e-3);close(C.crSuggestedDose(b,40).doseR,2.24,3e-3);assert.equal(C.crSuggestedDose(b,30).doseR,null);
+ close(C.crSuggestedDose(b,20).doseR,6.83,2e-3);close(C.crSuggestedDose(b,40).doseR,2.23,3e-3);close(C.crSuggestedDose(b,30).doseR,3.90,3e-3);close(C.crSuggestedDose(b,60).doseR,.73,3e-3);assert.equal(C.crSuggestedDose(b,60).gainBuiltIn,true);
  const w=C.crWithBuiltIn(C.crCleanCalibration({shots:[b.shots[1]],targetPixel:3000}));assert.equal(w.shots.length,3);assert.equal(w.targetPixel,3000);assert.equal(C.crWithBuiltIn(C.crCleanCalibration({})).targetPixel,2850);assert.equal(C.crWithBuiltIn(b).shots.length,3);}
 // A reference shot's plate exposure by the same physics; the suggestion from shots at a PMT (no shots: none).
 let shotDose=C.crShotDose({totalSteel:.5,sfd:10,activity:26,seconds:C.crDoseExposure(.5,10,1.3,cal)/26},cal);close(shotDose,1.3);
@@ -56,7 +56,9 @@ assert.equal(C.crSuggestedDose(cal,40).doseR,null);assert.equal(C.crSuggestedDos
 let sugg=C.crSuggestedDose(C.crCleanCalibration({shots:[{totalSteel:.5,sfd:10,activity:26,seconds:C.crDoseExposure(.5,10,.8,cal)/26,pmt:40},{totalSteel:1.2,sfd:24,activity:20,seconds:C.crDoseExposure(1.2,24,1.25,cal)/20,pmt:40}]}),40);
 close(sugg.doseR,Math.sqrt(.8*1.25));assert.equal(sugg.shotsUsed,2);close(sugg.spread,1.25/.8);
 sugg=C.crSuggestedDose(C.crCleanCalibration({shots:[{totalSteel:.5,sfd:10,activity:26,seconds:C.crDoseExposure(.5,10,1,cal)/26,pmt:40}],gain:[{pmt:40,signal:2100,offset:100},{pmt:55,signal:4100,offset:100}]}),55);close(sugg.doseR,.5);assert.equal(sugg.gainScaled,true);
-assert.match(C.crSuggestedDose(C.crCleanCalibration({shots:[{totalSteel:.5,sfd:10,activity:26,seconds:10,pmt:40}]}),55).reason,/no gain measurements covering PMT 40 and PMT 55/);
+// Without measured gain at both PMTs the built-in law converts (doubling every 12.4 PMT) and says so.
+assert.deepEqual(C.CR_GAIN_LAW,{refPmt:20,doublingPmt:12.4,offset:200});close(C.crGainLaw(20).gain,1);close(C.crGainLaw(32.4).gain,2);assert.equal(C.crGainLaw(50).offset,200);assert.equal(C.crGainLaw(50).builtIn,true);
+sugg=C.crSuggestedDose(C.crCleanCalibration({shots:[{totalSteel:.5,sfd:10,activity:26,seconds:C.crDoseExposure(.5,10,1,cal)/26,pmt:40}]}),55);close(sugg.doseR,2**(-15/12.4));assert.equal(sugg.gainScaled,true);assert.equal(sugg.gainBuiltIn,true);
 // Up to 100 reference shots are kept; any beyond are counted as unreadable, never silently lost (the whole chart fits).
 const many=Array.from({length:105},(_,i)=>({totalSteel:.5,sfd:10,activity:20,seconds:10+i,pmt:40}));let big=C.crCleanCalibration({shots:many});assert.equal(big.shots.length,100);assert.equal(big.dropped,5);
 big=C.crCleanCalibration({gain:Array.from({length:32},(_,i)=>({pmt:i+1,signal:200,offset:10}))});assert.equal(big.gain.length,30);assert.equal(big.dropped,2);
@@ -75,13 +77,13 @@ const tw=data.techniques.find(t=>t.size===8&&t.schedule==='40 / STD');close(C.cr
 close(C.seconds(C.crCalibratedExposure(.5,10,40,cal).curieSeconds,10),120);
 assert.equal(C.crCalibratedExposure(.5,10,41.5,cal).reason,'PMT must be a whole number');assert.throws(()=>C.crCalibratedExposure(4,10,40,cal));assert.throws(()=>C.crCalibratedExposure(.5,0,40,cal));
 
-// Another PMT: refused without measured gain covering both settings; converted by G only inside the measured range.
-assert.match(C.crCalibratedExposure(.5,10,50,cal).reason,/no gain measurements covering PMT 40 and PMT 50/);
+// Another PMT: the built-in law unless measured gain covers both settings; measured G is interpolated only inside its range.
+r=C.crCalibratedExposure(.5,10,50,cal);close(r.curieSeconds,own*2**(-10/12.4));assert.equal(r.gainBuiltIn,true);assert.equal(r.gainScaled,true);
 cal=C.crCleanCalibration({shots:[shot()],gain:[{pmt:30,signal:1100,offset:100},{pmt:40,signal:2100,offset:100},{pmt:60,signal:8100,offset:100}]});
 close(C.crCalibratedExposure(.5,10,60,cal).curieSeconds,own*2000/8000);close(C.crCalibratedExposure(.5,10,30,cal).curieSeconds,own*2);
 close(C.crGainAt(cal,50).gain,Math.sqrt(2000*8000));close(C.crCalibratedExposure(.5,10,50,cal).curieSeconds,own*2000/4000);
-assert.equal(C.crGainAt(cal,61),null);assert.equal(C.crGainAt(cal,29),null);assert.match(C.crCalibratedExposure(.5,10,70,cal).reason,/no gain measurements/);
-assert.equal(C.crCalibratedExposure(.5,10,60,cal).gainScaled,true);assert.equal(C.crCalibratedExposure(.5,10,40,cal).gainScaled,false);
+assert.equal(C.crGainAt(cal,61),null);assert.equal(C.crGainAt(cal,29),null);r=C.crCalibratedExposure(.5,10,70,cal);close(r.curieSeconds,own*2**(-30/12.4));assert.equal(r.gainBuiltIn,true);
+assert.equal(C.crCalibratedExposure(.5,10,60,cal).gainScaled,true);assert.equal(C.crCalibratedExposure(.5,10,60,cal).gainBuiltIn,false);assert.equal(C.crCalibratedExposure(.5,10,40,cal).gainScaled,false);assert.equal(C.crCalibratedExposure(.5,10,40,cal).gainBuiltIn,false);
 
 // Pixel target: needs the shot's pixel and the offsets; scales by (target − offset) ÷ (shot pixel − offset).
 cal=C.crCleanCalibration({shots:[shot()],targetPixel:2500});assert.match(C.crCalibratedExposure(.5,10,40,cal).reason,/no pixel value/);
@@ -90,10 +92,13 @@ cal=C.crCleanCalibration({shots:[shot({pixel:5100,offset:100})],targetPixel:2600
 cal=C.crCleanCalibration({shots:[shot({pixel:5100})],gain:[{pmt:40,signal:2100,offset:100},{pmt:60,signal:8100,offset:300}],targetPixel:2300});
 close(C.crCalibratedExposure(.5,10,60,cal).curieSeconds,own*(2000/7800)*((2300-300)/(5100-100)));
 cal=C.crCleanCalibration({shots:[shot({pixel:5100,offset:100})],targetPixel:50});assert.match(C.crCalibratedExposure(.5,10,40,cal).reason,/not above the scanner offset/);
+// Pixel target at a PMT with no measured offset: the built-in law's 200 is used for the target side only.
+cal=C.crCleanCalibration({shots:[shot({pixel:5100,offset:100})],targetPixel:2700});close(C.crCalibratedExposure(.5,10,50,cal).curieSeconds,own*2**(-10/12.4)*(2700-200)/(5100-100));
 
 // Several shots: geometric mean, spread reported; unusable shots skipped while others still give a time.
-cal=C.crCleanCalibration({shots:[shot(),shot({seconds:240}),shot({pmt:55})]});r=C.crCalibratedExposure(.5,10,40,cal);
-close(r.curieSeconds,own*2);close(r.spread,4);assert.equal(r.shotsUsed,2);
+cal=C.crCleanCalibration({shots:[shot({pixel:5100,offset:100}),shot({seconds:240,pixel:5100,offset:100}),shot({pmt:55})],targetPixel:2600});r=C.crCalibratedExposure(.5,10,40,cal);
+close(r.curieSeconds,own*2*2500/5000);close(r.spread,4);assert.equal(r.shotsUsed,2);
+cal=C.crCleanCalibration({shots:[shot(),shot({seconds:240}),shot({pmt:55})]});r=C.crCalibratedExposure(.5,10,40,cal);close(r.curieSeconds,own*(4*2**(15/12.4))**(1/3));assert.equal(r.shotsUsed,3);assert.equal(r.gainBuiltIn,true);
 
 // Cross-check: each shot predicted from the others; consistent synthetic shots agree exactly.
 const synth=(steel,sfd,pmt=40)=>shot({totalSteel:steel,sfd,pmt,seconds:300*sfd*sfd*Math.pow(2,steel*25.4/13)/20/100});
@@ -114,4 +119,4 @@ finally{Object.assign(C.CHART_EXPOSURES.cr,savedChart);savedT200.forEach((v,i)=>
 assert.equal(C.usesDensity('crcal'),false);assert.equal(C.internalSeconds('crcal',49),6);assert.equal(C.offsetSeconds('crcal',49),17);
 assert.ok(C.CUSTOM_FILMS.includes('crcal'));for(const g of ['small','large'])assert.ok(data.groups[g].films.includes('crcal'));
 assert.equal(data.films.crcal.name,'Carestream CR (calibrated)');
-console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart per-size starts, 14.5 mm, 0.5–12 R, inverse square, steel, activity), built-in field shots, shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion only inside measured PMT range, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');
+console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart per-size starts, 14.5 mm, 0.5–12 R, inverse square, steel, activity), built-in field shots, shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion by measured table inside its range else the built-in law, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');

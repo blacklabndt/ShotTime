@@ -128,6 +128,11 @@
     {totalSteel:.432,sfd:3.625,activity:72,seconds:11,pmt:20,pixel:3265,offset:200,note:'3" STD field shot 2026-10-14, unexposed value estimated'},
     {totalSteel:.56,sfd:6.75,activity:72,seconds:15,pmt:40,pixel:3140,offset:200,note:'6" STD field shot 2026-10-14, unexposed value estimated'}].map(Object.freeze));
   const CR_BUILT_IN_CALIBRATION=Object.freeze({schemaVersion:1,shots:CR_BUILT_IN_SHOTS,gain:[],hvlMm:null,targetPixel:2850});
+  // Built-in scanner gain law, from the same field shots: about 389 px/R at PMT 20 and 1185 px/R at PMT 40, so
+  // gain doubles every 12.4 PMT units if the scale is exponential. Used only where the owner's gain table has no
+  // measurement for both PMTs; the offset is the same estimate as the built-in shots. One ratio, not a measurement.
+  const CR_GAIN_LAW=Object.freeze({refPmt:20,doublingPmt:12.4,offset:200});
+  function crGainLaw(pmt){return {gain:Math.pow(2,(pmt-CR_GAIN_LAW.refPmt)/CR_GAIN_LAW.doublingPmt),offset:CR_GAIN_LAW.offset,builtIn:true};}
   const sameShot=(a,b)=>['totalSteel','sfd','activity','seconds','pmt','pixel','offset'].every(k=>a[k]===b[k]);
   // A calibration with the built-in shots added where missing and the built-in target where none is set.
   function crWithBuiltIn(cal){const shots=[...cal.shots];for(const s of CR_BUILT_IN_SHOTS)if(!shots.some(x=>sameShot(x,s)))shots.push({...s});return {...cal,shots,targetPixel:cal.targetPixel==null?CR_BUILT_IN_CALIBRATION.targetPixel:cal.targetPixel};}
@@ -173,16 +178,18 @@
   function crOffsetAt(cal,pmt){const g=crGainAt(cal,pmt);if(g)return g.offset;const own=cal.shots.filter(s=>s.pmt===pmt&&s.offset!=null).map(s=>s.offset);return own.length?own.reduce((a,b)=>a+b,0)/own.length:null;}
   // K (Ci·s per in² at zero steel) that one shot implies for the requested PMT and pixel target, or a reason.
   function crShotK(cal,shot,pmt,targetPixel,hvl){
-    let k=shot.activity*shot.seconds/crGeometry(shot.totalSteel,shot.sfd,hvl),gainScaled=false,pixelScaled=false;
-    if(shot.pmt!==pmt){const a=crGainAt(cal,shot.pmt),b=crGainAt(cal,pmt);if(!a||!b)return {reason:'no gain measurements covering PMT '+shot.pmt+' and PMT '+pmt};k*=a.gain/b.gain;gainScaled=true;}
+    let k=shot.activity*shot.seconds/crGeometry(shot.totalSteel,shot.sfd,hvl),gainScaled=false,gainBuiltIn=false,pixelScaled=false;
+    // Measured gain only when the table covers both PMTs (its scale is arbitrary); otherwise the built-in law for both.
+    if(shot.pmt!==pmt){let a=crGainAt(cal,shot.pmt),b=crGainAt(cal,pmt);if(!a||!b){a=crGainLaw(shot.pmt);b=crGainLaw(pmt);gainBuiltIn=true;}k*=a.gain/b.gain;gainScaled=true;}
     if(targetPixel!=null){
       if(shot.pixel==null)return {reason:'reference shot has no pixel value for the pixel target'};
       const bs=shot.offset!=null?shot.offset:crOffsetAt(cal,shot.pmt),bt=shot.pmt===pmt&&shot.offset!=null?shot.offset:crOffsetAt(cal,pmt);
-      if(bs==null||bt==null)return {reason:'scanner offset unknown at PMT '+(bs==null?shot.pmt:pmt)};
-      if(!(shot.pixel>bs)||!(targetPixel>bt))return {reason:'pixel value not above the scanner offset'};
-      k*=(targetPixel-bt)/(shot.pixel-bs);pixelScaled=true;
+      if(bs==null)return {reason:'scanner offset unknown at PMT '+shot.pmt};
+      const offset=bt==null?CR_GAIN_LAW.offset:bt;
+      if(!(shot.pixel>bs)||!(targetPixel>offset))return {reason:'pixel value not above the scanner offset'};
+      k*=(targetPixel-offset)/(shot.pixel-bs);pixelScaled=true;
     }
-    return {k,gainScaled,pixelScaled};
+    return {k,gainScaled,gainBuiltIn,pixelScaled};
   }
   function crCalibratedExposure(totalSteel,sfd,pmt,cal,skip){
     checkSteelAndSfd(totalSteel,sfd);
@@ -195,7 +202,7 @@
     if(!used.length)return {...base,reason:reasons[0]};
     const logs=used.map(u=>Math.log(u.k)),k=Math.exp(logs.reduce((a,b)=>a+b,0)/logs.length);
     return {...base,curieSeconds:k*crGeometry(totalSteel,sfd,hvl),shotsUsed:used.length,spread:Math.exp(Math.max(...logs)-Math.min(...logs)),
-      gainScaled:used.some(u=>u.gainScaled),pixelScaled:used.some(u=>u.pixelScaled)};
+      gainScaled:used.some(u=>u.gainScaled),gainBuiltIn:used.some(u=>u.gainBuiltIn),pixelScaled:used.some(u=>u.pixelScaled)};
   }
   // Each reference shot predicted from the others at its own geometry and PMT (its own pixel value as the
   // target when the calibration uses one): how well the owner's data agree with each other and with H.
@@ -227,7 +234,7 @@
   function crShotDose(shot,cal){return shot.activity*shot.seconds/crGeometry(shot.totalSteel,shot.sfd,crHvl(cal))/K_PER_R;}
   // Plate exposure the owner's reference shots imply at a PMT (gain table and pixel target applied), or a reason.
   function crSuggestedDose(cal,pmt){const r=crCalibratedExposure(.5,10,pmt,cal);if(r.curieSeconds===null)return {doseR:null,reason:r.reason};
-    return {doseR:r.curieSeconds/crGeometry(.5,10,r.hvlMm)/K_PER_R,shotsUsed:r.shotsUsed,spread:r.spread,gainScaled:r.gainScaled,pixelScaled:r.pixelScaled};}
+    return {doseR:r.curieSeconds/crGeometry(.5,10,r.hvlMm)/K_PER_R,shotsUsed:r.shotsUsed,spread:r.spread,gainScaled:r.gainScaled,gainBuiltIn:r.gainBuiltIn,pixelScaled:r.pixelScaled};}
   const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','crcal'];
   function customExposure(totalSteel,sfd,film,density,options){
     checkSteelAndSfd(totalSteel,sfd);
@@ -238,7 +245,7 @@
     if(!Number.isFinite(value)||value<=0)throw new Error('Exposure is out of range.');
     return value;
   }
-  const api={CR_DOSE,crStartDose,CR_BUILT_IN_CALIBRATION,crWithBuiltIn,CR_DEFAULT_HVL_MM,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={CR_DOSE,crStartDose,CR_BUILT_IN_CALIBRATION,crWithBuiltIn,CR_GAIN_LAW,crGainLaw,CR_DEFAULT_HVL_MM,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

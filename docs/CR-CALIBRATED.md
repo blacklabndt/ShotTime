@@ -102,13 +102,15 @@ With two or more shots, the panel predicts each reference shot from the others a
   - **Steel curve and pixel target.**
 
   The panel's status line names the basis: number of shots, gain PMTs, H and its source, and the target.
-- **Results:** each pipe card has a PMT slider and a plate exposure slider (0.5–12 R, saved per size as `dose.<size>`; "Use suggested" clears it). The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
-  - The default PMT is that of the reference shot nearest in SFD whose PMT falls inside the range; otherwise the middle of the range.
+- **Results:** each pipe card has one PMT slider, in steps of 10 (owner, 2026-10-14), and shows the plate exposure that PMT implies; the plate exposure slider was retired the same day and saved `dose.<size>` settings are ignored. The bounds are the owner's ranges (1"–3" 20–50, 4"–8" 30–60, 10"+ 40–70); they bound the control only and are not part of the model.
+  - **Built-in gain law** (`CR_GAIN_LAW`): where the owner's gain table does not cover both the shot's PMT and the card's, gain is taken as doubling every 12.4 PMT units (from about 389 px/R at PMT 20 and 1,185 px/R at PMT 40 in the field shots) with the estimated 200 offset. The measured table wins wherever it covers both settings; the two scales are never mixed. The card note says "gain estimated from your PMT 20 and 40 shots" when the law was used. It is one ratio, not a measurement, and may be off by 2× at 60–70 until a gain table exists.
+  - Implied exposures outside 0.5–12 R are clamped and the note says what they imply.
+  - The default PMT is that of the reference shot nearest in SFD whose PMT falls inside the range, else the middle of the range, rounded to 10; a saved PMT is rounded to 10.
   - "Use reference PMT" restores the default.
-  - Every row has a time and timer links. The note under the plate exposure slider says where its value comes from: your setting, reference shots (and whether gain-converted), or the size's chart start with the reason.
+  - Every row has a time and timer links. The note under the plate exposure says where it comes from: reference shots (gain-converted or gain estimated), or the size's chart start with the reason.
 - **Target pixel slider:** in Source & film, under Target density, a 2000–4000 slider in steps of 50 appears when a belt uses calibrated CR; the density select hides when both belts do. It is the same `targetPixel` as the calibration panel's field, so the two stay in sync, and a blank target shows "off". It only affects reference shots that carry pixel and unexposed values.
 - **Print:** the pipe cell shows `PMT nn` and the plate exposure (`1.00 R`) under the size for calibrated-CR rows. It is not a new column.
-- **Custom Shot:** Scanner PMT and Plate exposure (R, 0.5–12) replace target density. A blank plate exposure uses the reference shots at that PMT; without them, Custom Shot asks for a value. **Fill from chart for pipe size** puts that size's start into the plate exposure field. The summary says which basis was used. Saved setups keep both.
+- **Custom Shot:** Scanner PMT replaces target density; the plate exposure comes from the reference shots at that PMT (law-converted where needed) and the summary says so. The plate exposure field and chart fill were retired with the slider; a saved setup's old `dose` is ignored.
 - **Factors:** CR film-wide and size/schedule factors (`factor.crcal`, `weld.crcal.<size>.<schedule>`) still multiply the result. The factor helper refuses calibrated CR and points to reference shots instead.
 
 ## Storage and migration

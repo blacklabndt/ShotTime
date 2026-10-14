@@ -7,9 +7,9 @@ Read docs/CR-CALIBRATED.md (1.98 section). Owner decisions after supplying the C
 - Calibrated CR (`crcal`) uses the chart only for its defaults:
   - Each card starts at its pipe size's chart-implied plate exposure (`CR_DOSE.starts`, `crStartDose`): the geometric mean of that size's chart rows at H 14.5 mm, from 5 R at 1"–2" to 0.65 R at 24". 1" uses 2"; 5" and 18" use their neighbours' geometric mean. These replaced three bands (4.3/1.65/0.75 R) after an independent review found the 4"–8" band about 2× off.
   - The default H is 14.5 mm (`CR_DEFAULT_HVL_MM`). QSA's 13 mm stays as `CR_PUBLISHED_HVL_MM` for reference.
-  - The slider runs 0.5–12 R (raised from 6 R on 2026-10-14 after the owner's PMT 20 field shots delivered 7–8 R).
+  - The plate exposure slider was retired on 2026-10-14 at the owner's request: each card has only a PMT slider (steps of 10) and shows the implied plate exposure; saved `dose.<size>` keys are ignored, and implied values are clamped to 0.5–12 R (`CR_DOSE`). Where the gain table does not cover both PMTs, `CR_GAIN_LAW` (doubling every 12.4 PMT, offset 200, from the field shots) converts; the note says "gain estimated". Do not mix table and law scales.
   - No short-shot warning (removed at the owner's request).
-  - Custom Shot with a blank plate exposure and no reference shots at that PMT asks for a value. "Fill from chart for pipe size" enters a size's start; it is UI only and is not stored in setups.
+  - Custom Shot takes PMT only; the plate exposure comes from the reference shots (law-converted where needed). Its plate exposure field and chart fill were removed; a setup's old `dose` is ignored.
   - Reference shots still override the defaults.
 - Codex's CR field estimate (`crfield`, commit e98916f) is removed. Its PMT gain is not identifiable from the chart: scaling the inferred PMT steps ×0.5/×1/×2 refits with identical SSE. Saved belts fall back, `fieldPmt.*` keys stay unused, and Custom Shot presets load geometry only. docs/CR-FIELD-MODEL.md is kept as history.
 - The owner confirmed the scanner is the Carestream HPX-PRO with Flex HR plates; the chart sheet also mentions HPX-1/HPX-1 Plus. The owner is requesting a Carestream technique sheet; measured data from it or from step-wedge shots should replace the chart-derived starts.
