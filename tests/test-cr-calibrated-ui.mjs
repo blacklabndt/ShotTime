@@ -12,8 +12,9 @@ async function open(seed,cal){const page=await browser.newPage({viewport:{width:
 const seed={schemaVersion:2,source:{mode:'manual',activity:26},'film.small':'crcal','film.large':'crcal'};
 const close=(a,b,tol=1e-9)=>assert.ok(Math.abs(a/b-1)<tol,`${a} vs ${b}`);
 try{
-  // No reference shots: every row has a time from its size's start (from the Carestream chart); timers and print work.
-  let page=await open(seed);
+  const empty={schemaVersion:1,shots:[],gain:[],hvlMm:null,targetPixel:null};
+  // A saved calibration with no reference shots: every row has a time from its size's start (from the Carestream chart); timers and print work.
+  let page=await open(seed,empty);
   const row=(size,schedule='40 / STD')=>page.locator('.shot[data-size="'+size+'"][data-schedule="'+schedule+'"]');
   const secs=async(size,schedule)=>Number(await row(size,schedule).getAttribute('data-seconds'));
   const lab=x=>Math.round(x)+'s',physics=(steelIn,sfdIn,r,hvl=14.5)=>r*(sfdIn*.0254)**2*3600/.48*2**(steelIn*25.4/hvl)/26;
@@ -130,6 +131,25 @@ try{
   await page.locator('#custom-presets').selectOption({label:'Field (field estimate removed)'});await page.locator('#custom-load').click();assert.match(await page.locator('#custom-save-status').textContent(),/used the CR field estimate, which was removed in 1\.98/);assert.deepEqual([await page.locator('#custom-steel').inputValue(),await page.locator('#custom-sfd').inputValue()],['0.75','12']);
   assert.deepEqual(page.errors,[]);await page.close();
   // A record with another schema version is not read as calibration.
-  page=await open(seed,{schemaVersion:2,shots:[{totalSteel:.474,sfd:4.625,activity:26,seconds:20,pmt:40}]});assert.equal(await page.evaluate(()=>crCal.shots.length),0);await page.close();
+  // A record of another schema version is ignored: the built-in shots apply instead of its contents.
+  page=await open(seed,{schemaVersion:2,shots:[{totalSteel:.474,sfd:4.625,activity:26,seconds:20,pmt:40}]});assert.equal(await page.evaluate(()=>crCal.shots.length+':'+crCal.shots[0].pmt+':'+crCal.targetPixel),'3:20:2850');await page.close();
+
+  // Fresh install (no saved calibration): the owner's three built-in field shots and the 2850 pixel target apply.
+  page=await open(seed);assert.equal(await page.evaluate(()=>localStorage.getItem('shottime.crCalibration')),null);
+  assert.match(await page.locator('#cr-cal-status').textContent(),/3 reference shots, no gain measurements · steel curve 14\.5 mm \(from your Carestream chart\) · target pixel 2850$/);
+  assert.equal(await page.locator('#cr-shot-list li').count(),3);assert.match(await page.locator('#cr-shot-list li').first().textContent(),/0\.436" steel · 2\.5" SFD · 72 Ci · 6 s · PMT 20 → 8\.41 R at plate · pixel 3255 \(unexposed 200\) · 2" XH field shot 2026-10-14, unexposed value estimated/);
+  assert.equal(await page.locator('#cr-target').inputValue(),'2850');
+  assert.deepEqual([await page.locator('#pmt-2').inputValue(),await page.locator('#pmt-4').inputValue(),await page.locator('#pmt-24').inputValue()],['20','40','40']);
+  const geom=(steelIn,sfdIn)=>sfdIn**2*2**(steelIn*25.4/14.5),k20=72*(6/geom(.436,2.5)*11/geom(.432,3.625))**.5*(2850-200)/((3255-200)*(3265-200))**.5,k40=72*15/geom(.56,6.75)*(2850-200)/(3140-200);
+  close(await secs(2,'80 / XH'),k20*geom(.436,2.5)/26);close(await secs(4),k40*geom(.474,4.625)/26);close(await secs(24,'STD'),k40*geom(.75,24.125)/26);
+  assert.equal(await page.locator('#dose-2-note').textContent(),'From 2 reference shots at PMT 20');assert.equal(await page.locator('#dose-4-note').textContent(),'From 1 reference shot at PMT 40');
+  await page.locator('#pmt-4').fill('30');assert.match(await page.locator('#dose-4-note').textContent(),/From your Carestream chart \(4" rows\) · reference shots: no gain measurements covering PMT 20 and PMT 30/);
+  // Deleting a built-in shot sticks across reload; Restore built-in shots brings it back and fills a blank target.
+  await page.locator('#edit-source').click();await page.evaluate(()=>{$('cr-cal').open=true;$('cr-shot-panel').open=true;$('cr-settings-panel').open=true;});
+  await page.locator('#cr-shot-list button').nth(2).click();await page.locator('#cr-target').fill('');await page.locator('#cr-settings-form button[type=submit]').click();assert.equal(await page.locator('#toast').textContent(),'CR steel curve and target saved');await page.locator('#close-sheet').click();await page.reload();
+  assert.equal(await page.evaluate(()=>crCal.shots.length+':'+crCal.targetPixel),'2:null');
+  await page.locator('#edit-source').click();await page.evaluate(()=>{$('cr-cal').open=true;$('cr-settings-panel').open=true;});await page.locator('#cr-restore').click();assert.equal(await page.locator('#toast').textContent(),'Built-in shots restored');
+  assert.equal(await page.evaluate(()=>crCal.shots.length+':'+crCal.targetPixel),'3:2850');await page.locator('#cr-restore').click();assert.equal(await page.locator('#toast').textContent(),'Built-in shots already present');assert.equal(await page.evaluate(()=>crCal.shots.length),3);
+  await page.close();
 }finally{await browser.close();}
-console.log('PASS: CR field estimate and CR Formula (70%) removed with saved choices, factors and setups preserved; calibrated CR times from Carestream-chart per-size starts and no short-shot warning, plate exposure slider (range, save, restart, Use suggested, focus), owner PMT ranges, reference shot entry and plate exposure, shot-based and gain-converted suggestions with fallback and clamping, screen/print agreement with PMT and R printed, reference PMT reset and focus, steel curve and pixel target, persistence, helper refusal, Custom Shot with PMT, chart fill by pipe size and saved setups, narrow widths, unreadable stored entries, cross-check and suggested steel curve.');
+console.log('PASS: CR field estimate and CR Formula (70%) removed with saved choices, factors and setups preserved; calibrated CR times from Carestream-chart per-size starts and no short-shot warning, plate exposure slider (range, save, restart, Use suggested, focus), owner PMT ranges, reference shot entry and plate exposure, shot-based and gain-converted suggestions with fallback and clamping, screen/print agreement with PMT and R printed, reference PMT reset and focus, steel curve and pixel target, persistence, helper refusal, built-in field shots on a fresh install with restore, Custom Shot with PMT, chart fill by pipe size and saved setups, narrow widths, unreadable stored entries, cross-check and suggested steel curve.');

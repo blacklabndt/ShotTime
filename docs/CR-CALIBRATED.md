@@ -64,7 +64,8 @@ time = Ci·s ÷ current activity × CR film factor × size/schedule factor
 - The two PMT 20 shots agree within 14%: about 415 pixels per R at PMT 20. The 6" shot gives about 3× that at PMT 40: one point, not a gain measurement.
 - The Carestream chart gives 4, 7 and 12 s for these at 72 Ci; the owner's shots are 1.3–1.6× longer and landed just above the 3200 target ceiling. The chart-derived starts are therefore low by roughly 1.5× for this owner's practice.
 - The owner's pixel target is 2500–3200 (aim 2850). The owner says unexposed-plate values are in the low hundreds (not yet read exactly); at that level the 2850 times are about 5, 10 and 14 s at 72 Ci.
-- These are entered on the phone through the calibration panel (shots with pixel values, target pixel 2850); they are not shipped in the app.
+- **Built in (owner's request, 2026-10-14):** `CR_BUILT_IN_CALIBRATION` in calculator.js holds these three shots (unexposed value 200, an estimate) and the 2850 target. A phone with no saved calibration starts from them. A saved record, including one the owner has emptied, is used as saved. **Restore built-in shots** in the calibration panel adds any built-in shot that is missing and sets the target to 2850 if blank; it never removes the owner's own entries.
+- With them, cards default to PMT 20 (1"–3") and PMT 40 (4" and up). At 72 Ci: 2" XH 5 s, 3" STD 10 s, 4" STD 6 s, 6" STD 14 s. The 10"+ belt at PMT 40 is about 2× the chart (10" STD 43 s vs 19 s) because the chart's large pipes were read at higher PMT; a 10"+ reference shot or a gain table will correct that. Cards moved to a PMT other than 20 or 40 fall back to the chart starts until a gain table covers them.
 
 ### Reference shots
 
@@ -111,7 +112,7 @@ With two or more shots, the panel predicts each reference shot from the others a
 
 ## Storage and migration
 
-- **Calibration** lives in its own record, `localStorage['shottime.crCalibration']` = `{schemaVersion:1, shots, gain, hvlMm, targetPixel}`. A record with any other version is ignored.
+- **Calibration** lives in its own record, `localStorage['shottime.crCalibration']` = `{schemaVersion:1, shots, gain, hvlMm, targetPixel}`. A record with any other version is ignored, and the built-in shots apply as on a fresh install.
   - Entries that fail validation are dropped and counted, never repaired. The status line reports how many could not be read.
   - Limits: 100 shots and 30 gain rows; entries beyond them are counted as unreadable.
 - **Settings:** slider positions are stored as `pmt.<size>`, an additive key in the existing settings record (schema 2 unchanged). A missing or out-of-range value falls back to the default.

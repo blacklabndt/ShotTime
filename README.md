@@ -8,7 +8,7 @@ Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target
 
 ## Carestream CR — 1.98
 
-The Carestream CR chart now uses your Carestream sheet (+30% on 2"–6"), with three cells corrected: 24" XS, 14" Sch 40 and 6" XXH. Calibrated CR starts each card at the plate exposure your chart implies for its pipe size, from 5 R at 2" to 0.65 R at 24". Custom Shot can fill that value in for a chosen pipe size. It uses a 14.5 mm steel curve and a 0.5–12 R slider. Your reference shots still override these defaults. The CR field estimate was removed. See docs/CR-CALIBRATED.md.
+The Carestream CR chart now uses your Carestream sheet (+30% on 2"–6"), with three cells corrected: 24" XS, 14" Sch 40 and 6" XXH. Calibrated CR starts each card at the plate exposure your chart implies for its pipe size, from 5 R at 2" to 0.65 R at 24". Custom Shot can fill that value in for a chosen pipe size. Your three field shots of 2026-10-14 and a 2850 pixel target are built in; a phone with no saved calibration starts from them, and Restore built-in shots brings them back. It uses a 14.5 mm steel curve and a 0.5–12 R slider. Your reference shots still override these defaults. The CR field estimate was removed. See docs/CR-CALIBRATED.md.
 
 ## Carestream CR (calibrated) — 1.97
 

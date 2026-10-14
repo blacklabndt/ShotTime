@@ -120,6 +120,17 @@
   // No 1", 5" or 18" rows: 1" uses 2" (no extrapolation); 5" and 18" are the geometric mean of their neighbours.
   const CR_DOSE=Object.freeze({minR:.5,maxR:12,stepR:.05,gamma:.48,starts:Object.freeze({1:5,2:5,3:3.65,4:2.8,5:2.15,6:1.6,8:1.05,10:.85,12:.75,14:.75,16:.75,18:.7,20:.7,24:.65}),startBasis:Object.freeze({1:'2" rows; none for 1"',5:'between 4" and 6"',18:'between 16" and 20"'})});
   function crStartDose(size){const r=CR_DOSE.starts[size];if(r===undefined)throw new Error('Unsupported pipe size');return r;}
+  // The owner's field shots of 2026-10-14 (HPX-PRO, Flex HR, 72 Ci, scanned 20–30 min after exposure), used when the
+  // phone has no saved calibration. Pixel values are the midpoints of the ranges read in the weld area; the unexposed
+  // value of 200 is the owner's estimate ("low hundreds"), not a reading. Target 2850 is the middle of 2500–3200.
+  const CR_BUILT_IN_SHOTS=Object.freeze([
+    {totalSteel:.436,sfd:2.5,activity:72,seconds:6,pmt:20,pixel:3255,offset:200,note:'2" XH field shot 2026-10-14, unexposed value estimated'},
+    {totalSteel:.432,sfd:3.625,activity:72,seconds:11,pmt:20,pixel:3265,offset:200,note:'3" STD field shot 2026-10-14, unexposed value estimated'},
+    {totalSteel:.56,sfd:6.75,activity:72,seconds:15,pmt:40,pixel:3140,offset:200,note:'6" STD field shot 2026-10-14, unexposed value estimated'}].map(Object.freeze));
+  const CR_BUILT_IN_CALIBRATION=Object.freeze({schemaVersion:1,shots:CR_BUILT_IN_SHOTS,gain:[],hvlMm:null,targetPixel:2850});
+  const sameShot=(a,b)=>['totalSteel','sfd','activity','seconds','pmt','pixel','offset'].every(k=>a[k]===b[k]);
+  // A calibration with the built-in shots added where missing and the built-in target where none is set.
+  function crWithBuiltIn(cal){const shots=[...cal.shots];for(const s of CR_BUILT_IN_SHOTS)if(!shots.some(x=>sameShot(x,s)))shots.push({...s});return {...cal,shots,targetPixel:cal.targetPixel==null?CR_BUILT_IN_CALIBRATION.targetPixel:cal.targetPixel};}
   const IN_M=.0254,K_PER_R=IN_M*IN_M*3600/CR_DOSE.gamma;
   function validDose(r){return typeof r==='number'&&Number.isFinite(r)&&r>=CR_DOSE.minR-1e-9&&r<=CR_DOSE.maxR+1e-9;}
   function crHvl(cal){return cal&&Number.isFinite(cal.hvlMm)?cal.hvlMm:CR_DEFAULT_HVL_MM;}
@@ -227,7 +238,7 @@
     if(!Number.isFinite(value)||value<=0)throw new Error('Exposure is out of range.');
     return value;
   }
-  const api={CR_DOSE,crStartDose,CR_DEFAULT_HVL_MM,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={CR_DOSE,crStartDose,CR_BUILT_IN_CALIBRATION,crWithBuiltIn,CR_DEFAULT_HVL_MM,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
