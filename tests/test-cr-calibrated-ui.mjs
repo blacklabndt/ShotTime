@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {loadApp} from './load-app.mjs';
-// Carestream CR (calibrated) in the app: one PMT slider per pipe card (steps of 10) with the plate exposure it implies shown,
+// CS Flex HR in the app: one PMT slider per pipe card (steps of 10) with the plate exposure it implies shown,
 // reference shots, measured gain or the built-in gain law; print, Custom Shot, helper and persistence.
 const browser=await chromium.launch({executablePath:process.env.CHROME_BINARY});
 const html=await loadApp();
@@ -82,14 +82,14 @@ try{
   // The factor helper does not apply to calibrated CR: it points to reference shots and changes nothing.
   await page.locator('#edit-source').click();
   assert.equal(await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=true;$('helper-size').value='4';helperGeometry();$('helper-film').value='crcal';$('helper-film').dispatchEvent(new Event('change'));$('helper-ci').value='26';$('helper-time').value='30';$('helper-form').requestSubmit();return [$('helper-error').textContent,JSON.parse(localStorage.getItem('shottime.settings'))['factor.crcal']].join('|');}),
-    'Carestream CR (calibrated) is set from reference shots, not a factor: add this shot under Carestream CR calibration → Reference shots. Nothing has been changed.|');
+    'CS Flex HR is set from reference shots, not a factor: add this shot under CS Flex HR calibration → Reference shots. Nothing has been changed.|');
   await page.locator('#close-sheet').click();
 
   // Custom Shot: PMT instead of density; the plate exposure comes from the reference shots at that PMT (law-converted where needed).
   await page.locator('#app-menu-button').click();await page.locator('#nav-custom').click();await page.locator('#custom-film').selectOption('crcal');
   assert.ok(await page.locator('#custom-density').isHidden());assert.ok(await page.locator('#custom-pmt').isVisible());assert.equal(await page.locator('#custom-dose').count(),0);assert.equal(await page.locator('#custom-dose-size').count(),0);
   await page.locator('#custom-steel').fill('.474');await page.locator('#custom-sfd').fill('4.625');await page.locator('#custom-pmt').fill('40');await page.locator('#custom-form button').click();
-  assert.equal(await page.locator('#custom-time').textContent(),'9s');assert.match(await page.locator('#custom-summary').textContent(),new RegExp('Carestream CR \\(calibrated\\) · PMT 40 · '+shotR.toFixed(2)+' R plate exposure \\(from reference shots\\)'));
+  assert.equal(await page.locator('#custom-time').textContent(),'9s');assert.match(await page.locator('#custom-summary').textContent(),new RegExp('CS Flex HR · PMT 40 · '+shotR.toFixed(2)+' R plate exposure \\(from reference shots\\)'));
   await page.locator('#custom-pmt').fill('47');await page.locator('#custom-form button').click();assert.equal(await page.locator('#custom-time').textContent(),lab(physics(.474,4.625,shotR*2**(-7/12.4))));assert.match(await page.locator('#custom-summary').textContent(),/R plate exposure \(from reference shots, gain estimated\)/);
   await page.locator('#custom-pmt').fill('x');await page.locator('#custom-form button').click();assert.match(await page.locator('#custom-error').textContent(),/PMT as a whole number/);
   await page.locator('#custom-pmt').fill('47');await page.evaluate(()=>{document.querySelector('#custom-shot details').open=true;});await page.locator('#custom-preset-name').fill('CR 47');await page.locator('#custom-save').click();assert.match(await page.locator('#custom-save-status').textContent(),/Setup saved/);
@@ -134,7 +134,7 @@ try{
   const at2850=await page.evaluate(()=>Number(document.querySelector('.shot[data-size="4"][data-schedule="40 / STD"]').dataset.seconds));
   await page.locator('#pixel-target').fill('3200');assert.equal(await page.locator('#toast').textContent(),'Target pixel 3200 saved');assert.equal(await page.locator('#cr-target').inputValue(),'3200');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('shottime.crCalibration')).targetPixel),3200);
   assert.match(await page.locator('#film-overview').textContent(),/Target pixel 3200$/);
-  await page.locator('#film-small+.film-options button[data-film="cr"]').click();assert.ok(await page.locator('#target-density').isVisible());assert.ok(await page.locator('#pixel-target').isVisible());await page.locator('#film-large+.film-options button[data-film="cr"]').click();assert.ok(await page.locator('#pixel-target-box').isHidden());
+  await page.locator('#film-small+.film-options button[data-film="d4"]').click();assert.ok(await page.locator('#target-density').isVisible());assert.ok(await page.locator('#pixel-target').isVisible());await page.locator('#film-large+.film-options button[data-film="d5"]').click();assert.ok(await page.locator('#pixel-target-box').isHidden());
   await page.locator('#film-small+.film-options button[data-film="crcal"]').click();await page.locator('#film-large+.film-options button[data-film="crcal"]').click();await page.locator('#close-sheet').click();
   close(await secs(4),at2850*(3200-200)/(2850-200));
   await page.locator('#edit-source').click();await page.locator('#pixel-target').fill('2850');await page.locator('#close-sheet').click();close(await secs(4),at2850);

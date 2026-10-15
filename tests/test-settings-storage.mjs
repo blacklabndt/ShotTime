@@ -79,11 +79,18 @@ assert.equal(await page.locator('.shot[data-schedule="10"]').count(),0);assert.e
 assert.deepEqual((await stored(page))['filter.schedule'],excluded['filter.schedule']);assert.deepEqual((await stored(page))['filter.pipe'],excluded['filter.pipe']);
 // Restoring a normal CR helper draft refreshes both density inputs, their labels and hint.
 await page.locator('#edit-source').click();await page.evaluate(()=>{document.querySelector('.settings').open=true;$('cal-helper').open=true;});
-await page.locator('#helper-size').selectOption('4');await page.locator('#helper-film').selectOption('cr');await page.reload();
-assert.equal(await page.locator('#helper-film').inputValue(),'cr');
+await page.locator('#helper-size').selectOption('4');await page.locator('#helper-film').selectOption('crcal');await page.reload();
+assert.equal(await page.locator('#helper-film').inputValue(),'crcal');
 for(const selector of ['#helper-measured','#helper-density','label[for="helper-measured"]','label[for="helper-density"]','#helper-measured-hint'])assert.equal(await page.locator(selector).evaluate(el=>el.hidden),true);
 await page.locator('#helper-film').selectOption('d5');
 for(const selector of ['#helper-measured','#helper-density','label[for="helper-measured"]','label[for="helper-density"]','#helper-measured-hint'])assert.equal(await page.locator(selector).evaluate(el=>el.hidden),false);
+// Legacy chart selections migrate, while calibrated settings and corrections remain independent.
+const legacy=await open({...draft({'helper-size':'4','helper-film':'cr','weld-size':'4','weld-film':'cr','weld-factor':'9'}),'film.small':'cr','film.large':'cr','factor.cr':8,'factor.crcal':1.2});
+assert.deepEqual(await legacy.evaluate(()=>[$('film-small').value,$('film-large').value,$('helper-film').value,$('weld-film').value]),['crcal','crcal','crcal','crcal']);
+assert.equal(await legacy.locator('#weld-factor').inputValue(),'1');
+assert.equal(await legacy.evaluate(()=>storedFilmFactor('crcal')),1.2);
+assert.equal((await stored(legacy))['film.small'],'crcal');
+await legacy.reload();assert.equal(await legacy.locator('#film-large').inputValue(),'crcal');
 // Saving or resetting a dependent size/schedule correction invalidates the reviewed proposal.
 await page.evaluate(()=>{$('weld-panel').open=true;});
 await page.locator('#helper-ci').fill('26');await page.locator('#helper-time').fill('30');

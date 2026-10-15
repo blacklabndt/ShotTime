@@ -98,7 +98,7 @@
     const lower=densityExposure(technique,film,DENSITIES[i]),upper=densityExposure(technique,film,DENSITIES[i+1]);
     return lower*Math.pow(upper/lower,(density-DENSITIES[i])/(DENSITIES[i+1]-DENSITIES[i]));
   }
-  // Carestream CR (calibrated), film id 'crcal': physics, no chart numbers. Times come from a plate exposure target
+  // CS Flex HR, film id 'crcal': physics, no chart numbers. Times come from a plate exposure target
   // (crDoseExposure below); the owner's reference shots and gain table only suggest that target (crSuggestedDose).
   //   Ci·s = K × (SFD in)² × 2^(total steel mm ÷ H)
   // K comes only from reference shots the owner records (good images: steel, SFD, activity, time, PMT, and
@@ -260,7 +260,7 @@
   function customExposure(totalSteel,sfd,film,density,options){
     checkSteelAndSfd(totalSteel,sfd);
     if(film==='dr3543pe')return drExposure(totalSteel,sfd,options?.pixel);
-    if(film==='crcal'){if(!options)throw new Error('Carestream CR (calibrated) needs a plate exposure.');return crDoseExposure(totalSteel,sfd,options.doseR,options.calibration);}
+    if(film==='crcal'){if(!options)throw new Error('CS Flex HR needs a plate exposure.');return crDoseExposure(totalSteel,sfd,options.doseR,options.calibration);}
     if(film==='d7')return customExposure(totalSteel,sfd,'d5',density)/1.5; // Published STRUCTURIX Ir-192 exposure factors: D7 1.0 / D5 1.5.
     if(!Object.prototype.hasOwnProperty.call(FILM_REFERENCES,film))throw new Error('Custom CR needs a reference exposure; choose a film.');
     const value=densityExposure({wall:totalSteel/2,sfd,group:FILM_REFERENCES[film].group},film,density);

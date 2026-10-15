@@ -59,7 +59,7 @@ const crRows=new Set();for(const [size,schedule,cs] of crChart){const t=data.tec
   for(const d of C.DENSITIES)assert.equal(C.densityExposure(t,'cr',d),cs);assert.equal(C.exposureAtDensity(t,'cr',2.7),cs);}
 assert.equal(crRows.size,56);assert.equal(Object.keys(C.CHART_EXPOSURES.cr).length,56);
 for(const t of data.techniques)if(!crRows.has(t))assert.equal(C.densityExposure(t,'cr',3),null,t.size+' '+t.schedule);
-for(const group of ['small','large'])assert.ok(data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
+for(const group of ['small','large'])assert.ok(!data.groups[group].films.includes('cr'));assert.equal(C.usesDensity('cr'),false);assert.ok(['d4','d5','mx125','t200','ix50','ix80'].every(C.usesDensity));
 assert.throws(()=>C.densityExposure(ref4,'cr',4.5));assert.equal(C.timeLabel(C.seconds(C.densityExposure(ref4,'cr',3),26)),'25s');
 // Internal / offset: CR ÷8 nearest and ÷3 rounded up; films ÷9 nearest and ÷3.2 nearest.
 assert.equal(C.internalSeconds('cr',49),6);assert.equal(C.offsetSeconds('cr',49),17);assert.equal(C.offsetSeconds('cr',48),16);
@@ -69,4 +69,4 @@ for(const film of ['d4','d5','mx125','t200','ix50','ix80']){
   for(const [shot,want] of [[0,0],[32,10],[32.01,10],[33.59,10],[33.6,11],[49,15],[90,28]])assert.equal(C.offsetSeconds(film,shot),want,film+' offset for '+shot);
 }
 for(const s of ['','0','-1','1e3','NaN','1000'])assert.equal(C.parseActivity(s),null);assert.equal(C.parseActivity('26,5'),26.5);assert.equal(C.timeLabel(.1),'0s');assert.equal(C.timeLabel(59.5),'1m 0s');assert.equal(C.timeLabel(3599.5),'1h 0m 0s');assert.equal(C.decay(26,'2026-09-29','2026-09-29'),26);assert.equal(C.decay(26,'2026-09-30','2026-09-29'),null);assert.equal(C.dayNumber('2026-02-30'),null);
-console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation; Carestream CR chart (56 rows) in both belts.`);
+console.log(`PASS: ${count} film/density combinations follow the shared steel model, 30 reference targets, published small/large film ratios at every density, Agfa shape within 4%, B36.10M walls, film-curve interpolation, inverse activity, rounding and date validation; Carestream CR historical chart (56 rows) retained.`);

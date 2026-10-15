@@ -118,5 +118,5 @@ finally{Object.assign(C.CHART_EXPOSURES.cr,savedChart);savedT200.forEach((v,i)=>
 // CR rules: no film density; Internal ÷ 8, offset ÷ 3 rounded up.
 assert.equal(C.usesDensity('crcal'),false);assert.equal(C.internalSeconds('crcal',49),6);assert.equal(C.offsetSeconds('crcal',49),17);
 assert.ok(C.CUSTOM_FILMS.includes('crcal'));for(const g of ['small','large'])assert.ok(data.groups[g].films.includes('crcal'));
-assert.equal(data.films.crcal.name,'Carestream CR (calibrated)');
+assert.equal(data.films.crcal.name,'CS Flex HR');
 console.log('PASS: 1.96 film outputs unchanged and CR chart restored to the Carestream sheet with three corrected cells (2,280 rows, 525 custom), CR Formula (70%) removed, plate exposure model (Carestream-chart per-size starts, 14.5 mm, 0.5–12 R, inverse square, steel, activity), built-in field shots, shot plate exposure and suggestions, 100-shot limit counted, calibrated CR cleaning, no-calibration refusal, inverse square/activity, total steel, published and measured H, gain conversion by measured table inside its range else the built-in law, pixel target with offsets, geometric mean and spread, cross-check, suggested H, independence from chart and film numbers, CR internal rules.');

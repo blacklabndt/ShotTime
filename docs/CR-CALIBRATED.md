@@ -1,3 +1,7 @@
+## CS Flex HR option cleanup — unreleased after 1.100, 2026-10-14
+
+Removed the legacy chart `cr` choice from both belts and calibration selectors. The existing calibrated `crcal` choice is now named **CS Flex HR** throughout the UI, Custom Shot and print output. Its calculation, calibration record, PMT settings and saved setups keep their existing identifiers and values. Saved belt and helper/correction draft selections of `cr` migrate to `crcal`; chart factors are not transferred, and a chart correction draft is discarded. Historical chart constants remain for regression and provenance. No version bump or APK release for this change.
+
 # Carestream CR (calibrated) — 1.97, updated 1.98
 
 Prepared 2026-10-11. This is the independent CR calculation the owner asked for, in place of chart fitting or a T200 percentage. It adds a new film choice, **Carestream CR (calibrated)** (`crcal`), to both belts and to Custom Shot. The original chart (`cr`) and every film's output are unchanged. A test compares all 2,280 table values and 525 Custom Shot values against a 1.96 snapshot.

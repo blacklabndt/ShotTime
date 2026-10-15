@@ -811,7 +811,6 @@
         "d4",
         "mx125",
         "ix50",
-        "cr",
         "crcal"
       ]
     },
@@ -823,7 +822,6 @@
         "d5",
         "t200",
         "ix80",
-        "cr",
         "crcal"
       ]
     }
@@ -853,12 +851,8 @@
       "name": "Fuji IX80",
       "note": "Calculator reference target on 4-inch STD. Verify with test shots."
     },
-    "cr": {
-      "name": "Carestream CR",
-      "note": "Your Carestream CR chart (EXPOSURE CHART.xlsx), used as given except three corrected cells (24\" XS, 14\" Sch 40, 6\" XXH). Same time at every target density; rows not in the chart show \u2014. Internal = time \u00f7 8, offset = time \u00f7 3."
-    },
     "crcal": {
-      "name": "Carestream CR (calibrated)",
+      "name": "CS Flex HR",
       "note": "Physics: plate exposure (R) \u00d7 SFD\u00b2 \u00f7 Ir-192 output \u00d7 steel curve (14.5 mm). Each pipe card has a PMT slider (steps of 10) and shows the plate exposure your reference shots imply there, converted between PMTs by your gain table or a built-in law; without shots it uses what your Carestream chart implies for that pipe size (5 R at 2\" down to 0.65 R at 24\"). Internal = time \u00f7 8, offset = time \u00f7 3."
     }
   }
