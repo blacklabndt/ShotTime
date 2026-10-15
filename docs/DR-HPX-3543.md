@@ -2,7 +2,7 @@
 
 Added 2026-10-14, after the signed 1.98 release. Included in the 1.99 release source (versionCode 121); the existing 1.98 APK on Drive does not contain this feature.
 
-The owner confirmed the Carestream HPX-DR **3543 PE**, Ir-192, and raw **16-bit linear** pixel values in INDUSTREX. This choice exists only in Custom Shot. Pixel options are the published targets 3000, 6000, 9000, 12000, 15000, 18000 and 21000 (default 3000). Frame presets are 1, 2, 4, 8, 9, 16 and 32, plus a custom whole count 1–999 (default 9). The custom count cap is an application input limit, not a detector capability claim.
+The owner confirmed the Carestream HPX-DR **3543 PE**, Ir-192, and raw **16-bit linear** pixel values in INDUSTREX. This choice exists only in Custom Shot. Pixel options are the published targets 3000, 6000, 9000, 12000, 15000, 18000 and 21000 (default 6000). Frame presets are 1, 2, 4, 8, 9, 16 and 32, plus a custom whole count 1–999 (default 9). The custom count cap is an application input limit, not a detector capability claim.
 
 ## Data and model
 
@@ -34,3 +34,5 @@ Existing `shottime.customShots.v1` presets gain additive `pixel` and `frames` fi
 Verification on 2026-10-14: full `npm test` passed (Chrome on Windows), including the new DR suites. The DR browser suite also passed after the final label-spacing and saved-pixel validation changes. Log: `build/dr-regression.log`; mobile capture: `build/dr-custom-mobile.png`.
 
 Published-target follow-up: DR unit/browser tests passed, including exact table lookup, all seven options, saved 21000-pixel setup and explicit reselection for an old 4000-pixel setup.
+
+Post-1.99 UI update: new DR calculations default to 6000 pixels, matching Carestream’s worked example. The main result displays estimated total exposure; per-frame integration, frame count and readout-overhead exclusion appear underneath. Saved setups retain their pixel selections. This update is included in the 1.100 release source (versionCode 122).

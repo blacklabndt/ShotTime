@@ -1,5 +1,9 @@
 # ShotTime handover — 1.21.1 (versionCode 43)
 
+## DR result display — 1.100 / versionCode 122
+
+Owner requested a 6000-pixel default and visible total exposure. Custom Shot now defaults DR to 6000 and uses total exposure as its main result, with per-frame integration and frame count underneath. Saved setups retain their selected target. Prepared for requested signed 1.100 release. Remote branch verified at a2b9be0 before applying the update.
+
 ## HPX-DR 3543 PE Custom Shot — 1.99 / versionCode 121, 2026-10-14
 
 Owner confirmed Ir-192, 3543 PE and INDUSTREX raw 16-bit linear values. Custom Shot now has independent DR pixel choices 3000, 6000, 9000, 12000, 15000, 18000 and 21000, frame presets plus custom 1–999, per-frame integration and total exposure. Owner follow-up replaced interpolated/extrapolated choices with direct published R-factor lookups. Old intermediate-pixel setups require explicit reselection when loaded. See docs/DR-HPX-3543.md for the Carestream R-factor sources, fixed 13 mm HVL approximation, limitations and tests. No film/CR factors apply. Prepared for the requested signed 1.99 release. GitHub default branch verified at 8802136 before applying these changes. Existing 1.98 APK and Drive upload predate this feature. Physical panel validation remains outstanding.
