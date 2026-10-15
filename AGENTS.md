@@ -1,8 +1,16 @@
 # AGENTS.md — ShotTime
 
-## Next task for Codex — release 1.98 (owner request, 2026-10-14)
+## HPX-DR 3543 PE Custom Shot — 1.99 / versionCode 121, 2026-10-14
 
-The default branch at commit 2167e58 or later is release-ready: versionCode 120, versionName 1.98, full `npm test` and `build-review.sh` passing. Do exactly what was done for 1.96 (see that section and dist/BUILD-VERIFICATION-1.96.md): `build-voice`, then `build.sh` with the owner's existing `signing/` backup (alias `shottime`, certificate `af4e70b2…`), verify signature, 16 KB alignment, manifest (`versionCode='120' versionName='1.98'`, targetSdk 36) and packaged-asset equality, write dist/BUILD-VERIFICATION-1.98.md, upload dist/RT-Handbook-v1.98.apk to Google Drive My Drive (private), confirm the upload completed and the byte size matches, then record the result (file ID, SHA-256) in a "1.98 signed release" section here and in HANDOVER.md. Do not change code, tests or the version. Never generate, commit or redistribute the signing key. Handset installation remains unverified unless the owner confirms it.
+Owner confirmed Ir-192, 3543 PE and INDUSTREX raw 16-bit linear values. Custom Shot now has independent DR pixel choices 3000, 6000, 9000, 12000, 15000, 18000 and 21000, frame presets plus custom 1–999, per-frame integration and total exposure. Owner follow-up replaced interpolated/extrapolated choices with direct published R-factor lookups. Old intermediate-pixel setups require explicit reselection when loaded. See docs/DR-HPX-3543.md for the Carestream R-factor sources, fixed 13 mm HVL approximation, limitations and tests. No film/CR factors apply. Prepared for the requested signed 1.99 release. GitHub default branch verified at 8802136 before applying these changes. Existing 1.98 APK and Drive upload predate this feature. Physical panel validation remains outstanding.
+
+## 1.98 signed release — 2026-10-14
+
+Completed the requested release task from default-branch commit `8802136df83d5a191f142acc7886aa7e807286a2` (includes `2167e58`, PMT-only calibrated CR cards and built-in gain law). Version 1.98 / versionCode 120 / target SDK 36 unchanged. Fresh standard and optimized ARM64 voice builds, full `npm test`, Android packaging, existing-key v2/v3 signatures, 16 KB alignment, manifest checks and all 42 packaged app/voice file comparisons passed. No code, tests or version changes. Windows used `build-voice.ps1`, `build-review.ps1` and the equivalent `build.sh` signing/verification commands; Bash was unavailable.
+
+Uploaded `dist/RT-Handbook-v1.98.apk` to My Drive as Version 2 of the earlier 1.98 file, retaining its link and private access. Drive confirmed completion; metadata verified exactly 197,811,806 bytes, `shared=false`, and owner-only permission. File ID: `1pi-oLAX5J-r16MuW3IGh-3XMgqZ-GE8q`. [Drive APK](https://drive.google.com/file/d/1pi-oLAX5J-r16MuW3IGh-3XMgqZ-GE8q/view?usp=drivesdk). SHA-256: `85df101b4d214686d638943571a6ffbf32af1fb47b859897ca615d3ae89dd41c`. Drive did not return checksum fields, so remote byte-for-byte equality was not independently verified. The earlier local APK and record are preserved under `dist/previous-ab694ac/`.
+
+See `dist/BUILD-VERIFICATION-1.98.md` and `dist/drive-release-1.98.png`. Signing identity remains `af4e70b2acec7b614fceec08bb354d00f9eb067ee5780b2a713b2ea654f0310c`; no signing credentials were packaged or committed. Handset installation and physical exposure validation remain unverified.
 
 ## Carestream CR 1.98 — versionCode 120, 2026-10-12 (unreleased)
 

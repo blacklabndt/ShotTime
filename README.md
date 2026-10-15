@@ -6,6 +6,10 @@ Offline Android Ir-192 shot-time reference app. Android 8/API 26 minimum, target
 
 
 
+## Carestream DR — 1.99
+
+Custom Shot adds HPX-DR 3543 PE with Ir-192 and raw 16-bit linear targets of 3000–21000 in published 3000-pixel steps. Choose averaged frames or a custom count; see integration per frame and total exposure excluding readout. Uses published R factors and a fixed 13 mm steel HVL estimate, independently of film/CR settings. See docs/DR-HPX-3543.md for sources and physical-validation limits.
+
 ## Carestream CR — 1.98
 
 The Carestream CR chart now uses your Carestream sheet (+30% on 2"–6"), with three cells corrected: 24" XS, 14" Sch 40 and 6" XXH. Calibrated CR starts each card at the plate exposure your chart implies for its pipe size, from 5 R at 2" to 0.65 R at 24". Your three field shots of 2026-10-14 and a 2850 pixel target are built in; a phone with no saved calibration starts from them, and Restore built-in shots brings them back. With calibrated CR selected, Source & film shows a Target pixel value slider (2000–4000) in place of target density. Each pipe card has one PMT slider in steps of 10 and shows the plate exposure it implies; shots at another PMT convert through your gain table or, without one, a built-in law from your PMT 20 and 40 shots. It uses a 14.5 mm steel curve and clamps implied plate exposures to 0.5–12 R. Your reference shots still override these defaults. The CR field estimate was removed. See docs/CR-CALIBRATED.md.

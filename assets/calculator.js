@@ -75,7 +75,7 @@
       '16|120':18160,'16|160':46700,'20|STD':3140,'20|40':5830,'20|XH':4490,'20|80':16550,'20|120':55220,'24|STD':4520,'24|40':9930,
       '24|80':36050,'24|XH':6390}
   };
-  function usesDensity(film){return film!=='crcal'&&!CHART_EXPOSURES[film];}
+  function usesDensity(film){return film!=='dr3543pe'&&film!=='crcal'&&!CHART_EXPOSURES[film];}
   // crcal needs {pmt, calibration} (a clean calibration); it returns null when the calibration cannot cover the row.
   function densityExposure(technique,film,density,options){
     const index=DENSITIES.indexOf(density),chart=CHART_EXPOSURES[film];
@@ -235,9 +235,31 @@
   // Plate exposure the owner's reference shots imply at a PMT (gain table and pixel target applied), or a reason.
   function crSuggestedDose(cal,pmt){const r=crCalibratedExposure(.5,10,pmt,cal);if(r.curieSeconds===null)return {doseR:null,reason:r.reason};
     return {doseR:r.curieSeconds/crGeometry(.5,10,r.hvlMm)/K_PER_R,shotsUsed:r.shotsUsed,spread:r.spread,gainScaled:r.gainScaled,gainBuiltIn:r.gainBuiltIn,pixelScaled:r.pixelScaled};}
-  const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','crcal'];
+  // Single-frame 16-bit linear Ir-192 R factors; see docs/DR-HPX-3543.md.
+  // Independent estimate: no CR dose floor, PMT, calibration or film factor.
+  const DR_R_FACTORS=Object.freeze({3000:.0112,6000:.0237,9000:.0366,12000:.0499,15000:.0635,18000:.0775,21000:.0918});
+  const DR_MODEL=Object.freeze({hvlMm:13,gamma:.48,minPixel:3000,maxPixel:21000,maxFrames:999});
+  function drRFactor(pixel){
+    if(!Number.isInteger(pixel)||!Object.hasOwn(DR_R_FACTORS,pixel))throw Error('Choose a published DR pixel target from 3000 to 21000.');
+    return DR_R_FACTORS[pixel];
+  }
+  function drExposure(totalSteel,sdd,pixel){
+    checkSteelAndSfd(totalSteel,sdd);
+    const value=drRFactor(pixel)*(sdd*.0254)**2*3600/DR_MODEL.gamma*2**(totalSteel*25.4/DR_MODEL.hvlMm);
+    if(!Number.isFinite(value)||value<=0)throw Error('DR exposure is out of range.');
+    return value;
+  }
+  function drShot(totalSteel,sdd,pixel,frames,activity){
+    if(!Number.isInteger(frames)||frames<1||frames>DR_MODEL.maxFrames)throw Error('Enter a whole frame count from 1 to 999.');
+    if(!Number.isFinite(activity)||activity<=0)throw Error('Enter a valid current source activity in Ci.');
+    const perFrameSeconds=drExposure(totalSteel,sdd,pixel)/activity,totalSeconds=perFrameSeconds*frames;
+    if(!Number.isFinite(totalSeconds)||totalSeconds<=0)throw Error('DR exposure time is out of range.');
+    return {perFrameSeconds,totalSeconds,doseR:drRFactor(pixel)};
+  }
+  const CUSTOM_FILMS=[...Object.keys(FILM_REFERENCES),'d7','crcal','dr3543pe'];
   function customExposure(totalSteel,sfd,film,density,options){
     checkSteelAndSfd(totalSteel,sfd);
+    if(film==='dr3543pe')return drExposure(totalSteel,sfd,options?.pixel);
     if(film==='crcal'){if(!options)throw new Error('Carestream CR (calibrated) needs a plate exposure.');return crDoseExposure(totalSteel,sfd,options.doseR,options.calibration);}
     if(film==='d7')return customExposure(totalSteel,sfd,'d5',density)/1.5; // Published STRUCTURIX Ir-192 exposure factors: D7 1.0 / D5 1.5.
     if(!Object.prototype.hasOwnProperty.call(FILM_REFERENCES,film))throw new Error('Custom CR needs a reference exposure; choose a film.');
@@ -245,7 +267,7 @@
     if(!Number.isFinite(value)||value<=0)throw new Error('Exposure is out of range.');
     return value;
   }
-  const api={CR_DOSE,crStartDose,CR_BUILT_IN_CALIBRATION,crWithBuiltIn,CR_GAIN_LAW,crGainLaw,CR_DEFAULT_HVL_MM,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
+  const api={DR_R_FACTORS,DR_MODEL,drRFactor,drExposure,drShot,CR_DOSE,crStartDose,CR_BUILT_IN_CALIBRATION,crWithBuiltIn,CR_GAIN_LAW,crGainLaw,CR_DEFAULT_HVL_MM,validDose,crDoseExposure,crShotDose,crSuggestedDose,CR_PUBLISHED_HVL_MM,CR_LIMITS,crCleanCalibration,crGainAt,crOffsetAt,crCalibratedExposure,crCrossCheck,crSuggestedHvl,checkSteelAndSfd,CUSTOM_FILMS,customExposure,DENSITIES,CHART_EXPOSURES,usesDensity,internalSeconds,offsetSeconds,exposureAtDensity,STEEL_HVL_MM,MAX_STEEL_MM,withinSteelRange,REFERENCE_GEOMETRY,FILM_REFERENCES,REFERENCE_CURIE_SECONDS,geometryFactor,parseActivity,seconds,timeLabel,matchesSchedule,dayNumber,decay,densityExposure};
   if(typeof module!=='undefined' && module.exports) module.exports=api;
   root.ShotCalculator=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
