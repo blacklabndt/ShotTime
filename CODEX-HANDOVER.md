@@ -115,4 +115,4 @@ On Windows use `build-voice.ps1` / `build-review.ps1`. Signed builds use `build.
 
 ## 9. Test result recorded for this handover
 
-Full `npm test` passed on `e9d4f89` on 2026-11-03: the unsharpness pretest, every calculator/UI suite and every notes suite through `test-modifiers-ui.mjs` (60 PASS lines, no failures). Java unit tests and the Android build were not run here.
+Full `npm test` passed on `e9d4f89` on 2026-11-03: the unsharpness pretest, every calculator/UI suite and every notes suite through `test-modifiers-ui.mjs` (84 PASS lines, exit code 0). Java unit tests and the Android build were not run here.
