@@ -1,3 +1,5 @@
+> **Codex handover (2026-11-03):** read `CODEX-HANDOVER.md` first. It covers git and release state, the hard rules, build/test steps and open work as of 1.101 / versionCode 123.
+
 ## CS Flex HR option cleanup — 1.101 / versionCode 123, 2026-10-14
 
 Removed the legacy chart `cr` choice from both belts and calibration selectors. The existing calibrated `crcal` choice is now named **CS Flex HR** throughout the UI, Custom Shot and print output. Its calculation, calibration record, PMT settings and saved setups keep their existing identifiers and values. Saved belt and helper/correction draft selections of `cr` migrate to `crcal`; chart factors are not transferred, and a chart correction draft is discarded. Historical chart constants remain for regression and provenance. Prepared for the requested signed 1.101 release. Default branch verified current at 7b24bb4 before release. Full npm test coverage passed (initial run plus remaining suites after narrowing a test selector).
