@@ -1336,6 +1336,24 @@
     }, 'Saving files…');
   }
 
+  // ---------- hideable side panes (Edit tab) ----------
+  const PANES_KEY = 'diconde-editor.panes.v1';
+  S.panes = (() => { try { const v = JSON.parse(localStorage.getItem(PANES_KEY) || 'null'); return { files: v ? v.files !== false : true, tools: v ? v.tools !== false : true }; } catch (e) { return { files: true, tools: true }; } })();
+  function applyPanes() {
+    const ws = document.querySelector('main.workspace');
+    ws.classList.toggle('no-files', !S.panes.files); ws.classList.toggle('no-tools', !S.panes.tools);
+    $('tg-files').setAttribute('aria-pressed', String(S.panes.files)); $('tg-tools').setAttribute('aria-pressed', String(S.panes.tools));
+    $('tg-files').title = `${S.panes.files ? 'Hide' : 'Show'} the file pane ( [ )`; $('tg-tools').title = `${S.panes.tools ? 'Hide' : 'Show'} the editing tools ( ] )`;
+    resize(); // the image re-fits to the space it now has
+  }
+  function togglePane(which, show) {
+    S.panes[which] = show == null ? !S.panes[which] : show;
+    try { localStorage.setItem(PANES_KEY, JSON.stringify(S.panes)); } catch (e) { /* per-browser convenience only */ }
+    applyPanes();
+    const back = which === 'files' ? $('tg-files') : $('tg-tools');
+    if (!S.panes[which] && document.activeElement && document.activeElement.closest && document.activeElement.closest(which === 'files' ? '#file-pane' : '#tools-panel')) back.focus();
+  }
+
   // ---------- wiring ----------
   function syncSeg(sel, attr, value) { document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === value))); }
   function setTool(t) { S.tool = t; $('stage').dataset.tool = t; syncSeg('[data-tool]', 'tool', t); }
@@ -1387,6 +1405,9 @@
     cmp.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setComparing(true); } });
     cmp.addEventListener('keyup', () => setComparing(false));
     $('btn-viewrot').onclick = rotateView;
+    $('tg-files').onclick = () => togglePane('files'); $('tg-tools').onclick = () => togglePane('tools');
+    document.querySelectorAll('[data-hide-pane]').forEach(b => b.onclick = () => togglePane(b.dataset.hidePane, false));
+    applyPanes();
     document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
     $('sh-group').innerHTML = ''; SH.GROUP_FIELDS.forEach(t => $('sh-group').append(el('option', { value: SH.hex(t) }, D.tagInfo(t).name + (D.tagInfo(t).ndeName ? '' : ''))));
     $('sh-group').value = SH.hex(S.shGroup); $('sh-group').onchange = () => { S.shGroup = parseInt($('sh-group').value, 16) >>> 0; renderShots(); };
@@ -1450,6 +1471,8 @@
       else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
       else if (!mod && e.key.toLowerCase() === 'f') fit();
       else if (!mod && e.key.toLowerCase() === 'v') rotateView();
+      else if (!mod && S.mode === 'edit' && e.key === '[') togglePane('files');
+      else if (!mod && S.mode === 'edit' && e.key === ']') togglePane('tools');
       else if (!mod && e.key.toLowerCase() === 'i' && S.img) setOverlay(!S.ov.opts.enabled);
       else if (!mod && e.key.toLowerCase() === 'c' && !e.repeat && !$('btn-compare').disabled) setComparing(true);
       else if (e.key === 'Escape') { S.crop = null; syncCropInputs(); draw(); }

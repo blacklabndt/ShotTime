@@ -561,6 +561,30 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     ok('shots window');
   }
 
+  // Hideable side panes: buttons, keys, the image re-fits, remembered across reloads.
+  {
+    const panesPath = path.join(tmp, 'panes.dcm'); fs.writeFileSync(panesPath, D.write(makeSample({ rows: 60, cols: 200 })));
+    await page.setInputFiles('#file-input', panesPath);
+    await page.waitForFunction(() => /Opened panes\.dcm/.test(document.getElementById('toast').textContent));
+    const viewW = () => page.evaluate(() => document.getElementById('view').getBoundingClientRect().width);
+    const zoom = () => page.evaluate(() => window.__editor.S.view.zoom);
+    const w0 = await viewW(), z0 = await zoom();
+    await page.click('[data-hide-pane=files]');
+    assert.ok(await page.isHidden('#file-pane'));
+    assert.strictEqual(await page.getAttribute('#tg-files', 'aria-pressed'), 'false');
+    await page.waitForFunction(w => document.getElementById('view').getBoundingClientRect().width > w + 200, w0);
+    await page.click('[data-tab=meta]'); await page.locator('#view').click({ position: { x: 5, y: 5 } }); // focus out of inputs
+    await page.keyboard.press(']');
+    assert.ok(await page.isHidden('#tools-panel'));
+    await page.waitForFunction(z => window.__editor.S.view.zoom > z * 1.3, z0);
+    await page.reload();
+    assert.ok(await page.isHidden('#file-pane') && await page.isHidden('#tools-panel'), 'remembered');
+    await page.click('#tg-files'); await page.keyboard.press(']');
+    assert.ok(await page.isVisible('#file-pane') && await page.isVisible('#tools-panel'));
+    assert.strictEqual(await page.getAttribute('#tg-tools', 'aria-pressed'), 'true');
+    ok('hideable panes');
+  }
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');

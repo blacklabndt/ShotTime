@@ -18,6 +18,7 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
 - **Edit tab**: a file pane on the left lists the folder's files under their weld, with thumbnail, shot number and edited/saved marks; filter it, or use ↑/↓ to move through it. Click a file to edit it in the viewer and tool tabs.
   - Each file keeps its unsaved work when you move to another: metadata edits, image steps and its undo history.
   - **Save all edited** (bottom of the pane, or Organize shots) saves every changed file, with its image changes where it has any.
+- **Hideable panes**: the file pane and the tool panel can each be hidden to give the image the whole window. Use « / » in the panes, the **Files** and **Tools** buttons at the ends of the viewer toolbar, or the `[` and `]` keys. The image re-fits, and the choice is remembered in this browser.
 - **Organize shots tab**: organise the folder's shots by weld and edit their metadata together.
   - **Grouping**: shots are grouped by a chosen field (default Series Description, where INDUSTREX keeps the weld/shot ID, e.g. X-81). Within a weld they are ordered by shot number, then acquisition time. Thumbnails are shown at INDUSTREX's viewing angle.
   - **Selecting**: click shots, or tick a whole weld.

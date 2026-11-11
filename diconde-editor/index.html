@@ -42,7 +42,14 @@ label { color: var(--muted); }
 .menu.open > div { display: block; }
 .menu > div button { display: block; width: 100%; text-align: left; border: 0; background: none; }
 .menu > div button:hover { background: var(--panel-2); }
-.workspace { flex: 1; display: grid; grid-template-columns: 250px 1fr 420px; min-height: 0; }
+.workspace { flex: 1; display: grid; grid-template-columns: var(--files-w, 250px) minmax(0, 1fr) var(--tools-w, 420px); min-height: 0; }
+.workspace > .files { grid-column: 1; } .workspace > .viewer { grid-column: 2; } .workspace > .panel { grid-column: 3; }
+/* Hideable side panes: the image takes the space and re-fits. */
+.workspace.no-files { --files-w: 0px; } .workspace.no-files > .files { display: none; }
+.workspace.no-tools { --tools-w: 0px; } .workspace.no-tools > .panel { display: none; }
+.pane-toggle[aria-pressed="true"] { background: var(--panel-2); }
+.pane-toggle[aria-pressed="false"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.tabs .pane-hide { flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; padding: 10px 10px; font-size: 16px; }
 .files { background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .files-h { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px 4px; }
 .files input[type=search] { margin: 4px 10px 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
@@ -170,6 +177,7 @@ h3:first-child { margin-top: 4px; }
 .compat-list li .d { color: var(--muted); font-size: 12px; }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 55vh auto; overflow: auto; }
+  .workspace > .files, .workspace > .viewer, .workspace > .panel { grid-column: 1; }
   .files { border-right: 0; border-bottom: 1px solid var(--border); max-height: 32vh; }
   .panel { border-left: 0; border-top: 1px solid var(--border); min-width: 0; }
   .tabs button { padding: 10px 2px; font-size: 13px; }
@@ -246,7 +254,8 @@ h3:first-child { margin-top: 4px; }
   <aside class="files" id="file-pane" aria-label="Files in the folder">
     <div class="files-h">
       <b id="fp-title">Files</b>
-      <button id="fp-add" class="icon" title="Add files to the list">+ Add</button>
+      <span><button id="fp-add" class="icon" title="Add files to the list">+ Add</button>
+      <button class="icon pane-hide" data-hide-pane="files" title="Hide the file pane ( [ )" aria-label="Hide the file pane">«</button></span>
     </div>
     <input type="search" id="fp-search" placeholder="Filter files" aria-label="Filter files">
     <div id="fp-list" class="fp-list" role="listbox" aria-label="Files"></div>
@@ -254,6 +263,7 @@ h3:first-child { margin-top: 4px; }
   </aside>
   <section class="viewer" aria-label="Image viewer">
     <div class="vtools">
+      <button id="tg-files" class="pane-toggle" aria-pressed="true" aria-controls="file-pane" title="Show or hide the file pane ( [ )">☰ Files</button>
       <div class="seg" role="group" aria-label="Mouse tool">
         <button data-tool="pan" aria-pressed="true" title="Drag to move the image">Pan</button>
         <button data-tool="window" aria-pressed="false" title="Drag: left/right = contrast, up/down = brightness (right mouse button works in any tool)">Window</button>
@@ -270,6 +280,7 @@ h3:first-child { margin-top: 4px; }
       <button id="btn-compare" aria-pressed="false" disabled title="Hold (or hold C) to see the original pixels">Hold to compare</button>
       <label class="hidden" id="frame-wrap">Frame <select id="frame"></select></label>
       <span class="readout" id="readout" aria-live="off"></span>
+      <button id="tg-tools" class="pane-toggle" aria-pressed="true" aria-controls="tools-panel" title="Show or hide the editing tools ( ] )">Tools ☰</button>
     </div>
     <div class="stage" id="stage" data-tool="pan">
       <canvas id="view" aria-label="Radiograph"></canvas>
@@ -288,13 +299,14 @@ h3:first-child { margin-top: 4px; }
     </div>
   </section>
 
-  <aside class="panel" aria-label="Editing tools">
+  <aside class="panel" id="tools-panel" aria-label="Editing tools">
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="meta">Metadata</button>
       <button role="tab" aria-selected="false" data-tab="image">Image</button>
       <button role="tab" aria-selected="false" data-tab="crop">Crop &amp; split</button>
       <button role="tab" aria-selected="false" data-tab="overlay">Overlay</button>
       <button role="tab" aria-selected="false" data-tab="history">Changes</button>
+      <button class="icon pane-hide" data-hide-pane="tools" title="Hide the editing tools ( ] )" aria-label="Hide the editing tools">»</button>
     </div>
 
     <div class="tabpanel active" id="tab-meta" role="tabpanel">
@@ -385,7 +397,7 @@ h3:first-child { margin-top: 4px; }
         <h3>Undo</h3>
         <p class="note">Undo and Redo are also at the top of the window and cover metadata edits too.</p>
         <div class="btns"><button id="btn-undo" disabled>Undo</button><button id="btn-redo" disabled>Redo</button><button id="btn-revert-img" class="danger" disabled>Revert all image changes</button></div>
-        <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, F fit, V rotate view, I info overlay, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
+        <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, [ / ] hide or show the file pane / tools, F fit, V rotate view, I info overlay, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
         <p class="note">Processed copies are marked DERIVED and record each step in Derivation Description. Check your procedure or code before using enhanced images for acceptance.</p>
       </div>
     </div>
