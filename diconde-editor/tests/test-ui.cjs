@@ -331,6 +331,45 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   assert.deepStrictEqual(await page.evaluate(() => window.__editor.S.ov.layout.tl.length), 5, 'damaged saved layout falls back');
   ok('information overlay');
 
+  // Find film pieces: two strips meeting at a tilted line, plus a padded margin.
+  {
+    const W = 300, H = 600, px = new Uint16Array(W * H);
+    let seed = 5; const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const line = 140 + 0.02 * y;
+      px[y * W + x] = x >= 280 ? 0 : Math.abs(x - line) <= 2 ? 1400 : 2800 + Math.round((rnd() - 0.5) * 120);
+    }
+    const f = makeSample({ rows: H, cols: W, bitsStored: 12 });
+    D.setText(f.ds, 0x00280120, '0', 'US');
+    f.ds.el.set(D.PIXEL, { tag: D.PIXEL, vr: 'OW', value: new Uint8Array(px.buffer) });
+    const piecesPath = path.join(tmp, 'two-strips.dcm'); fs.writeFileSync(piecesPath, D.write(f));
+    await page.setInputFiles('#file-input', piecesPath);
+    await page.waitForFunction(() => /Opened two-strips/.test(document.getElementById('toast').textContent));
+    await page.click('[data-tab=crop]');
+    await page.click('#sp-auto');
+    await page.waitForFunction(() => /Found|No film/.test(document.getElementById('toast').textContent));
+    assert.match(await page.textContent('#toast'), /Found 2 pieces, separated by a tilted line/);
+    const regs = await page.evaluate(() => window.__editor.S.regions.map(r => ({ x: r.x, w: r.w, cuts: (r.cuts || []).length })));
+    assert.strictEqual(regs.length, 2);
+    assert.ok(regs[0].x === 0 && regs[1].x + regs[1].w <= 282, JSON.stringify(regs) + ' padded margin left out');
+    assert.ok(regs.every(r => r.cuts === 1));
+    assert.ok(await page.isVisible('#sp-fill-wrap'));
+    await page.check('#sp-fill');
+    assert.strictEqual(await page.inputValue('#save-format'), 'raw', 'uncompressed source saves uncompressed');
+    const zip2 = await grab(page, () => page.click('#sp-export'));
+    const ents = []; const zb = zip2.bytes; let zp = 0;
+    while (zb.readUInt32LE(zp) === 0x04034b50) { const size = zb.readUInt32LE(zp + 18), nl = zb.readUInt16LE(zp + 26); ents.push(zb.subarray(zp + 30 + nl, zp + 30 + nl + size)); zp += 30 + nl + size; }
+    const parts2 = await Promise.all(ents.map(e => D.parse(e)));
+    assert.strictEqual(parts2.length, 2);
+    const left = D.getImage(parts2[0]), right = D.getImage(parts2[1]);
+    // Left part: top-right corner lies across the line (neighbour) and is filled; bottom-left is plate.
+    assert.strictEqual(left.frames[0][left.cols - 1], 0, 'neighbour sliver filled with padding');
+    assert.ok(left.frames[0][(left.rows - 1) * left.cols + 5] > 2000);
+    assert.ok(right.frames[0][(right.rows - 1) * right.cols] === 0, 'right part: bottom-left sliver filled');
+    assert.match(D.getString(parts2[0].ds, 0x00082111), /pixels across the dividing line set to the Pixel Padding Value/);
+    ok('find film pieces');
+  }
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');

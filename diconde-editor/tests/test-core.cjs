@@ -453,6 +453,60 @@ test('INDUSTREX compatibility check: edited copies pass, broken ones are caught'
   assert.ok(fails(await K.check(D.write(sc))).some(t => /SOP class/.test(t)));
 });
 
+// A synthetic scan: background 20, plate ~2800 with noise and a shallow weld band; pieces as given.
+function scan(w, h, pieces, opts = {}) {
+  let seed = 11; const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const a = new Uint16Array(w * h).fill(20);
+  for (const p of pieces) for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) {
+    const weld = Math.abs(x - (p.x + p.w / 2)) < p.w * 0.1 ? -90 : 0; // ~3% dip along each piece
+    a[y * w + x] = 2800 + weld + Math.round((r() - 0.5) * 120);
+  }
+  if (opts.line) for (let y = 0; y < h; y++) { const x0 = Math.round(opts.line.a + opts.line.k * y); for (let x = x0 - 2; x <= x0 + 2; x++) if (x >= 0 && x < w) a[y * w + x] = 1400; }
+  return a;
+}
+const near = (r, e, tol = 3) => ['x', 'y', 'w', 'h'].every(k => Math.abs(r[k] - e[k]) <= tol);
+
+test('film pieces: separate pieces on background are found and trimmed', () => {
+  const w = 600, h = 500, want = [{ x: 30, y: 20, w: 250, h: 200 }, { x: 320, y: 25, w: 240, h: 190 }, { x: 40, y: 280, w: 520, h: 190 }];
+  const found = I.findPieces(scan(w, h, want), w, h);
+  assert.strictEqual(found.length, 3, JSON.stringify(found));
+  for (const e of want) assert.ok(found.some(f => near(f, e)), `missing ${JSON.stringify(e)} in ${JSON.stringify(found)}`);
+  // margin grows each rectangle; small specks are ignored
+  const withMargin = I.findPieces(scan(w, h, want.concat([{ x: 5, y: 480, w: 6, h: 6 }])), w, h, { margin: 5 });
+  assert.strictEqual(withMargin.length, 3);
+  assert.ok(withMargin.some(f => near(f, { x: 25, y: 15, w: 260, h: 210 })));
+});
+
+test('film pieces: a thin tilted dividing line splits two strips; the weld band does not', () => {
+  const w = 400, h = 1200, line = { a: 190, k: 0.02 };
+  const a = scan(w, h, [{ x: 0, y: 0, w, h }], { line });
+  const found = I.findPieces(a, w, h).sort((p, q) => p.x - q.x);
+  assert.strictEqual(found.length, 2, JSON.stringify(found));
+  const c = found[0].cuts[0];
+  assert.strictEqual(c.axis, 'x'); assert.strictEqual(c.keep, '<'); assert.strictEqual(found[1].cuts[0].keep, '>');
+  assert.ok(Math.abs(c.k - 0.02) < 0.004 && Math.abs(c.a - 190) < 4, JSON.stringify(c));
+  // bounding boxes follow the tilt: left piece reaches the line's far end, right piece starts at its near end
+  assert.ok(found[0].x === 0 && found[0].x + found[0].w >= 190 + 0.02 * h - 10, JSON.stringify(found[0]));
+  assert.ok(found[1].x <= 196 && found[1].x + found[1].w === w, JSON.stringify(found[1]));
+  // filling across the line touches only the neighbour's side
+  const r = found[0], frame = I.crop({ rows: h, cols: w, frames: [a], min: 0, max: 4095 }, r).frames[0].slice();
+  const n = I.fillOutsideCuts(frame, r, 0);
+  const lineAt = y => c.a + c.k * (r.y + y);
+  assert.ok(n > 0 && frame[0 * r.w + (r.w - 1)] === 0 && frame[(h - 1) * r.w + 10] !== 0);
+  assert.ok(frame[0 * r.w + Math.floor(lineAt(0)) - r.x - 3] !== 0, 'own side kept');
+  // without the line, the weld band (a 3% dip) never splits the plate
+  assert.strictEqual(I.findPieces(scan(w, h, [{ x: 0, y: 0, w, h }]), w, h).length, 1);
+});
+
+test('film pieces: padding is background, a full-frame plate is one piece, empty is none', () => {
+  const w = 300, h = 300, a = scan(w, h, [{ x: 0, y: 0, w: 200, h }]);
+  for (let y = 0; y < h; y++) for (let x = 200; x < w; x++) a[y * w + x] = 0;
+  const f = I.findPieces(a, w, h, { padding: 0 });
+  assert.strictEqual(f.length, 1); assert.ok(near(f[0], { x: 0, y: 0, w: 200, h }));
+  assert.strictEqual(I.findPieces(scan(w, h, [{ x: 0, y: 0, w, h }]), w, h).length, 1);
+  assert.deepStrictEqual(I.findPieces(new Uint16Array(w * h).fill(20), w, h, { padding: 20 }), []);
+});
+
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);
 
 test('rotation, flips and crop move pixels correctly', () => {

@@ -246,6 +246,183 @@
     return out;
   }
 
+  // Finds separate pieces of film or plate in a scan. Areas with no film/plate read as background, which on
+  // CR/DR data is near the low end of the values (or the Pixel Padding Value). The image is cut recursively
+  // ("XY-cut") wherever a band averages close to background along a straight line across the whole piece.
+  // Lines may tilt up to maxTiltDeg (plates are rarely placed perfectly square), so each cut records its line,
+  // and each piece is trimmed to its own edges. The search runs on a 4× reduced copy for speed.
+  //   opts.sensitivity 0..1 (default 0.6): how far a band may sit above background and still count as a gap
+  //   opts.minSize (px, default 2% of the shorter side, at least 16): smaller pieces are ignored
+  //   opts.margin (px, default 0): grow (+) or shrink (−) each piece's rectangle
+  //   opts.maxTiltDeg (default 2), opts.padding (Pixel Padding Value, counted as background)
+  // Returns [{ x, y, w, h, cuts }] in image pixels. Each cut is { axis, a, k, keep } describing a dividing line
+  // inside the piece's rectangle: for axis 'x' the line is x = a + k·y, for 'y' it is y = a + k·x, and the piece
+  // is on the side keep ('<' or '>'). Pixels on the other side belong to a neighbouring piece.
+  function findPieces(a, w, h, opts = {}) {
+    const pad = opts.padding;
+    const st = stats(a, pad);
+    if (!st.count) return [];
+    let edgeSum = 0, edgeN = 0; const step = Math.max(1, Math.floor(Math.min(w, h) / 200));
+    for (let x = 0; x < w; x += step) { edgeSum += a[x] + a[(h - 1) * w + x]; edgeN += 2; }
+    for (let y = 0; y < h; y += step) { edgeSum += a[y * w] + a[y * w + w - 1]; edgeN += 2; }
+    const sign = edgeSum / edgeN > st.pct(90) ? -1 : 1; // background normally low; flip if the border sits near the top
+    let bg = sign * (sign > 0 ? st.pct(0.1) : st.pct(99.9));
+    const base = sign * st.pct(50);
+    // Padding means "no data": when the scan has padding pixels, their value is the background level.
+    if (pad != null) { let hasPad = false; for (let i = 0; i < a.length && !hasPad; i += 7) if (a[i] === pad) hasPad = true; if (hasPad) bg = Math.min(bg, sign * pad); }
+    const sens = Math.max(0.05, Math.min(0.95, opts.sensitivity ?? 0.6));
+    // A position is a gap when its line average is near background (25%–65% of the way up to the typical
+    // plate level, by sensitivity), or when it is a narrow valley well below the plate on both sides
+    // (deeper than 60%–20% of the plate-to-background difference), as with the thin line between two strips.
+    const thr = bg + (0.25 + 0.4 * sens) * (base - bg), rel = 0.6 - 0.4 * sens;
+    const minSize = Math.max(16, Math.round(opts.minSize ?? 0.02 * Math.min(w, h)));
+    const maxK = Math.tan((opts.maxTiltDeg ?? 2) * Math.PI / 180);
+    const inside = (cuts, x, y) => cuts.every(c => { const t = c.axis === 'x' ? x - (c.a + c.k * y) : y - (c.a + c.k * x); return c.keep === '<' ? t < 0 : t >= 0; });
+    // Signal image (background low), computed once; padding counts as background.
+    const S = new Float32Array(w * h);
+    for (let i = 0; i < S.length; i++) { const v = a[i]; S[i] = pad != null && v === pad ? bg : sign * v; }
+    // How much the plate itself varies (interquartile range of plate pixels). A gap must dip well beyond this,
+    // so a weld band or thickness change is never taken for a gap, even when the scan has no background at all
+    // (then the "background" estimate above comes from the plate itself).
+    const sample = []; const sstep = Math.max(1, Math.floor(S.length / 200000));
+    for (let i = 0; i < S.length; i += sstep) if (S[i] >= thr) sample.push(S[i]);
+    sample.sort((x, y) => x - y);
+    const iqr = sample.length ? sample[Math.floor(sample.length * 0.75)] - sample[Math.floor(sample.length * 0.25)] : 0;
+    const minDip = 6 * iqr;
+    // Mean along lines through rectangle r whose position along `axis` drifts by `drift` pixels across it.
+    function profile(r, cuts, axis, drift) {
+      const len = axis === 'x' ? r.w : r.h, other = axis === 'x' ? r.h : r.w, p = new Float64Array(len), cnt = new Float64Array(len);
+      const ostep = Math.max(1, Math.floor(other / 250)), k = other > 1 ? drift / (other - 1) : 0, hasCuts = cuts.length > 0;
+      for (let o = 0; o < other; o += ostep) {
+        const shift = Math.round(k * o);
+        const u0 = Math.max(0, -shift), u1 = Math.min(len, len - shift);
+        if (axis === 'x') {
+          const y = r.y + o, row = y * w + r.x;
+          for (let u = u0; u < u1; u++) { const t = u + shift; if (hasCuts && !inside(cuts, r.x + t, y)) continue; p[u] += S[row + t]; cnt[u]++; }
+        } else {
+          const x = r.x + o;
+          // pixels across a dividing line belong to the neighbour: leave them out rather than count them as background
+          for (let u = u0; u < u1; u++) { const t = u + shift, y = r.y + t; if (hasCuts && !inside(cuts, x, y)) continue; p[u] += S[y * w + x]; cnt[u]++; }
+        }
+      }
+      for (let u = 0; u < len; u++) p[u] = cnt[u] ? p[u] / cnt[u] : bg;
+      return p;
+    }
+    function gaps(p) {
+      const n = p.length, g = new Uint8Array(n), L = Math.max(minSize, 24);
+      // local plate level: a high percentile of the profile around each position
+      const lvl = new Float64Array(n), win = [];
+      for (let i = 0; i < n; i += 4) {
+        win.length = 0; for (let j = Math.max(0, i - L); j < Math.min(n, i + L); j++) win.push(p[j]);
+        win.sort((x, y) => x - y); const v = win[Math.floor(win.length * 0.8)];
+        for (let q = i; q < Math.min(n, i + 4); q++) lvl[q] = v;
+      }
+      // Broad gaps: near background and well below the typical plate level. Narrow gaps (a thin line between
+      // strips): well below the plate on either side. Both must dip beyond the plate's own variation.
+      for (let i = 0; i < n; i++) {
+        const dip = lvl[i] - p[i];
+        g[i] = (p[i] < thr && base - p[i] > minDip) || (dip > minDip && dip > rel * (lvl[i] - bg)) ? 1 : 0;
+      }
+      return g;
+    }
+    function runs(p) {
+      const g = gaps(p), out = []; let s0 = -1;
+      for (let i = 0; i <= p.length; i++) {
+        const sig = i < p.length && !g[i];
+        if (sig && s0 < 0) s0 = i;
+        if (!sig && s0 >= 0) { if (i - s0 >= minSize) out.push([s0, i]); s0 = -1; }
+      }
+      return out;
+    }
+    // Deepest interior valley (relative to the profile's own plate level) for a drift; the drift that best
+    // follows a dividing line dips deepest. Coarse steps of 8 px, then 1 px around the best.
+    function valley(p) {
+      let lo = 0, hi = p.length - 1;
+      while (lo < hi && p[lo] < thr) lo++; while (hi > lo && p[hi] < thr) hi--;
+      lo += minSize; hi -= minSize; let m = Infinity;
+      for (let i = lo; i <= hi; i++) m = Math.min(m, p[i]);
+      return m;
+    }
+    function bestDrift(r, cuts, axis) {
+      const other = axis === 'x' ? r.h : r.w, maxD = Math.round(maxK * other);
+      let best = 0, bv = valley(profile(r, cuts, axis, 0));
+      const tryD = d => { const v = valley(profile(r, cuts, axis, d)); if (v < bv - 1e-9) { bv = v; best = d; } };
+      for (let d = -maxD; d <= maxD; d += 8) if (d) tryD(d);
+      const c = best; for (let d = c - 7; d <= c + 7; d++) if (d !== c && Math.abs(d) <= maxD) tryD(d);
+      return best;
+    }
+    const pieces = [];
+    (function cut(r, cuts, depth) {
+      let cur = r;
+      // Look along both axes first and cut along the cleanest gap (closest to background), so a gap that only
+      // separates some pieces (e.g. two side by side above one wide piece) is not used to cut through another.
+      if (depth < 6) {
+        const options = [];
+        for (const axis of ['x', 'y']) {
+          const other = axis === 'x' ? cur.h : cur.w;
+          const drift = bestDrift(cur, cuts, axis);
+          let p = profile(cur, cuts, axis, drift), rs = runs(p), used = drift;
+          if (rs.length < 2 && drift) { p = profile(cur, cuts, axis, 0); rs = runs(p); used = 0; }
+          if (rs.length >= 2) {
+            let gapMin = Infinity; for (let i = rs[0][1]; i < rs[rs.length - 1][0]; i++) gapMin = Math.min(gapMin, p[i]);
+            options.push({ axis, rs, used, other, depth: (gapMin - bg) / Math.max(1e-9, base - bg) });
+          }
+        }
+        if (options.length) {
+          const { axis, rs, used, other } = options.sort((a, b) => a.depth - b.depth)[0];
+          const len = axis === 'x' ? cur.w : cur.h, k = other > 1 ? used / (other - 1) : 0;
+          rs.forEach(([s0, s1], i) => {
+            // offset u at o = 0, drifting by k per step along the other axis: x = cur.x + u + k·(y − cur.y)
+            const line = u => (axis === 'x' ? { axis, a: cur.x + u - k * cur.y, k } : { axis, a: cur.y + u - k * cur.x, k });
+            const nc = cuts.slice();
+            if (i > 0) nc.push(Object.assign(line((rs[i - 1][1] + s0) / 2), { keep: '>' }));
+            if (i < rs.length - 1) nc.push(Object.assign(line((s1 + rs[i + 1][0]) / 2), { keep: '<' }));
+            // Each part reaches to the middle of the gaps around it (or the region edge); trimming then finds
+            // its exact edges, even where a neighbour narrowed the band this cut was based on.
+            const from = i > 0 ? (rs[i - 1][1] + s0) / 2 : 0, to = i < rs.length - 1 ? (s1 + rs[i + 1][0]) / 2 : len;
+            const lo = from + Math.min(0, used), hi = to + Math.max(0, used);
+            const a0 = Math.max(0, Math.floor(lo)), a1 = Math.min(len, Math.ceil(hi));
+            cut(axis === 'x' ? { x: cur.x + a0, y: cur.y, w: a1 - a0, h: cur.h } : { x: cur.x, y: cur.y + a0, w: cur.w, h: a1 - a0 }, nc, depth + 1);
+          });
+          return;
+        }
+      }
+      // No split: trim to the piece's own edges (twice, as trimming one axis can reveal background on the other).
+      for (let pass = 0; pass < 2; pass++) {
+        for (const axis of ['x', 'y']) {
+          const rs = runs(profile(cur, cuts, axis, 0));
+          if (!rs.length) return;
+          const s0 = rs[0][0], s1 = rs[rs.length - 1][1];
+          cur = axis === 'x' ? { x: cur.x + s0, y: cur.y, w: s1 - s0, h: cur.h } : { x: cur.x, y: cur.y + s0, w: cur.w, h: s1 - s0 };
+        }
+      }
+      pieces.push({ r: cur, cuts });
+    })({ x: 0, y: 0, w, h }, [], 0);
+    const m = Math.round(opts.margin || 0);
+    return pieces.map(({ r, cuts }) => {
+      const x0 = Math.max(0, r.x - m), y0 = Math.max(0, r.y - m), x1 = Math.min(w, r.x + r.w + m), y1 = Math.min(h, r.y + r.h + m);
+      const rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      rect.cuts = cuts.filter(c => {
+        const span = c.axis === 'x' ? [c.a + c.k * rect.y, c.a + c.k * (rect.y + rect.h)] : [c.a + c.k * rect.x, c.a + c.k * (rect.x + rect.w)];
+        const lo = c.axis === 'x' ? rect.x : rect.y, hi = lo + (c.axis === 'x' ? rect.w : rect.h);
+        return Math.max(span[0], span[1]) > lo && Math.min(span[0], span[1]) < hi;
+      });
+      return rect;
+    }).filter(r => r.w >= minSize && r.h >= minSize);
+  }
+  // Sets pixels of a cropped piece that lie across its dividing lines (in a neighbouring piece) to `fill`.
+  // `rect` is the piece rectangle the frame was cropped to; returns the number of pixels filled.
+  function fillOutsideCuts(frame, rect, fill) {
+    let count = 0;
+    if (!rect.cuts || !rect.cuts.length) return 0;
+    for (let y = 0; y < rect.h; y++) for (let x = 0; x < rect.w; x++) {
+      const X = rect.x + x, Y = rect.y + y;
+      const ok = rect.cuts.every(c => { const t = c.axis === 'x' ? X - (c.a + c.k * Y) : Y - (c.a + c.k * X); return c.keep === '<' ? t < 0 : t >= 0; });
+      if (!ok) { frame[y * rect.w + x] = fill; count++; }
+    }
+    return count;
+  }
+
   // Display-only view rotation (0/90/180/270° clockwise). Maps image pixel coordinates to the rotated
   // frame and back; W = columns, H = rows of the unrotated image.
   const viewDims = (cols, rows, rot) => (rot % 180 ? { w: rows, h: cols } : { w: cols, h: rows });
@@ -267,5 +444,5 @@
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
   }
 
-  return { boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
+  return { findPieces, fillOutsideCuts, boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
 });

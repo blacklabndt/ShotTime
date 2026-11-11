@@ -61,6 +61,8 @@ const ser = e => e.fragments ? e.fragments.map(f => Buffer.from(f).toString('hex
       const pf = (await K.check(D.write(proc), src, { removed, pixelsChanged: true })).filter(c => c.level === 'fail');
       assert.deepStrictEqual(pf.map(c => c.title), [], `${f}: processed copy compatibility`);
       pix += ', processed copy passes the INDUSTREX check';
+      const pieces = I.findPieces(img.frames[0], img.cols, img.rows, { padding: img.padding });
+      pix += `, ${pieces.length} film piece(s) found`;
     }
     console.log(`  ${f.slice(0, 40)}: ${src.ds.el.size} elements, ${D.TS_NAMES[src.transferSyntax] || src.transferSyntax}${ix ? `, INDUSTREX ${ix.version}` : ''}${synced.length ? ', XML synced' : ''}${pix}`);
   }

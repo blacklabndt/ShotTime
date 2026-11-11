@@ -498,6 +498,15 @@
       box(S.crop, '#4cc3ff', `${Math.round(S.crop.w)}×${Math.round(S.crop.h)}`, true);
     }
     S.regions.forEach((r, i) => box(r, '#f5a623', String(i + 1)));
+    // Tilted dividing lines between pieces, drawn across each piece's rectangle.
+    const toScreen = (x, y) => { const q = I.toView(x, y, S.img.cols, S.img.rows, S.viewRot), v = S.view; return [v.x + q.x * v.zoom, v.y + q.y * v.zoom]; };
+    ctx.save(); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
+    S.regions.forEach(r => (r.cuts || []).forEach(c => {
+      const p0 = c.axis === 'x' ? toScreen(c.a + c.k * r.y, r.y) : toScreen(r.x, c.a + c.k * r.x);
+      const p1 = c.axis === 'x' ? toScreen(c.a + c.k * (r.y + r.h), r.y + r.h) : toScreen(r.x + r.w, c.a + c.k * (r.x + r.w));
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+    }));
+    ctx.restore();
     if (S.drag && S.drag.rect && S.drag.mode === 'regions') box(S.drag.rect, '#f5a623', String(S.regions.length + 1), true);
     drawOverlay(ctx, canvas.width / dpr, canvas.height / dpr, OV_PX[S.ov.opts.size] || 13, false);
   }
@@ -678,9 +687,13 @@
       lab.addEventListener('input', () => { r.label = lab.value; });
       box.append(el('div', { class: 'region' }, el('span', { class: 'num' }, String(i + 1)), lab,
         el('button', { class: 'icon danger', 'aria-label': `Remove part ${i + 1}`, onclick: () => { S.regions.splice(i, 1); renderRegions(); draw(); } }, '×'),
-        el('span', { class: 'dims' }, `${r.w}×${r.h} at (${r.x}, ${r.y})`)));
+        el('span', { class: 'dims' }, `${r.w}×${r.h} at (${r.x}, ${r.y})${r.cuts && r.cuts.length ? ' · meets a neighbour at a tilted line' : ''}`)));
     });
     $('sp-clear').disabled = !S.regions.length; $('sp-export').disabled = !S.regions.length;
+    const anyCuts = S.regions.some(r => r.cuts && r.cuts.length);
+    $('sp-fill-wrap').classList.toggle('hidden', !anyCuts);
+    $('sp-fill').disabled = !(S.img && S.img.padding != null);
+    $('sp-fill-wrap').title = S.img && S.img.padding == null ? 'This file has no Pixel Padding Value, so slivers are kept.' : '';
   }
   function makeEqualParts() {
     if (!S.img) return;
@@ -693,6 +706,24 @@
     renderRegions(); draw();
   }
 
+  function autoSplit() {
+    if (!S.img) return;
+    busy(() => {
+      const m = parseInt($('sp-margin').value, 10) || 0;
+      const found = I.findPieces(frameData(), S.img.cols, S.img.rows, { sensitivity: parseFloat($('sp-sens').value), margin: m, padding: S.img.padding });
+      if (!found.length) { toast('No film pieces found. Try High sensitivity, or draw regions by hand.', true); return; }
+      // Number pieces as they appear on screen: left to right, then top to bottom.
+      const key = r => { const q = I.rectToView(r, S.img.cols, S.img.rows, S.viewRot); return [Math.round(q.y / 50), q.x]; };
+      found.sort((a, b) => { const ka = key(a), kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1]; });
+      S.regions = found.map((r, i) => ({ ...r, label: String(i + 1) }));
+      renderRegions(); draw();
+      const tilted = found.filter(r => r.cuts && r.cuts.length).length;
+      if (found.length === 1) { S.crop = { x: found[0].x, y: found[0].y, w: found[0].w, h: found[0].h }; syncCropInputs(); draw(); }
+      toast(found.length === 1 ? 'Found one piece. It is also set as the crop box: use Apply crop, or save it as a split file.'
+        : `Found ${found.length} pieces${tilted ? ', separated by a tilted line' : ''}. Check them, then Save split files.`);
+    }, 'Finding film pieces…');
+  }
+
   // ---------- saving ----------
   function storeWindow(ds) {
     if (!$('store-window').checked || !S.img) return;
@@ -703,7 +734,11 @@
     const pixelsChanged = S.ops.length > 0 || !!region;
     const copy = D.clone(S.file);
     if (S.img && pixelsChanged) {
-      const out = region ? I.crop(S.img, region) : S.img;
+      let out = region ? I.crop(S.img, region) : S.img;
+      if (region && region.cuts && region.cuts.length && $('sp-fill').checked && S.img.padding != null) {
+        out = Object.assign({}, out, { frames: out.frames.map(f => { const c = f.slice(); I.fillOutsideCuts(c, region, S.img.padding); return c; }) });
+        if (partInfo) partInfo.text += '; pixels across the dividing line set to the Pixel Padding Value';
+      }
       D.setImage(copy, out, { swapSpacing: S.turns % 2 === 1 });
       copy.transferSyntax = D.TS.EXPLICIT_LE; copy.encapsulated = false;
       if (wantJ2k()) {
@@ -933,7 +968,7 @@
 
     $('crop-draw').onclick = () => setTool('crop'); $('crop-apply').onclick = applyCrop; $('crop-clear').onclick = () => { S.crop = null; syncCropInputs(); draw(); };
     ['cr-x', 'cr-y', 'cr-w', 'cr-h'].forEach(id => $(id).addEventListener('change', cropFromInputs));
-    $('sp-make').onclick = makeEqualParts; $('sp-clear').onclick = () => { S.regions = []; renderRegions(); draw(); }; $('sp-export').onclick = exportSplit;
+    $('sp-make').onclick = makeEqualParts; $('sp-auto').onclick = autoSplit; $('sp-clear').onclick = () => { S.regions = []; renderRegions(); draw(); }; $('sp-export').onclick = exportSplit;
 
     document.addEventListener('keydown', e => {
       if (e.target.closest('input, textarea, select')) return;

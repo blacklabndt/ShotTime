@@ -295,6 +295,13 @@ h3:first-child { margin-top: 4px; }
 
         <h3>Split into separate files</h3>
         <div class="btns">
+          <button id="sp-auto" class="primary">Find film pieces</button>
+          <label>Sensitivity <select id="sp-sens"><option value="0.35">Low</option><option value="0.6" selected>Normal</option><option value="0.85">High</option></select></label>
+          <label>Margin px <input type="number" id="sp-margin" value="0" min="-50" max="200"></label>
+        </div>
+        <p class="note">Finds each piece of film or plate by the background around it, including slightly tilted dividing lines between pieces scanned together. Check the regions before saving; you can adjust, remove or redraw them.</p>
+        <label class="note" id="sp-fill-wrap"><input type="checkbox" id="sp-fill"> Where pieces meet at a tilted line, fill the neighbour's sliver with the Pixel Padding Value</label>
+        <div class="btns">
           <label>Parts <input type="number" id="sp-n" min="2" max="50" value="3"></label>
           <label>Overlap px <input type="number" id="sp-o" min="0" value="0"></label>
           <select id="sp-dir" aria-label="Split direction"><option value="cols">Side by side (as shown)</option><option value="rows">Stacked (as shown)</option></select>

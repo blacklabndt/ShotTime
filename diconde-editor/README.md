@@ -34,6 +34,13 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
   - Display only: shown on screen and in PNG/PDF exports. **Apply to pixels** writes it into the image as an undoable step, recorded in Derivation Description, and the copy is marked DERIVED.
   - Takes about 1 second on a full 1353×4266 plate.
 - **Image clean-up**: window and level (display only; you can store it as the copy's default), invert view, rotate, flip, 3×3 median noise reduction, bad-pixel repair, Gaussian smoothing, unsharp-mask sharpening, invert pixel values, and up to 12 undo steps.
+- **Find film pieces** (Crop & split tab):
+  - Finds each piece of film or plate on its own from the background around it (near-zero signal or the Pixel Padding Value) and turns them into split regions.
+  - Works by cutting along the cleanest gap first, in either direction, then trimming each piece to its edges. Pieces scanned together can be separated by a thin line tilted up to 2°; the dividing line is found and drawn in red.
+  - A gap must dip well below the plate's own variation, so a weld band is never mistaken for one, even when a scan has no background at all.
+  - Options: sensitivity (low/normal/high), margin in pixels, and optionally filling the neighbour's sliver across a tilted line with the Pixel Padding Value (recorded in Derivation Description).
+  - A single piece is also set as the crop box.
+  - On the owner's plates it takes about 1–3 seconds. It split both two-strip plates, including one whose dividing line tilts 0.8°, and trimmed the empty half and edges off the others. INDUSTREX's own crop of one of them kept 724 columns; this kept 690.
 - **Crop and split**: drag or type a crop box. Split into equal parts side by side or stacked, with optional overlap, or draw regions by hand. Each part's label can go into Image Comments or be appended to Component ID. Split parts download together as a ZIP.
 - **Export**: PNG (as displayed), TIFF (raw pixel values, 8/16/32-bit) and a two-page PDF report (key fields and the displayed image).
 
