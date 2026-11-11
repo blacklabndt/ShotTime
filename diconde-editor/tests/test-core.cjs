@@ -615,6 +615,48 @@ test('shots: saved copies sync the INDUSTREX XML, get unique names, pass the com
   assert.deepStrictEqual(fails.map(c => c.title), []);
 });
 
+// A straight 300x900 plate with grid lines on background, tilted by `tilt` degrees.
+function tiltedPlate(tilt) {
+  let seed = 2; const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const W = 400, H = 1000, a = new Uint16Array(W * H).fill(20);
+  for (let y = 50; y < 950; y++) for (let x = 50; x < 350; x++) a[y * W + x] = 2800 + Math.round((r() - 0.5) * 80) + (x % 40 < 3 ? -300 : 0);
+  const t = I.rotateBy(a, W, H, tilt, 20, 0, 4095);
+  return { rows: t.h, cols: t.w, frames: [t.frame], min: 0, max: 4095, padding: null, bitsAllocated: 16, bitsStored: 12, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 };
+}
+
+test('straighten: measures tilt from the edges, rotates it straight and crops to the film', () => {
+  for (const tilt of [-1.2, 0.85, 3]) {
+    const img = tiltedPlate(tilt), r = I.straightenPiece(img, { x: 0, y: 0, w: img.cols, h: img.rows });
+    assert.ok(Math.abs(r.angle + tilt) < 0.05, `tilt ${tilt}: angle ${r.angle}`);
+    assert.ok(Math.abs(r.img.cols - 300) <= 2 && Math.abs(r.img.rows - 900) <= 2, `tilt ${tilt}: ${r.img.cols}x${r.img.rows}`);
+    const o = r.img.frames[0], w = r.img.cols, h = r.img.rows;
+    assert.ok(o.every(v => v > 1000), 'no background left');
+    const grid = y => { let best = 0, bv = 1e9; for (let x = 0; x < 60; x++) if (o[y * w + x] < bv) { bv = o[y * w + x]; best = x; } return best; };
+    assert.ok(Math.abs(grid(5) - grid(h - 6)) <= 1, 'grid lines run straight');
+  }
+  // over the limit: not rotated, still cropped, and reported
+  const steep = tiltedPlate(8), rs = I.straightenPiece(steep, { x: 0, y: 0, w: steep.cols, h: steep.rows });
+  assert.ok(!rs.rotated && rs.tooSteep && Math.abs(rs.measured + 8) < 0.1);
+  // a straight plate filling the frame stays as it is
+  const flat = tiltedPlate(0), rf = I.straightenPiece(flat, { x: 50, y: 50, w: 300, h: 900 });
+  assert.strictEqual(rf.angle, 0); assert.deepStrictEqual([rf.img.cols, rf.img.rows], [300, 900]);
+});
+
+test('straighten: two strips meeting at a tilted line are each straightened from that line', () => {
+  const W = 400, H = 1200, line = { a: 190, k: 0.015 }, a = new Uint16Array(W * H);
+  let seed = 4; const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) a[y * W + x] = Math.abs(x - (line.a + line.k * y)) <= 2 ? 1400 : 2800 + Math.round((r() - 0.5) * 80);
+  const img = { rows: H, cols: W, frames: [a], min: 0, max: 4095, padding: null, bitsAllocated: 16, bitsStored: 12, signed: false };
+  const pieces = I.findPieces(a, W, H).sort((p, q) => p.x - q.x);
+  assert.strictEqual(pieces.length, 2);
+  for (const p of pieces) {
+    const res = I.straightenPiece(img, p);
+    assert.ok(Math.abs(res.angle - Math.atan(0.015) * 180 / Math.PI) < 0.1, `angle ${res.angle}`);
+    assert.ok(res.img.frames[0].every(v => v > 2000), 'no dividing line or neighbour left');
+    assert.ok(res.img.rows > H - 40 && res.img.cols > 150 && res.img.cols < 215, `${res.img.cols}x${res.img.rows}`);
+  }
+});
+
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);
 
 test('rotation, flips and crop move pixels correctly', () => {

@@ -366,6 +366,7 @@ h3:first-child { margin-top: 4px; }
         <div class="btns">
           <button data-op="rot-ccw">⟲ Rotate left</button><button data-op="rot-cw">⟳ Rotate right</button><button data-op="rot-180">180°</button>
           <button data-op="flip-h">Flip ↔</button><button data-op="flip-v">Flip ↕</button>
+          <button id="auto-straight-2" title="Straighten the film and crop to it (see Crop &amp; split)">Straighten &amp; crop to film</button>
         </div>
 
         <h3>Clean-up (changes pixels)</h3>
@@ -412,6 +413,8 @@ h3:first-child { margin-top: 4px; }
           <label>W <input type="number" id="cr-w" min="1"></label><label>H <input type="number" id="cr-h" min="1"></label>
         </div>
         <div class="btns"><button id="crop-draw">Draw crop box</button><button id="crop-apply" class="primary" disabled>Apply crop</button><button id="crop-clear" disabled>Clear</button></div>
+        <div class="btns"><button id="auto-straight" class="primary">Straighten &amp; crop to film</button></div>
+        <p class="note">Finds the film, measures its tilt from its edges, rotates it straight (up to 5°) and crops away everything that is not film. Straightening resamples the pixels (bicubic); this is recorded in the saved file. For several pieces on one plate, use Find film pieces below.</p>
 
         <h3>Split into separate files</h3>
         <div class="btns">
@@ -420,6 +423,7 @@ h3:first-child { margin-top: 4px; }
           <label>Margin px <input type="number" id="sp-margin" value="0" min="-50" max="200"></label>
         </div>
         <p class="note">Finds each piece of film or plate by the background around it, including slightly tilted dividing lines between pieces scanned together. Check the regions before saving; you can adjust, remove or redraw them.</p>
+        <label class="note"><input type="checkbox" id="sp-straight" checked> Straighten each piece and crop it to the film</label>
         <label class="note" id="sp-fill-wrap"><input type="checkbox" id="sp-fill"> Where pieces meet at a tilted line, fill the neighbour's sliver with the Pixel Padding Value</label>
         <div class="btns">
           <label>Parts <input type="number" id="sp-n" min="2" max="50" value="3"></label>

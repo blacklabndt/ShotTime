@@ -353,6 +353,18 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     assert.strictEqual(regs.length, 2);
     assert.ok(regs[0].x === 0 && regs[1].x + regs[1].w <= 282, JSON.stringify(regs) + ' padded margin left out');
     assert.ok(regs.every(r => r.cuts === 1));
+    assert.match(await page.textContent('#regions'), /tilt 1\.[01]\d°/);
+    // with straightening on (default), each part is straightened and cropped to the film
+    assert.ok(await page.isChecked('#sp-straight'));
+    const zipStraight = await grab(page, () => page.click('#sp-export'));
+    const partsStraight = []; { const zb = zipStraight.bytes; let zp = 0; while (zb.readUInt32LE(zp) === 0x04034b50) { const size = zb.readUInt32LE(zp + 18), nl = zb.readUInt16LE(zp + 26); partsStraight.push(await D.parse(zb.subarray(zp + 30 + nl, zp + 30 + nl + size))); zp += 30 + nl + size; } }
+    for (const part of partsStraight) {
+      const im = D.getImage(part);
+      assert.ok(im.frames[0].every(v => v > 2000), 'straightened part has no background, line or neighbour');
+      assert.match(D.getString(part.ds, 0x00082111), /straightened 1\.[01]\d° \(bicubic resampling\) and cropped to the film/);
+    }
+    // without straightening: plain rectangles, with the optional sliver fill
+    await page.uncheck('#sp-straight');
     assert.ok(await page.isVisible('#sp-fill-wrap'));
     await page.check('#sp-fill');
     assert.strictEqual(await page.inputValue('#save-format'), 'raw', 'uncompressed source saves uncompressed');

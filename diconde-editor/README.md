@@ -61,6 +61,16 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
   - **Find long scratches**: proposes long straight scratches (half the plate or longer, tilted up to 2°), such as scanner roller scratches, drawn in cyan for checking before **Repair found scratches**. IQI wires and markers are too short to be proposed, and the gap between two strips is recognised and skipped.
   - Every repair is an undoable step, recorded in Derivation Description; the copy is marked DERIVED.
   - On the owner's five plates nothing was proposed (no scratches). A synthetic 2-pixel scratch added to one of them was found and restored to within 1.9 counts of the original (the plate's noise level), with no other pixel changed.
+- **Straighten & crop to film** (Crop & split tab, also under Orientation on the Image tab), and **Straighten each piece and crop it to the film** for split files (on by default):
+  - The tilt is measured from the piece's real edges, where film meets background or the dividing line to a neighbour, using a robust line fit. The image border carries no tilt information and is ignored.
+  - The piece is rotated straight (only between 0.05° and 5°; a larger tilt is reported but not rotated), then cropped to the largest area that is film throughout. Background, the neighbour's sliver and the rotation's corners are all removed.
+  - Only done where there is real background (well below the film's own variation). A hand-drawn part inside the film is kept as drawn.
+  - Straightening resamples the pixels (bicubic, Catmull-Rom). This is recorded in Derivation Description, and the original is untouched.
+  - On the owner's plates:
+    - The X-81 strips measure 0.86° and 0.83°. The second strip's dividing line (0.83°) and outer film edge (0.85°) agree, so the plates themselves are tilted.
+    - The half-empty plate measures −0.27°, the same as INDUSTREX's own cropped copy of it.
+    - About 0.3–0.5 s per piece.
+  - Synthetic plates tilted −1.2°, 0.85° and 3° come back at their true size (±2 px), with no background and straight grid lines.
 - **Find film pieces** (Crop & split tab):
   - Finds each piece of film or plate on its own from the background around it (near-zero signal or the Pixel Padding Value) and turns them into split regions.
   - Works by cutting along the cleanest gap first, in either direction, then trimming each piece to its edges. Pieces scanned together can be separated by a thin line tilted up to 2°; the dividing line is found and drawn in red.

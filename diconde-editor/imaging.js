@@ -267,9 +267,9 @@
     for (let y = 0; y < h; y += step) { edgeSum += a[y * w] + a[y * w + w - 1]; edgeN += 2; }
     const sign = edgeSum / edgeN > st.pct(90) ? -1 : 1; // background normally low; flip if the border sits near the top
     let bg = sign * (sign > 0 ? st.pct(0.1) : st.pct(99.9));
-    const base = sign * st.pct(50);
     // Padding means "no data": when the scan has padding pixels, their value is the background level.
     if (pad != null) { let hasPad = false; for (let i = 0; i < a.length && !hasPad; i += 7) if (a[i] === pad) hasPad = true; if (hasPad) bg = Math.min(bg, sign * pad); }
+    const base = filmLevel(a, pad, sign, bg, st).base;
     const sens = Math.max(0.05, Math.min(0.95, opts.sensitivity ?? 0.6));
     // A position is a gap when its line average is near background (25%–65% of the way up to the typical
     // plate level, by sensitivity), or when it is a narrow valley well below the plate on both sides
@@ -410,6 +410,148 @@
       return rect;
     }).filter(r => r.w >= minSize && r.h >= minSize);
   }
+  // Typical film level in signal units: the median of pixels clearly above background (above 30% of the way from
+  // the background level to the 99th percentile), so it stays right however much of the image is background.
+  function filmLevel(a, pad, sign, bg, st) {
+    const hi = sign * (sign > 0 ? st.pct(99) : st.pct(1)), cut = bg + 0.3 * (hi - bg), sample = [];
+    const step = Math.max(1, Math.floor(a.length / 300000));
+    for (let i = 0; i < a.length; i += step) { const v = a[i]; if (pad != null && v === pad) continue; const sv = sign * v; if (sv >= cut) sample.push(sv); }
+    if (!sample.length) return { base: sign * st.pct(50), iqr: 0 };
+    sample.sort((p, q) => p - q);
+    return { base: sample[sample.length >> 1], iqr: sample[Math.floor(sample.length * 0.75)] - sample[Math.floor(sample.length * 0.25)] };
+  }
+
+  // Background/plate levels as findPieces uses them: sign (+1 when background is low), bg, base, and the plate
+  // threshold thr at the given sensitivity (signal units: multiply raw values by sign before comparing).
+  function plateLevels(a, w, h, pad, sensitivity = 0.6) {
+    const st = stats(a, pad);
+    let sum = 0, n = 0; const step = Math.max(1, Math.floor(Math.min(w, h) / 200));
+    for (let x = 0; x < w; x += step) { sum += a[x] + a[(h - 1) * w + x]; n += 2; }
+    for (let y = 0; y < h; y += step) { sum += a[y * w] + a[y * w + w - 1]; n += 2; }
+    const sign = sum / n > st.pct(90) ? -1 : 1;
+    let bg = sign * (sign > 0 ? st.pct(0.1) : st.pct(99.9));
+    if (pad != null) { for (let i = 0; i < a.length; i += 7) if (a[i] === pad) { bg = Math.min(bg, sign * pad); break; } }
+    const { base, iqr } = filmLevel(a, pad, sign, bg, st), thr = bg + (0.25 + 0.4 * sensitivity) * (base - bg);
+    // Real background (no film) sits far below the film's own variation; without it, the darkest film would be
+    // taken for background, so callers must not trim or measure edges.
+    let below = 0; for (let i = 0; i < a.length; i += 13) if (sign * a[i] < thr) below++;
+    const hasBackground = base - bg > 6 * iqr && below > 0.0005 * (a.length / 13);
+    return { sign, bg, base, thr, iqr, hasBackground };
+  }
+
+  // Tilt of a piece of film from its edges (where film meets background or a filled neighbour), in degrees
+  // clockwise needed to straighten it. Edges lying on the frame border carry no information and are skipped.
+  // Rows give the left/right edges (x = a + k·y), columns the top/bottom edges (y = b + m·x); each line is fitted
+  // with outlier rejection. Returns { angle, edges: [{ side, slope, points }] } or { angle: 0, edges: [] }.
+  function pieceTilt(a, w, h, lv) {
+    const sig = i => lv.sign * a[i], thr = lv.thr;
+    // Robust line fit: median of pairwise slopes (Theil–Sen on pairs half the list apart), median intercept,
+    // then least squares on the points within 3× the median residual (corners and specks drop out).
+    const fit = pts => {
+      const n = pts.length, half = n >> 1; if (n < 8) return null;
+      const med = arr => { const c = arr.slice().sort((p, q) => p - q); return c[c.length >> 1]; };
+      const sl = []; for (let i = 0; i < half; i++) { const dt = pts[i + half][0] - pts[i][0]; if (dt) sl.push((pts[i + half][1] - pts[i][1]) / dt); }
+      if (!sl.length) return null;
+      let k = med(sl), b = med(pts.map(([t, u]) => u - k * t));
+      const res = pts.map(([t, u]) => Math.abs(u - (b + k * t))), cut = Math.max(1.5, 3 * med(res));
+      const use = pts.filter((_, i) => res[i] <= cut);
+      if (use.length < 8) return null;
+      let sx = 0, sy = 0, sxx = 0, sxy = 0; for (const [t, u] of use) { sx += t; sy += u; sxx += t * t; sxy += t * u; }
+      const d = use.length * sxx - sx * sx; if (Math.abs(d) > 1e-9) { k = (use.length * sxy - sx * sy) / d; }
+      return { k, n: use.length, span: use[use.length - 1][0] - use[0][0] };
+    };
+    // first crossing from background to film along a line, with sub-pixel interpolation; null at the border
+    const edgeAlong = (len, get) => {
+      const sm = i => (get(Math.max(0, i - 1)) + get(i) + get(Math.min(len - 1, i + 1))) / 3;
+      if (sm(0) >= thr) return null; // film reaches the border: no edge here
+      for (let i = 1; i < len - 3; i++) if (sm(i) >= thr && sm(i + 2) >= thr) { const p = sm(i - 1), q = sm(i); return i - 1 + (thr - p) / Math.max(1e-9, q - p); }
+      return null;
+    };
+    const edges = [];
+    const step = Math.max(1, Math.floor(Math.max(w, h) / 600));
+    const sides = [
+      ['left', h, w, (o, i) => sig(o * w + i)], ['right', h, w, (o, i) => sig(o * w + (w - 1 - i))],
+      ['top', w, h, (o, i) => sig(i * w + o)], ['bottom', w, h, (o, i) => sig((h - 1 - i) * w + o)]
+    ];
+    for (const [side, along, across, get] of sides) {
+      const pts = [];
+      for (let o = 0; o < along; o += step) { const e = edgeAlong(across, i => get(o, i)); if (e != null && e < across * 0.45) pts.push([o, e]); }
+      if (pts.length < Math.max(8, along / step * 0.3)) continue; // edge must run along most of the piece
+      const f = fit(pts); if (!f) continue;
+      // convert to the clockwise angle that straightens the piece (see the coordinate notes in rotateBy)
+      const slope = side === 'left' ? f.k : side === 'right' ? -f.k : side === 'top' ? -f.k : f.k;
+      // left: x = a + k·y needs φ = atan(k); right edge measured from the right flips k; top: y = b + m·x needs
+      // φ = atan(−m); bottom measured from the bottom flips m again.
+      edges.push({ side, slope, points: f.n, span: f.span, angle: Math.atan(slope) * 180 / Math.PI });
+    }
+    if (!edges.length) return { angle: 0, edges };
+    // weight by how much of the piece each edge covers; drop edges that disagree with the strongest by > 0.75°
+    edges.sort((p, q) => q.points * q.span - p.points * p.span);
+    const agree = edges.filter(e => Math.abs(e.angle - edges[0].angle) <= 0.75);
+    let wsum = 0, asum = 0; for (const e of agree) { const wgt = e.points * e.span; wsum += wgt; asum += wgt * e.angle; }
+    return { angle: asum / wsum, edges };
+  }
+
+  // Rotates a frame clockwise (on screen, y down) by `deg` degrees with bicubic (Catmull-Rom) interpolation onto
+  // a canvas large enough to hold it; uncovered pixels get `fill`. Values are clamped to [lo, hi].
+  // Note: clockwise by φ maps x' = x·cosφ − y·sinφ, y' = x·sinφ + y·cosφ, so an edge x = a + k·y needs φ = atan(k).
+  function rotateBy(a, w, h, deg, fill, lo, hi) {
+    const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+    const W = Math.ceil(Math.abs(w * c) + Math.abs(h * s) - 1e-6), H = Math.ceil(Math.abs(w * s) + Math.abs(h * c) - 1e-6);
+    const out = new a.constructor(W * H), cx = (w - 1) / 2, cy = (h - 1) / 2, CX = (W - 1) / 2, CY = (H - 1) / 2;
+    const cub = (p0, p1, p2, p3, x) => p1 + 0.5 * x * (p2 - p0 + x * (2 * p0 - 5 * p1 + 4 * p2 - p3 + x * (3 * (p1 - p2) + p3 - p0)));
+    const px = (x, y) => a[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))];
+    for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) {
+      // inverse mapping: rotate the output position back by −φ
+      const dx = X - CX, dy = Y - CY, x = c * dx + s * dy + cx, y = -s * dx + c * dy + cy;
+      if (x < -0.5 || y < -0.5 || x > w - 0.5 || y > h - 0.5) { out[Y * W + X] = fill; continue; }
+      const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, col = [];
+      for (let j = -1; j <= 2; j++) col.push(cub(px(xi - 1, yi + j), px(xi, yi + j), px(xi + 1, yi + j), px(xi + 2, yi + j), fx));
+      const v = cub(col[0], col[1], col[2], col[3], fy);
+      out[Y * W + X] = v < lo ? lo : v > hi ? hi : Math.round(v);
+    }
+    return { frame: out, w: W, h: H };
+  }
+
+  // The largest rectangle that is film throughout: rows/columns are trimmed from the outside while more than
+  // `tolerance` of their pixels are background (signal below thr, or the fill value).
+  // Fill pixels (outside the source after rotation, or a neighbour's sliver) are never kept; dark film near an edge
+  // is allowed up to `tolerance` of a row or column. Edges are trimmed worst first, by their share of non-film
+  // (fill and background together), until none has fill and each is within the tolerance.
+  function innerFilmRect(a, w, h, lv, fill, tolerance = 0.02) {
+    let x0 = 0, y0 = 0, x1 = w, y1 = h;
+    const line = (n0, n1, at) => { let bg = 0, f = 0; for (let i = n0; i < n1; i++) { const v = a[at(i)]; if (v === fill) f++; else if (lv.sign * v < lv.thr) bg++; } return { share: (bg + f) / (n1 - n0), f, bgShare: bg / (n1 - n0) }; };
+    while (x1 - x0 > 2 && y1 - y0 > 2) {
+      const L = [line(y0, y1, y => y * w + x0), line(y0, y1, y => y * w + x1 - 1), line(x0, x1, x => y0 * w + x), line(x0, x1, x => (y1 - 1) * w + x)];
+      if (L.every(l => l.f === 0 && l.bgShare <= tolerance)) break;
+      let i = 0; for (let k = 1; k < 4; k++) if (L[k].share > L[i].share) i = k;
+      if (L[i].share === 0) i = L.findIndex(l => l.f > 0); // only isolated fill left: take that edge
+      if (i === 0) x0++; else if (i === 1) x1--; else if (i === 2) y0++; else y1--;
+    }
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  // Straightens one piece of film and crops it to the film. `rect` (with optional cuts from findPieces) is the
+  // piece in `img`; pixels across a cut belong to a neighbour and are treated as background. Rotation is applied
+  // only between 0.05° and maxDeg. Returns { img, angle, rotated, crop } with a new image (all frames).
+  function straightenPiece(img, rect, o = {}) {
+    const lv = o.levels || plateLevels(img.frames[0], img.cols, img.rows, img.padding);
+    const fill = img.padding != null ? img.padding : Math.round(lv.sign * lv.bg);
+    const piece = crop(img, rect);
+    const frames = piece.frames.map(f => { const c = f.slice(); if (rect.cuts && rect.cuts.length) fillOutsideCuts(c, rect, fill); return c; });
+    // No real background (e.g. a hand-drawn part inside the film): nothing to measure or trim; keep it as drawn.
+    if (!lv.hasBackground && !(rect.cuts && rect.cuts.length)) return { img: Object.assign({}, piece, { frames }), angle: 0, measured: 0, edges: [], rotated: false, crop: { x: 0, y: 0, w: piece.cols, h: piece.rows }, tooSteep: false, noBackground: true };
+    const tilt = pieceTilt(frames[0], piece.cols, piece.rows, lv), maxDeg = o.maxDeg ?? 5;
+    const doRotate = Math.abs(tilt.angle) >= 0.05 && Math.abs(tilt.angle) <= maxDeg;
+    let W = piece.cols, H = piece.rows, out = frames;
+    if (doRotate) out = frames.map(f => { const r = rotateBy(f, piece.cols, piece.rows, tilt.angle, fill, img.min, img.max); W = r.w; H = r.h; return r.frame; });
+    const inner = innerFilmRect(out[0], W, H, lv, fill, o.tolerance ?? 0.02);
+    const m = Math.round(o.margin || 0);
+    const r = { x: Math.max(0, inner.x - m), y: Math.max(0, inner.y - m) }; r.w = Math.min(W, inner.x + inner.w + m) - r.x; r.h = Math.min(H, inner.y + inner.h + m) - r.y;
+    const res = crop(Object.assign({}, img, { cols: W, rows: H, frames: out }), r);
+    return { img: res, angle: doRotate ? tilt.angle : 0, measured: tilt.angle, edges: tilt.edges, rotated: doRotate, crop: r, tooSteep: Math.abs(tilt.angle) > maxDeg };
+  }
+
   // Which way "less radiation" goes: towards the no-signal (background) level. On raw CR/DR data that is low
   // values (+1); if the image border sits near the top of the range it is high (-1). Plate scratches and dust
   // read as less radiation; cracks, lack of fusion, porosity and undercut read as more radiation.
@@ -592,5 +734,5 @@
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
   }
 
-  return { noiseLevel, lessRadiationSign, repairScratch, findScratches, findPieces, fillOutsideCuts, boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
+  return { plateLevels, pieceTilt, rotateBy, innerFilmRect, straightenPiece, noiseLevel, lessRadiationSign, repairScratch, findScratches, findPieces, fillOutsideCuts, boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
 });

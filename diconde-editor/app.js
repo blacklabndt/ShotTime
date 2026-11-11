@@ -825,11 +825,11 @@
       lab.addEventListener('input', () => { r.label = lab.value; });
       box.append(el('div', { class: 'region' }, el('span', { class: 'num' }, String(i + 1)), lab,
         el('button', { class: 'icon danger', 'aria-label': `Remove part ${i + 1}`, onclick: () => { S.regions.splice(i, 1); renderRegions(); draw(); } }, '×'),
-        el('span', { class: 'dims' }, `${r.w}×${r.h} at (${r.x}, ${r.y})${r.cuts && r.cuts.length ? ' · meets a neighbour at a tilted line' : ''}`)));
+        el('span', { class: 'dims' }, `${r.w}×${r.h} at (${r.x}, ${r.y})${r.tilt != null ? ` · tilt ${r.tilt.toFixed(2)}°` : ''}${r.cuts && r.cuts.length ? ' · meets a neighbour at a tilted line' : ''}`)));
     });
     $('sp-clear').disabled = !S.regions.length; $('sp-export').disabled = !S.regions.length;
     const anyCuts = S.regions.some(r => r.cuts && r.cuts.length);
-    $('sp-fill-wrap').classList.toggle('hidden', !anyCuts);
+    $('sp-fill-wrap').classList.toggle('hidden', !anyCuts || $('sp-straight').checked); // straightening already leaves the neighbour out
     $('sp-fill').disabled = !(S.img && S.img.padding != null);
     $('sp-fill-wrap').title = S.img && S.img.padding == null ? 'This file has no Pixel Padding Value, so slivers are kept.' : '';
   }
@@ -853,13 +853,34 @@
       // Number pieces as they appear on screen: left to right, then top to bottom.
       const key = r => { const q = I.rectToView(r, S.img.cols, S.img.rows, S.viewRot); return [Math.round(q.y / 50), q.x]; };
       found.sort((a, b) => { const ka = key(a), kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1]; });
-      S.regions = found.map((r, i) => ({ ...r, label: String(i + 1) }));
+      const lv = I.plateLevels(frameData(), S.img.cols, S.img.rows, S.img.padding);
+      S.regions = found.map((r, i) => {
+        // measured tilt of each piece, shown in the list (straightening happens when the parts are saved)
+        const pc = I.crop(S.img, r), f = pc.frames[0].slice(), fill = S.img.padding != null ? S.img.padding : Math.round(lv.sign * lv.bg);
+        if (r.cuts && r.cuts.length) I.fillOutsideCuts(f, r, fill);
+        return { ...r, label: String(i + 1), tilt: I.pieceTilt(f, pc.cols, pc.rows, lv).angle };
+      });
       renderRegions(); draw();
       const tilted = found.filter(r => r.cuts && r.cuts.length).length;
       if (found.length === 1) { S.crop = { x: found[0].x, y: found[0].y, w: found[0].w, h: found[0].h }; syncCropInputs(); draw(); }
       toast(found.length === 1 ? 'Found one piece. It is also set as the crop box: use Apply crop, or save it as a split file.'
         : `Found ${found.length} pieces${tilted ? ', separated by a tilted line' : ''}. Check them, then Save split files.`);
     }, 'Finding film pieces…');
+  }
+
+  // One piece of film (the largest found): straighten and crop to the film, as one undoable step.
+  function autoStraighten() {
+    if (!S.img) return;
+    busy(() => {
+      const pieces = I.findPieces(frameData(), S.img.cols, S.img.rows, { padding: S.img.padding });
+      if (!pieces.length) { toast('No film found to straighten.', true); return; }
+      const p = pieces.slice().sort((a, b) => b.w * b.h - a.w * a.h)[0], r = I.straightenPiece(S.img, p, {});
+      if (r.img.cols === S.img.cols && r.img.rows === S.img.rows && !r.rotated) { toast('The film is already straight and fills the image.'); return; }
+      const text = `${r.rotated ? `Straightened ${r.angle.toFixed(2)}° (bicubic resampling) and cropped` : 'Cropped'} to the film: ${r.img.cols}×${r.img.rows}`;
+      S.crop = null; S.regions = []; renderRegions(); syncCropInputs();
+      pushImage(r.img, text); fit();
+      toast(text + (r.tooSteep ? ` (tilt ${r.measured.toFixed(1)}° is over 5°, so it was not rotated)` : '') + (pieces.length > 1 ? `. ${pieces.length} pieces were found; for all of them use Find film pieces and Save split files.` : '.'));
+    }, 'Straightening…');
   }
 
   // ---------- saving ----------
@@ -878,7 +899,12 @@
     const copy = D.clone(st.file);
     if (st.img && pixelsChanged) {
       let out = region ? I.crop(st.img, region) : st.img;
-      if (region && region.cuts && region.cuts.length && $('sp-fill').checked && st.img.padding != null) {
+      if (region && $('sp-straight').checked) {
+        // straighten the piece and crop it to the film (pixels across a dividing line are not part of it)
+        const r = I.straightenPiece(st.img, region, {});
+        out = r.img;
+        if (partInfo) partInfo.text += r.rotated ? `; straightened ${r.angle.toFixed(2)}° (bicubic resampling) and cropped to the film` : '; cropped to the film';
+      } else if (region && region.cuts && region.cuts.length && $('sp-fill').checked && st.img.padding != null) {
         out = Object.assign({}, out, { frames: out.frames.map(f => { const c = f.slice(); I.fillOutsideCuts(c, region, st.img.padding); return c; }) });
         if (partInfo) partInfo.text += '; pixels across the dividing line set to the Pixel Padding Value';
       }
@@ -1462,7 +1488,8 @@
     $('scr-w').addEventListener('change', () => { $('scr-w-r').value = $('scr-w').value; });
     $('crop-draw').onclick = () => setTool('crop'); $('crop-apply').onclick = applyCrop; $('crop-clear').onclick = () => { S.crop = null; syncCropInputs(); draw(); };
     ['cr-x', 'cr-y', 'cr-w', 'cr-h'].forEach(id => $(id).addEventListener('change', cropFromInputs));
-    $('sp-make').onclick = makeEqualParts; $('sp-auto').onclick = autoSplit; $('sp-clear').onclick = () => { S.regions = []; renderRegions(); draw(); }; $('sp-export').onclick = exportSplit;
+    $('sp-make').onclick = makeEqualParts; $('sp-auto').onclick = autoSplit;
+    $('auto-straight').onclick = $('auto-straight-2').onclick = autoStraighten; $('sp-straight').onchange = renderRegions; $('sp-clear').onclick = () => { S.regions = []; renderRegions(); draw(); }; $('sp-export').onclick = exportSplit;
 
     document.addEventListener('keydown', e => {
       if (e.target.closest('input, textarea, select')) return;
