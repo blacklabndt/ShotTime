@@ -247,7 +247,7 @@ fn image_tab(app: &mut App, ui: &mut egui::Ui) {
         let before = app.edge;
         let mut e = app.edge;
         let mut released = false;
-        for (v, r, l, s) in [(&mut e.gc, 0.0..=2.0, "Global contrast", 0.05), (&mut e.dc, 0.0..=3.0, "Detail contrast", 0.05), (&mut e.sh, 0.0..=3.0, "Sharpness", 0.05), (&mut e.nr, 0.0..=1.0, "Noise reduction", 0.05), (&mut e.mm, 2.0..=60.0, "Kernel (mm)", 1.0), (&mut e.br, -1.0..=1.0, "Brightness", 0.05)] {
+        for (v, r, l, s) in [(&mut e.gc, 0.0..=2.0, "Global contrast", 0.05), (&mut e.dc, 0.0..=3.0, "Detail contrast", 0.05), (&mut e.sh, 0.0..=3.0, "Sharpness", 0.05), (&mut e.nr, 0.0..=1.0, "Noise reduction", 0.05), (&mut e.mm, 2.0..=60.0, "Kernel (mm)", 0.5), (&mut e.br, -1.0..=1.0, "Brightness", 0.05)] {
             let resp = slider(ui, v, r, l, s);
             if resp.drag_stopped() || (resp.changed() && !resp.dragged()) { released = true; }
         }

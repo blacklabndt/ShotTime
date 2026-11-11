@@ -69,7 +69,7 @@ pub enum Tool { Pan, Window, Crop, Region, Scratch }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeSettings { pub on: bool, pub gc: f64, pub dc: f64, pub sh: f64, pub nr: f64, pub mm: f64, pub br: f64, pub ds: bool }
-impl Default for EdgeSettings { fn default() -> Self { EdgeSettings { on: false, gc: 1.0, dc: 1.0, sh: 1.0, nr: 0.0, mm: 20.0, br: 0.0, ds: false } } }
+impl Default for EdgeSettings { fn default() -> Self { EdgeSettings { on: false, gc: 1.0, dc: 1.0, sh: 1.0, nr: 0.0, mm: 11.0, br: 0.0, ds: false } } }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct OverlaySettings { pub enabled: bool, pub labels: bool, pub size: u8, pub in_exports: bool, pub layout: Vec<Vec<String>> }
@@ -390,7 +390,7 @@ impl App {
         let Some((img, f)) = self.frame_data() else { return };
         let (sl, ic) = (img.slope, img.intercept);
         let win = if kind == "file" && img.window_width.map_or(false, |w| w > 0.0) { Win { c: img.window_center.unwrap_or(0.0), w: img.window_width.unwrap() } }
-        else if self.edge.on { let e = self.edge_frame(); let w = im::auto_window(&e[..], sl, ic, 0.5, 99.8, None); Win { c: w.center, w: w.width } }
+        else if self.edge.on { let e = self.edge_frame(); let p = self.edge_params().unwrap(); let w = App::edge_window(&e, &img, &p); Win { c: w.center, w: w.width } }
         else if kind == "full" { let st = im::stats(&img.frames[f], img.padding); let (lo, hi) = (st.min * sl + ic, st.max * sl + ic); Win { c: (lo + hi) / 2.0, w: (hi - lo).abs().max(1.0) } }
         else { let w: Window = im::auto_window(&img.frames[f], sl, ic, 0.5, 99.8, img.padding); Win { c: w.center, w: w.width } };
         if let Some(e) = self.cur_mut() { e.work.win = win; }
@@ -415,8 +415,23 @@ impl App {
         let e = self.edge;
         // Thresholds scale with the image's useful exposure range (the width of its automatic window).
         Some(im::EdgeParams { global_contrast: e.gc, detail_contrast: e.dc, sharpness: e.sh, noise_reduction: e.nr, kernel_px: e.mm / self.pixel_spacing_mm(), padding: img.padding,
-            despeckle: e.ds, white_sign: if img.monochrome1() { -1.0 } else { 1.0 }, despeckle_threshold: if e.ds { 0.3 * raw } else { 0.0 }, detail_limit: 0.35 * raw, kg: None, kd: None, ks: None })
+            despeckle: e.ds, white_sign: if img.monochrome1() { -1.0 } else { 1.0 }, despeckle_threshold: if e.ds { 0.3 * raw } else { 0.0 }, detail_limit: 0.14 * raw, kg: None, kd: None, ks: None })
     }
+    /// Starting window for the enhanced image, set the way the INDUSTREX EDGE screenshot of the owner's plate looked:
+    /// the plate sits at a light grey (about 70% brightness) and the window is 6.7× the detail limit wide, so
+    /// markers and the weld stay inside it.
+    pub fn edge_window(v: &[f32], img: &Image, p: &im::EdgeParams) -> Window {
+        let (mut sum, mut n) = (0f64, 0usize);
+        for &x in v { if !x.is_nan() { sum += x as f64; n += 1; } }
+        let mean = if n > 0 { sum / n as f64 } else { 0.0 };
+        let kd = p.kd.unwrap_or(2.4 * p.detail_contrast).abs().max(0.05);
+        if p.detail_limit <= 0.0 { return im::auto_window(v, img.slope, img.intercept, 0.5, 99.8, None); }
+        let width = (6.7 * p.detail_limit * kd * img.slope.abs()).max(1.0);
+        let sign = if img.monochrome1() { 1.0 } else { -1.0 };
+        Window { center: mean * img.slope + img.intercept + sign * 0.19 * width, width }
+    }
+    /// Fine-detail scale of the EDGE-style filter: 1.1 mm, in pixels.
+    pub fn edge_fine_px(&self) -> f64 { 1.1 / self.pixel_spacing_mm() }
     fn edge_key(&self, p: &im::EdgeParams, img: &ImgRef, f: usize) -> String { format!("{:p}:{f}:{p:?}", Arc::as_ptr(img)) }
     /// The enhanced current frame (computed on this thread if not cached; the UI computes it in a job first).
     pub fn edge_frame(&mut self) -> Arc<Vec<f32>> {
@@ -424,7 +439,7 @@ impl App {
         let p = self.edge_params().unwrap();
         let key = self.edge_key(&p, &img, f);
         if let Some((k, v)) = &self.edge_cache { if *k == key { return v.clone(); } }
-        let v = Arc::new(im::edge_enhance(&img.frames[f], img.cols, img.rows, &p).0);
+        let v = Arc::new(im::edge_enhance_v2(&img.frames[f], img.cols, img.rows, &p, self.edge_fine_px()).0);
         self.edge_cache = Some((key, v.clone()));
         v
     }
@@ -436,9 +451,10 @@ impl App {
         let key = self.edge_key(&p, &img, f);
         if self.edge_cache.as_ref().map_or(false, |(k, _)| *k == key) { if rewindow { self.reset_window("auto"); } self.invalidate(); return; }
         if self.busy() { self.edge_pending = true; return; }
+        let fine = self.edge_fine_px();
         self.run("Enhancing…", move || {
-            let v = Arc::new(im::edge_enhance(&img.frames[f], img.cols, img.rows, &p).0);
-            let w = im::auto_window(&v[..], img.slope, img.intercept, 0.5, 99.8, None);
+            let v = Arc::new(im::edge_enhance_v2(&img.frames[f], img.cols, img.rows, &p, fine).0);
+            let w = App::edge_window(&v, &img, &p);
             Box::new(move |app: &mut App, _: &egui::Context| {
                 app.edge_cache = Some((key, v));
                 if rewindow { app.set_win(Win { c: w.center, w: w.width }); }
@@ -460,9 +476,10 @@ impl App {
         let cur = self.edge_frame();
         let e = self.edge;
         let win = self.win();
+        let fine = self.edge_fine_px();
         self.run("Applying the enhancement…", move || {
             let frames: Vec<Vec<i32>> = img.frames.iter().enumerate().map(|(fi, a)| {
-                let fv = if fi == f { cur.clone() } else { Arc::new(im::edge_enhance(a, img.cols, img.rows, &p).0) };
+                let fv = if fi == f { cur.clone() } else { Arc::new(im::edge_enhance_v2(a, img.cols, img.rows, &p, fine).0) };
                 a.iter().zip(fv.iter()).map(|(&o, &v)| if v.is_nan() { o } else { (im::js_round(v as f64) as i64).clamp(img.min as i64, img.max as i64) as i32 }).collect()
             }).collect();
             let next = img.with_frames(img.rows, img.cols, frames);

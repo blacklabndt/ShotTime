@@ -389,6 +389,17 @@ fn image_operations() {
     let a: Vec<i32> = (0..2000).map(|i| (i * 37 % 1000) as i32).collect();
     let (e, _) = im::edge_enhance(&a, 50, 40, &im::EdgeParams { kg: Some(1.0), kd: Some(1.0), ks: Some(1.0), ..Default::default() });
     assert!(e.iter().zip(&a).all(|(x, y)| (*x as f64 - *y as f64).abs() < 0.01));
+    let (e2, _) = im::edge_enhance_v2(&a, 50, 40, &im::EdgeParams { kg: Some(1.0), kd: Some(1.0), ks: Some(1.0), kernel_px: 12.0, ..Default::default() }, 2.0);
+    assert!(e2.iter().zip(&a).all(|(x, y)| (*x as f64 - *y as f64).abs() < 0.01), "v2 neutral settings return the input");
+    // v2 defaults: a slow ramp (large-scale shading) is flattened, a fine ripple is raised, a huge spike is limited
+    let (w2, h2) = (400usize, 60usize);
+    let ramp: Vec<i32> = (0..w2 * h2).map(|i| 2000 + (i % w2) as i32 + if (i % w2) % 8 < 4 { 3 } else { -3 } + if i == 30 * w2 + 200 { 1500 } else { 0 }).collect();
+    let (e3, _) = im::edge_enhance_v2(&ramp, w2, h2, &im::EdgeParams { kernel_px: 60.0, detail_limit: 40.0, ..Default::default() }, 6.0);
+    let at = |x: usize| e3[30 * w2 + x] as f64;
+    let slope = (at(304) - at(104)) / 200.0;
+    assert!(slope > 0.2 && slope < 0.5, "ramp slope {slope} (input 1.0)");
+    assert!((at(101) - at(105)).abs() > 12.0, "ripple of 6 raised: {}", (at(101) - at(105)).abs());
+    assert!(at(200) - at(180) < 200.0, "spike of 1500 (9000 unlimited) limited: {}", at(200) - at(180));
     // view rotation maps both ways
     for rot in [0, 90, 180, 270] { let (x, y) = im::to_view(10.0, 20.0, 300.0, 200.0, rot); assert_eq!(im::from_view(x, y, 300.0, 200.0, rot), (10.0, 20.0)); }
 }

@@ -329,6 +329,44 @@ pub fn edge_enhance(a: &[i32], w: usize, h: usize, o: &EdgeParams) -> (Vec<f32>,
     (out, specks)
 }
 
+/// EDGE-style enhancement, second version (WeldScope only; the frozen prototype keeps `edge_enhance`).
+/// Same idea and controls, refitted to two matched INDUSTREX screenshot pairs (EDGE on/off) of the owner's
+/// plates; see tools/edge-fit/README.md for the measurements. It is still an approximation, not INDUSTREX's EDGE:
+/// on those pairs INDUSTREX's result depended on the image content, which this filter does not model.
+///   d   = kD·(M − L) + kS·(I − M)                    detail, then softly limited: d / (1 + |d| / (limit·kD))
+///   out = mean + kG·(L − mean) + limited d
+/// L = three box passes of radius kernel_px/2 (close to a Gaussian of that sigma), M = Gaussian of fine_px.
+/// At the 1.0 settings kG = 0.36, kD = 2.4, kS = 6.0: structure larger than about 5 mm is flattened to 15% of
+/// the detail gain, and detail finer than about 1 mm is raised 2.5×. kG = kD = kS = 1 with no limit returns the
+/// input. Padding pixels become NaN. Returns (frame, specks).
+pub fn edge_enhance_v2(a: &[i32], w: usize, h: usize, o: &EdgeParams, fine_px: f64) -> (Vec<f32>, usize) {
+    let (gc, dc, sh, nr) = (o.global_contrast, o.detail_contrast, o.sharpness, o.noise_reduction.clamp(0.0, 1.0));
+    let r = (js_round(o.kernel_px / 2.0) as i64).max(1) as usize;
+    let n = w * h;
+    let pad = o.padding;
+    let mut src: Vec<f32> = Vec::with_capacity(n);
+    let (mut sum, mut cnt) = (0f64, 0usize);
+    for &v in &a[..n] { src.push(v as f32); if pad.map_or(true, |p| v != p) { sum += v as f64; cnt += 1; } }
+    let mean = if cnt > 0 { sum / cnt as f64 } else { 0.0 };
+    if let Some(p) = pad { for i in 0..n { if a[i] == p { src[i] = mean as f32; } } }
+    let mut specks = 0;
+    if o.despeckle && o.despeckle_threshold > 0.0 { specks = despeckle(&mut src, w, h, if o.white_sign == 0.0 { 1.0 } else { o.white_sign }, o.despeckle_threshold); }
+    let i_band: Vec<f32> = if nr > 0.0 { let g = gaussian(&src, w, h, 1.0); src.iter().zip(&g).map(|(&s, &gv)| (s as f64 + nr * (gv as f64 - s as f64)) as f32).collect() } else { src };
+    let l = box_blur(&box_blur(&box_blur(&i_band, w, h, r), w, h, r), w, h, r);
+    let m = gaussian(&i_band, w, h, fine_px.max(0.5));
+    let kg = o.kg.unwrap_or(0.36 * gc);
+    let kd = o.kd.unwrap_or(2.4 * dc);
+    let ks = o.ks.unwrap_or(6.0 * sh);
+    let t = if o.detail_limit > 0.0 { o.detail_limit * kd.abs().max(1e-6) } else { 0.0 };
+    let out = (0..n).map(|i| {
+        if pad.map_or(false, |p| a[i] == p) { return f32::NAN; }
+        let mut d = kd * (m[i] as f64 - l[i] as f64) + ks * (i_band[i] as f64 - m[i] as f64);
+        if t > 0.0 { d /= 1.0 + d.abs() / t; }
+        (mean + kg * (l[i] as f64 - mean) + d) as f32
+    }).collect();
+    (out, specks)
+}
+
 // ---------------------------------------------------------------- film pieces
 fn border_mean(a: &[i32], w: usize, h: usize) -> f64 {
     let step = ((w.min(h) / 200) as usize).max(1);
