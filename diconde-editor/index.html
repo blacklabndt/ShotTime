@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:">
+<title>DICONDE Editor</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --panel-2: #f0f2f5; --text: #1b1f24; --muted: #5d6673; --border: #d6dae0;
+  --accent: #1f6feb; --accent-text: #ffffff; --danger: #c62828; --changed: #fff4d6; --changed-edge: #d39e00; --ok: #2e7d32;
+  --viewer: #0d0f12; --focus: 0 0 0 3px rgba(31, 111, 235, .35);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121417; --panel: #1b1e23; --panel-2: #23272e; --text: #e6e8eb; --muted: #9aa3ae; --border: #333943;
+  --accent: #4c8dff; --accent-text: #0b0d10; --danger: #ff6b6b; --changed: #3a3220; --changed-edge: #e0b341; --ok: #6fcf75;
+} }
+:root[data-theme="dark"] {
+  --bg: #121417; --panel: #1b1e23; --panel-2: #23272e; --text: #e6e8eb; --muted: #9aa3ae; --border: #333943;
+  --accent: #4c8dff; --accent-text: #0b0d10; --danger: #ff6b6b; --changed: #3a3220; --changed-edge: #e0b341; --ok: #6fcf75;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--danger); }
+button.icon { padding: 4px 8px; min-width: 32px; }
+:focus-visible { outline: none; box-shadow: var(--focus); }
+input[type=text], input[type=number], input:not([type]), select, textarea { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+input[type=number] { width: 80px; }
+#crop-tools input[type=number] { width: 68px; }
+label { color: var(--muted); }
+.topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.brand { font-weight: 700; margin-right: 8px; }
+.fileinfo { color: var(--muted); flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu { position: relative; }
+.menu > div { position: absolute; right: 0; top: calc(100% + 4px); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; display: none; z-index: 20; min-width: 220px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.menu.open > div { display: block; }
+.menu > div button { display: block; width: 100%; text-align: left; border: 0; background: none; }
+.menu > div button:hover { background: var(--panel-2); }
+.workspace { flex: 1; display: grid; grid-template-columns: 1fr 420px; min-height: 0; }
+.viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--viewer); }
+.vtools { display: flex; gap: 6px; align-items: center; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--border); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.readout { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+.stage[data-tool="window"] #view { cursor: ns-resize; }
+.stage[data-tool="crop"] #view, .stage[data-tool="regions"] #view { cursor: crosshair; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; }
+.empty .card { background: var(--panel); border: 2px dashed var(--border); border-radius: 14px; padding: 28px; max-width: 460px; text-align: center; }
+.empty .card p { color: var(--muted); }
+.stage.drag .empty .card { border-color: var(--accent); }
+.panel { background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tabs button { flex: 1; border: 0; border-radius: 0; background: none; padding: 10px 6px; border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); font-weight: 600; }
+.tabpanel { flex: 1; overflow: auto; padding: 12px; display: none; }
+.tabpanel.active { display: block; }
+.bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.bar input[type=search] { flex: 1; min-width: 120px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 16px 0 6px; }
+h3:first-child { margin-top: 4px; }
+.group { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.field { display: grid; grid-template-columns: 1fr auto; gap: 4px 6px; padding: 6px 6px 6px 8px; border-left: 3px solid transparent; border-radius: 4px; }
+.field + .field { margin-top: 2px; }
+.field.changed { background: var(--changed); border-left-color: var(--changed-edge); }
+.field .lbl { grid-column: 1 / -1; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.field .lbl b { font-weight: 600; }
+.field .sub { color: var(--muted); font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
+.field .val { width: 100%; }
+.field textarea.val { min-height: 54px; resize: vertical; }
+.field .acts { display: flex; gap: 4px; }
+.field .err { grid-column: 1 / -1; color: var(--danger); font-size: 12px; }
+.field .err:empty { display: none; }
+.field input.bad, .field textarea.bad { border-color: var(--danger); }
+.field .ro { color: var(--muted); font-size: 13px; word-break: break-all; }
+.nest { margin-left: 14px; border-left: 2px solid var(--border); padding-left: 6px; }
+.item-h { font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+.addform { display: grid; grid-template-columns: 1fr 90px; gap: 6px; margin-bottom: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.addform .full { grid-column: 1 / -1; }
+.ctl { display: grid; grid-template-columns: 110px 1fr 80px; gap: 6px; align-items: center; margin: 6px 0; }
+.ctl input[type=range] { width: 100%; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.note { color: var(--muted); font-size: 12px; }
+.regions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.region { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: center; padding: 6px; border: 1px solid var(--border); border-radius: 6px; }
+.region .num { width: 22px; height: 22px; border-radius: 50%; background: #f5a623; color: #000; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.region .dims { grid-column: 2 / -1; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.hist li { margin: 4px 0; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; max-width: min(560px, calc(100% - 32px)); z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.toast.err { background: var(--danger); color: #fff; }
+.toast:empty { display: none; }
+.busy { position: absolute; inset: 0; display: none; place-items: center; background: rgba(0,0,0,.35); color: #fff; font-weight: 600; z-index: 5; }
+.busy.on { display: grid; }
+.warnbox { background: var(--changed); border: 1px solid var(--changed-edge); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+.hidden { display: none !important; }
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 55vh auto; overflow: auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--border); min-width: 0; }
+  .tabs button { padding: 10px 2px; font-size: 13px; }
+  .ctl { grid-template-columns: 92px minmax(0, 1fr) 72px; }
+  .ctl input[type=number] { width: 72px; }
+  .readout { width: 100%; margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">DICONDE Editor</span>
+  <button id="btn-open" class="primary">Open file…</button>
+  <input id="file-input" type="file" accept=".dcm,.dicom,.dic,application/dicom,*/*" hidden>
+  <span id="fileinfo" class="fileinfo">No file open. Files stay on this computer.</span>
+  <button id="btn-save" disabled>Save copy (.dcm)</button>
+  <div class="menu" id="export-menu">
+    <button id="btn-export" disabled aria-haspopup="true" aria-expanded="false">Export ▾</button>
+    <div role="menu">
+      <button role="menuitem" data-export="png">PNG image (as displayed)</button>
+      <button role="menuitem" data-export="tiff">TIFF (raw pixel values)</button>
+      <button role="menuitem" data-export="pdf">PDF report</button>
+    </div>
+  </div>
+</header>
+
+<main class="workspace">
+  <section class="viewer" aria-label="Image viewer">
+    <div class="vtools">
+      <div class="seg" role="group" aria-label="Mouse tool">
+        <button data-tool="pan" aria-pressed="true" title="Drag to move the image">Pan</button>
+        <button data-tool="window" aria-pressed="false" title="Drag: left/right = contrast, up/down = brightness (right mouse button works in any tool)">Window</button>
+        <button data-tool="crop" aria-pressed="false" title="Drag a crop box">Crop</button>
+        <button data-tool="regions" aria-pressed="false" title="Drag to add split regions">Regions</button>
+      </div>
+      <button class="icon" id="zoom-out" aria-label="Zoom out">−</button>
+      <button id="zoom-fit">Fit</button>
+      <button id="zoom-1">1:1</button>
+      <button class="icon" id="zoom-in" aria-label="Zoom in">+</button>
+      <label class="hidden" id="frame-wrap">Frame <select id="frame"></select></label>
+      <span class="readout" id="readout" aria-live="off"></span>
+    </div>
+    <div class="stage" id="stage" data-tool="pan">
+      <canvas id="view" aria-label="Radiograph"></canvas>
+      <div class="empty" id="empty">
+        <div class="card">
+          <h2>Open a DICONDE file</h2>
+          <p>Drop a .dcm file here, or choose one. Nothing is uploaded: the file is read and edited in this browser, and the original is never changed.</p>
+          <div class="btns" style="justify-content:center">
+            <button class="primary" id="btn-open-2">Choose file…</button>
+            <button id="btn-sample">Try a sample image</button>
+          </div>
+        </div>
+      </div>
+      <div class="busy" id="busy">Working…</div>
+    </div>
+  </section>
+
+  <aside class="panel" aria-label="Editing tools">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="meta">Metadata</button>
+      <button role="tab" aria-selected="false" data-tab="image">Image</button>
+      <button role="tab" aria-selected="false" data-tab="crop">Crop &amp; split</button>
+      <button role="tab" aria-selected="false" data-tab="history">Changes</button>
+    </div>
+
+    <div class="tabpanel active" id="tab-meta" role="tabpanel">
+      <div class="bar">
+        <input type="search" id="meta-search" placeholder="Search tags or values" aria-label="Search tags or values">
+        <div class="seg" role="group" aria-label="Which tags">
+          <button data-metaview="common" aria-pressed="true">Common</button>
+          <button data-metaview="all" aria-pressed="false">All tags</button>
+        </div>
+        <button id="btn-add-tag">Add tag</button>
+      </div>
+      <form class="addform hidden" id="addform">
+        <input class="full" id="add-tag" list="tag-list" placeholder="Tag, e.g. (0018,1004) or Plate ID" aria-label="Tag">
+        <datalist id="tag-list"></datalist>
+        <input id="add-value" placeholder="Value" aria-label="Value">
+        <select id="add-vr" aria-label="Value representation"></select>
+        <div class="err full note" id="add-err" style="color:var(--danger)"></div>
+        <div class="btns full"><button class="primary" type="submit">Add</button><button type="button" id="add-cancel">Cancel</button></div>
+      </form>
+      <div class="bar">
+        <select id="tpl-select" aria-label="Templates"><option value="">Templates…</option></select>
+        <button id="tpl-apply" disabled>Apply</button>
+        <button id="tpl-save" disabled title="Save the fields you changed as a reusable template">Save changes as template</button>
+        <button id="tpl-del" class="danger" disabled aria-label="Delete template">Delete</button>
+      </div>
+      <div id="meta-list"></div>
+    </div>
+
+    <div class="tabpanel" id="tab-image" role="tabpanel">
+      <div class="warnbox hidden" id="img-unavail"></div>
+      <div id="img-tools">
+        <h3>Display (does not change pixels)</h3>
+        <div class="ctl"><label for="wl-c">Brightness (level)</label><input type="range" id="wl-c-r"><input type="number" id="wl-c" step="any"></div>
+        <div class="ctl"><label for="wl-w">Contrast (width)</label><input type="range" id="wl-w-r"><input type="number" id="wl-w" step="any" min="1"></div>
+        <div class="btns">
+          <button id="wl-auto">Auto</button><button id="wl-full">Full range</button><button id="wl-file">From file</button>
+          <label><input type="checkbox" id="view-invert"> Invert view</label>
+        </div>
+        <label class="note"><input type="checkbox" id="store-window"> Save this window as the copy's default display</label>
+
+        <h3>Orientation</h3>
+        <div class="btns">
+          <button data-op="rot-ccw">⟲ Rotate left</button><button data-op="rot-cw">⟳ Rotate right</button><button data-op="rot-180">180°</button>
+          <button data-op="flip-h">Flip ↔</button><button data-op="flip-v">Flip ↕</button>
+        </div>
+
+        <h3>Clean-up (changes pixels)</h3>
+        <div class="btns"><button data-op="median">Reduce noise (3×3 median)</button><button data-op="invert">Invert pixel values</button></div>
+        <div class="ctl"><label for="bp-t">Bad pixel limit</label><input type="range" id="bp-t-r" min="1" max="100" value="20"><input type="number" id="bp-t" min="1" value="20" aria-describedby="bp-note"></div>
+        <div class="btns"><button data-op="badpix">Fix bad pixels</button></div>
+        <p class="note" id="bp-note">Replaces single pixels that differ from their neighbours by more than this many percent of the image's value range.</p>
+        <div class="ctl"><label for="sm-s">Smooth radius</label><input type="range" id="sm-s-r" min="0.3" max="5" step="0.1" value="1"><input type="number" id="sm-s" min="0.3" max="10" step="0.1" value="1"></div>
+        <div class="btns"><button data-op="smooth">Smooth</button></div>
+        <div class="ctl"><label for="sh-s">Sharpen radius</label><input type="range" id="sh-s-r" min="0.3" max="5" step="0.1" value="1.5"><input type="number" id="sh-s" min="0.3" max="10" step="0.1" value="1.5"></div>
+        <div class="ctl"><label for="sh-a">Sharpen amount</label><input type="range" id="sh-a-r" min="0.1" max="3" step="0.1" value="0.8"><input type="number" id="sh-a" min="0.1" max="10" step="0.1" value="0.8"></div>
+        <div class="btns"><button data-op="sharpen">Sharpen (unsharp mask)</button></div>
+
+        <h3>Undo</h3>
+        <div class="btns"><button id="btn-undo" disabled>Undo</button><button id="btn-redo" disabled>Redo</button><button id="btn-revert-img" class="danger" disabled>Revert all image changes</button></div>
+        <p class="note">Processed copies are marked DERIVED and record each step in Derivation Description. Check your procedure or code before using enhanced images for acceptance.</p>
+      </div>
+    </div>
+
+    <div class="tabpanel" id="tab-crop" role="tabpanel">
+      <div class="warnbox hidden" id="crop-unavail"></div>
+      <div id="crop-tools">
+        <h3>Crop</h3>
+        <p class="note">Choose the Crop tool and drag on the image, or type the box.</p>
+        <div class="btns">
+          <label>X <input type="number" id="cr-x" min="0"></label><label>Y <input type="number" id="cr-y" min="0"></label>
+          <label>W <input type="number" id="cr-w" min="1"></label><label>H <input type="number" id="cr-h" min="1"></label>
+        </div>
+        <div class="btns"><button id="crop-draw">Draw crop box</button><button id="crop-apply" class="primary" disabled>Apply crop</button><button id="crop-clear" disabled>Clear</button></div>
+
+        <h3>Split into separate files</h3>
+        <div class="btns">
+          <label>Parts <input type="number" id="sp-n" min="2" max="50" value="3"></label>
+          <label>Overlap px <input type="number" id="sp-o" min="0" value="0"></label>
+          <select id="sp-dir" aria-label="Split direction"><option value="cols">Side by side</option><option value="rows">Stacked</option></select>
+          <button id="sp-make">Make equal parts</button>
+        </div>
+        <p class="note">Or choose the Regions tool and drag boxes on the image.</p>
+        <label class="note">Write each part's label to
+          <select id="sp-target">
+            <option value="comments">Image Comments (replace)</option>
+            <option value="compid">Component ID (add “-label”)</option>
+            <option value="none">Nowhere</option>
+          </select>
+        </label>
+        <div class="regions" id="regions"></div>
+        <div class="btns"><button id="sp-clear" disabled>Clear regions</button><button id="sp-export" class="primary" disabled>Save split files (.zip)</button></div>
+        <p class="note">Each part is saved as its own DICONDE file with your metadata, a new instance UID, a shared new series, and a reference to the original.</p>
+      </div>
+    </div>
+
+    <div class="tabpanel" id="tab-history" role="tabpanel">
+      <h3>Image steps</h3><ol class="hist" id="hist-img"></ol>
+      <h3>Metadata changes</h3><ul class="hist" id="hist-meta"></ul>
+      <h3>File</h3><div id="file-details" class="note"></div>
+    </div>
+  </aside>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="dicom.js"></script>
+<script src="imaging.js"></script>
+<script src="export.js"></script>
+<script src="sample.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
