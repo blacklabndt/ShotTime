@@ -45,6 +45,10 @@ The opened files are never changed: every save writes a new file.
 - **Overlay text:** display and export only; never written into DICONDE pixels.
 - **Scratch repair:** only thin lines reading as less radiation than the plate on both sides. Never cracks or voids,
   never IQI wires, and never without the user drawing or confirming the line.
+- **Straighten & crop to film:** with one piece it works in place (one undoable step). With two or more pieces it
+  saves each piece straightened and cropped as its own file, through the same path as Save split files with
+  "Straighten each piece" on (new series, numbered in screen order); the open file is not changed. This was
+  added after the prototype was frozen, so the prototype still straightens only the largest piece.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

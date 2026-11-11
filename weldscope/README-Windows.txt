@@ -16,7 +16,8 @@ Editing
   The pin button shows a field on the image overlay. Templates store changed fields to reuse on other files.
 - Image tab: window/level, EDGE-style enhancement (an approximation for viewing; not INDUSTREX's EDGE),
   rotate/flip, noise reduction, bad pixels, and scratch repair.
-- Crop & split tab: Straighten & crop to film; Find film pieces; save each piece as its own file.
+- Crop & split tab: Straighten & crop to film (with two or more pieces of film in a file, each piece is
+  straightened, cropped and saved as its own file); Find film pieces; save each piece as its own file.
 - Overlay tab: choose what text appears in each corner of the image (display and exports only).
 - Undo / Redo (Ctrl+Z / Ctrl+Y) covers metadata and image changes.
 

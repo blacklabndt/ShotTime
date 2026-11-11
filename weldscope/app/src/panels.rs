@@ -310,8 +310,9 @@ fn crop_tab(app: &mut App, ui: &mut egui::Ui) {
     let Some(img) = app.img() else { ui.label(RichText::new(app.cur().unwrap().work.img_error.clone()).color(BAD)); return; };
     section(ui, "Automatic");
     ui.horizontal_wrapped(|ui| {
-        if ui.button(RichText::new("Straighten & crop to film").color(ACCENT)).on_hover_text("Measures the film's tilt from its edges, rotates it straight (0.05–5°) and crops away the area with no film").clicked() { app.auto_straighten(); }
+        if ui.button(RichText::new("Straighten & crop to film").color(ACCENT)).on_hover_text("Measures the film's tilt from its edges, rotates it straight (0.05–5°) and crops away the area with no film. With two or more pieces of film, each is saved as its own straightened file.").clicked() { app.auto_straighten(); }
     });
+    note(ui, "With two or more pieces of film, each is straightened, cropped and saved as its own file; the open file is not changed.");
     ui.horizontal(|ui| {
         egui::ComboBox::from_id_salt("sens").selected_text(match app.ts.sens { s if s < 0.5 => "Low", s if s > 0.7 => "High", _ => "Normal" }).width(80.0).show_ui(ui, |ui| {
             ui.selectable_value(&mut app.ts.sens, 0.35, "Low"); ui.selectable_value(&mut app.ts.sens, 0.6, "Normal"); ui.selectable_value(&mut app.ts.sens, 0.85, "High");

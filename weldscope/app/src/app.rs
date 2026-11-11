@@ -717,21 +717,24 @@ impl App {
         rs.sort_by(|a, b| { let qa = im::rect_to_view(*a, cols, rows, rot); let qb = im::rect_to_view(*b, cols, rows, rot); let (ka, kb) = if screen_stacked { (qa.1, qb.1) } else { (qa.0, qb.0) }; ka.partial_cmp(&kb).unwrap() });
         if let Some(e) = self.cur_mut() { e.work.regions = rs.into_iter().enumerate().map(|(i, r)| RegionItem { region: Region { rect: r, cuts: vec![] }, label: (i + 1).to_string(), tilt: None }).collect(); }
     }
+    /// Film pieces numbered as they appear on screen (left to right, then top to bottom), each with its measured tilt.
+    pub fn pieces_in_screen_order(img: &Image, f: usize, sens: f64, margin: i64, rot: u32) -> Vec<RegionItem> {
+        let mut found = im::find_pieces(&img.frames[f], img.cols, img.rows, &im::PieceOptions { sensitivity: sens, margin, padding: img.padding, ..Default::default() });
+        let key = |r: &Region| { let q = im::rect_to_view(r.rect, img.cols as f64, img.rows as f64, rot); ((q.1 / 50.0).round() as i64, q.0) };
+        found.sort_by(|a, b| { let (ka, kb) = (key(a), key(b)); ka.0.cmp(&kb.0).then(ka.1.partial_cmp(&kb.1).unwrap()) });
+        let lv = im::plate_levels(&img.frames[f], img.cols, img.rows, img.padding, 0.6);
+        let fill = img.padding.unwrap_or(im::js_round(lv.sign * lv.bg) as i32);
+        found.iter().enumerate().map(|(i, r)| {
+            let mut fr = im::crop_frame(&img.frames[f], img.cols, r.rect);
+            im::fill_outside_cuts(&mut fr, r, fill);
+            RegionItem { region: r.clone(), label: (i + 1).to_string(), tilt: Some(im::piece_tilt(&fr, r.rect.w as usize, r.rect.h as usize, &lv).angle) }
+        }).collect()
+    }
     pub fn auto_split(&mut self) {
         let Some((img, f)) = self.frame_data() else { return };
         let (sens, margin, rot) = (self.ts.sens, self.ts.margin, self.view_rot);
         self.run("Finding film pieces…", move || {
-            let mut found = im::find_pieces(&img.frames[f], img.cols, img.rows, &im::PieceOptions { sensitivity: sens, margin, padding: img.padding, ..Default::default() });
-            // Number pieces as they appear on screen: left to right, then top to bottom.
-            let key = |r: &Region| { let q = im::rect_to_view(r.rect, img.cols as f64, img.rows as f64, rot); ((q.1 / 50.0).round() as i64, q.0) };
-            found.sort_by(|a, b| { let (ka, kb) = (key(a), key(b)); ka.0.cmp(&kb.0).then(ka.1.partial_cmp(&kb.1).unwrap()) });
-            let lv = im::plate_levels(&img.frames[f], img.cols, img.rows, img.padding, 0.6);
-            let fill = img.padding.unwrap_or(im::js_round(lv.sign * lv.bg) as i32);
-            let items: Vec<RegionItem> = found.iter().enumerate().map(|(i, r)| {
-                let mut fr = im::crop_frame(&img.frames[f], img.cols, r.rect);
-                im::fill_outside_cuts(&mut fr, r, fill);
-                RegionItem { region: r.clone(), label: (i + 1).to_string(), tilt: Some(im::piece_tilt(&fr, r.rect.w as usize, r.rect.h as usize, &lv).angle) }
-            }).collect();
+            let items = App::pieces_in_screen_order(&img, f, sens, margin, rot);
             Box::new(move |app: &mut App, _: &egui::Context| {
                 if items.is_empty() { app.error("No film pieces found. Try High sensitivity, or draw regions by hand."); return; }
                 let tilted = items.iter().filter(|r| !r.region.cuts.is_empty()).count();
@@ -743,27 +746,36 @@ impl App {
             })
         });
     }
-    /// One piece of film (the largest found): straighten and crop to the film, as one undoable step.
+    /// Straighten & crop to film. One piece: straightened and cropped in place, as one undoable step. Several
+    /// pieces: each is straightened, cropped to its film and saved as its own file (a new series, numbered in
+    /// screen order), exactly as Save split files does with "Straighten each piece" on. The open file is unchanged.
     pub fn auto_straighten(&mut self) {
         let Some((img, f)) = self.frame_data() else { return };
+        let rot = self.view_rot;
         self.run("Straightening…", move || {
-            let pieces = im::find_pieces(&img.frames[f], img.cols, img.rows, &im::PieceOptions { padding: img.padding, ..Default::default() });
-            let r = pieces.iter().max_by_key(|p| p.rect.w * p.rect.h).map(|p| im::straighten_piece(&img, p, None, 5.0, 0.02, 0));
-            let n = pieces.len();
-            let same = |s: &im::Straightened| s.img.cols == img.cols && s.img.rows == img.rows && !s.rotated;
-            let r = r.map(|x| x.map(|s| { let unchanged = same(&s); (s, unchanged) }));
-            Box::new(move |app: &mut App, _: &egui::Context| match r {
-                None => app.error("No film found to straighten."),
-                Some(Err(m)) => app.error(m),
-                Some(Ok((_, true))) => app.toast("The film is already straight and fills the image."),
-                Some(Ok((s, false))) => {
-                    let text = format!("{} to the film: {}×{}", if s.rotated { format!("Straightened {:.2}° (bicubic resampling) and cropped", s.angle) } else { "Cropped".into() }, s.img.cols, s.img.rows);
-                    if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions.clear(); }
-                    let steep = s.too_steep;
-                    let measured = s.measured;
-                    app.push_image(s.img, text.clone(), 0);
-                    app.toast(format!("{text}{}{}", if steep { format!(" (tilt {measured:.1}° is over 5°, so it was not rotated)") } else { String::new() },
-                        if n > 1 { format!(". {n} pieces were found; for all of them use Find film pieces and Save split files.") } else { ".".into() }));
+            let items = App::pieces_in_screen_order(&img, f, 0.6, 0, rot);
+            let one = if items.len() == 1 { Some(im::straighten_piece(&img, &items[0].region, None, 5.0, 0.02, 0)) } else { None };
+            let unchanged = one.as_ref().and_then(|r| r.as_ref().ok()).map_or(false, |s| s.img.cols == img.cols && s.img.rows == img.rows && !s.rotated);
+            Box::new(move |app: &mut App, _: &egui::Context| {
+                if items.is_empty() { app.error("No film found to straighten."); return; }
+                if items.len() > 1 {
+                    let n = items.len();
+                    if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions = items; }
+                    app.sync_crop_inputs();
+                    app.toast(format!("Found {n} pieces of film: choose a folder, and each is straightened, cropped and saved as its own file."));
+                    app.save_parts(SplitOptions { straighten: true, fill_slivers: false });
+                    return;
+                }
+                match one.unwrap() {
+                    Err(m) => app.error(m),
+                    Ok(_) if unchanged => app.toast("The film is already straight and fills the image."),
+                    Ok(s) => {
+                        let text = format!("{} to the film: {}×{}", if s.rotated { format!("Straightened {:.2}° (bicubic resampling) and cropped", s.angle) } else { "Cropped".into() }, s.img.cols, s.img.rows);
+                        if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions.clear(); }
+                        let (steep, measured) = (s.too_steep, s.measured);
+                        app.push_image(s.img, text.clone(), 0);
+                        app.toast(format!("{text}{}.", if steep { format!(" (tilt {measured:.1}° is over 5°, so it was not rotated)") } else { String::new() }));
+                    }
                 }
             })
         });
@@ -840,12 +852,13 @@ impl App {
         self.compat = Some(CompatResult { name, checks });
     }
 
-    pub fn save_split(&mut self) {
+    pub fn save_split(&mut self) { let o = SplitOptions { straighten: self.ts.straighten, fill_slivers: self.ts.fill }; self.save_parts(o); }
+    /// Saves every region of the open file as its own file in a folder the user chooses.
+    pub fn save_parts(&mut self, split: SplitOptions) {
         let Some(i) = self.cur_idx() else { return };
         if self.entries[i].work.regions.is_empty() || self.entries[i].work.img.is_none() { return; }
-        let Some(dir) = self.pick_folder("Choose a folder for the split files", &self.entries[i].shot.path.clone()) else { self.toast("Not saved."); return };
+        let Some(dir) = self.pick_folder("Choose a folder for the separate files", &self.entries[i].shot.path.clone()) else { self.toast("Not saved. The pieces are still marked; use Save split files on the Crop & split tab."); return };
         let j2k = self.want_j2k();
-        let split = SplitOptions { straighten: self.ts.straighten, fill_slivers: self.ts.fill };
         let target = self.ts.label_target;
         let series = d::new_uid();
         let e = &self.entries[i];
