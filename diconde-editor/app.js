@@ -1,7 +1,7 @@
 /* DICONDE Editor UI. The opened file is never modified on disk; every save writes a new file. */
 'use strict';
 (function () {
-  const D = window.Dicom, I = window.Imaging, X = window.Exporters, O = window.Overlay;
+  const D = window.Dicom, I = window.Imaging, X = window.Exporters, O = window.Overlay, SH = window.Shots;
   const $ = id => document.getElementById(id);
   const READ_ONLY = new Set([0x00080016, 0x00080018, 0x00280002, 0x00280004, 0x00280006, 0x00280008, 0x00280010, 0x00280011, 0x00280100, 0x00280101, 0x00280102, 0x00280103, D.PIXEL]);
   const COMMON = [
@@ -35,12 +35,15 @@
       const m = ev.data || {};
       if (m.id != null && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
       else if (m.cmd === 'openFile' && m.ok) openFromHost(m);
+      else if (m.cmd === 'addShot' && m.ok) hostShots.push({ bytes: fromB64(m.data), name: m.name, path: m.path });
+      else if (m.cmd === 'addShotsDone') { const list = hostShots.splice(0); if (list.length) addShots(list); }
     });
     return {
       call: (cmd, args) => new Promise(res => { const id = ++next; pending.set(id, res); window.chrome.webview.postMessage(Object.assign({ id, cmd }, args)); }),
       post: (cmd, args) => window.chrome.webview.postMessage(Object.assign({ cmd }, args))
     };
   })() : null;
+  const hostShots = [];
   function toB64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
   function fromB64(b64) { const s = atob(b64), o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) o[i] = s.charCodeAt(i); return o; }
   async function openFromHost(m) {
@@ -75,8 +78,14 @@
   async function openBytes(bytes, name) {
     let file;
     try { file = await D.parse(bytes); } catch (e) { toast(`Could not open ${name}: ${e.message}`, true); return; }
-    S.orig = file; S.file = D.clone(file); S.name = name;
-    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.scratches = []; S.frame = 0; S.comparing = false; savedState = '';
+    return openParsed(file, name, null);
+  }
+  // Opens a parsed file. With a Shots workspace entry, the editor works on that entry's own working copy and
+  // edit record, so changes made here show in the Shots window and the other way round.
+  async function openParsed(file, name, entry) {
+    S.entry = entry || null;
+    S.orig = file; S.file = entry ? entry.file : D.clone(file); S.name = name;
+    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = entry ? entry.origEls : new Map(); S.crop = null; S.regions = []; S.scratches = []; S.frame = 0; S.comparing = false; savedState = '';
     let img = D.getImage(S.file);
     S.decoded = false; S.edge.on = false; S.edgeCache = null; S.rawAutoWidth = null;
     if (img.compressed && window.Codec && Codec.canDecode(file.transferSyntax)) {
@@ -174,7 +183,7 @@
   function restoreMeta(snap) {
     const px = S.file.ds.el.get(D.PIXEL);
     S.file.ds.el = new Map(snap.el); if (px) S.file.ds.el.set(D.PIXEL, px);
-    S.origEls = snap.origEls;
+    S.origEls = snap.origEls; if (S.entry) S.entry.origEls = S.origEls;
     renderMeta(); afterMetaChange(0x00281050);
   }
   const imageState = () => ({ img: S.img, ops: S.ops.slice(), turns: S.turns, crop: S.crop, regions: S.regions });
@@ -189,25 +198,29 @@
     if (dropped) toast(`Only the last ${MAX_IMAGE_UNDO} image steps can be undone.`);
   }
   function undo() {
+    if (S.mode === 'shots') return shotsUndo();
     const u = S.undo.pop(); if (!u) return;
     if (u.kind === 'meta') { S.redo.push({ kind: 'meta', snap: metaSnapshot(), text: u.text }); restoreMeta(u.snap); }
     else { S.redo.push({ kind: 'image', state: imageState(), text: u.text }); restoreImage(u.state); }
     refreshUndoUi(); toast(`Undone: ${u.text}`);
   }
   function redo() {
+    if (S.mode === 'shots') return shotsRedo();
     const r = S.redo.pop(); if (!r) return;
     if (r.kind === 'meta') { S.undo.push({ kind: 'meta', snap: metaSnapshot(), text: r.text }); restoreMeta(r.snap); }
     else { S.undo.push({ kind: 'image', state: imageState(), text: r.text }); restoreImage(r.state); }
     refreshUndoUi(); toast(`Redone: ${r.text}`);
   }
   function refreshUndoUi() {
-    const u = S.undo[S.undo.length - 1], r = S.redo[S.redo.length - 1];
+    const shots = S.mode === 'shots', U = shots ? S.shUndo : S.undo, R = shots ? S.shRedo : S.redo;
+    const u = U[U.length - 1], r = R[R.length - 1];
     for (const [id, e, verb] of [['tb-undo', u, 'Undo'], ['tb-redo', r, 'Redo']]) {
       $(id).disabled = !e; $(id).title = e ? `${verb}: ${e.text} (${verb === 'Undo' ? 'Ctrl+Z' : 'Ctrl+Y'})` : `Nothing to ${verb.toLowerCase()}`;
       $(id).setAttribute('aria-label', e ? `${verb}: ${e.text}` : `${verb} (nothing to ${verb.toLowerCase()})`);
     }
-    $('btn-undo').disabled = !u; $('btn-redo').disabled = !r;
-    $('btn-undo').textContent = u ? `Undo: ${u.text}` : 'Undo';
+    const eu = S.undo[S.undo.length - 1];
+    $('btn-undo').disabled = !eu; $('btn-redo').disabled = !S.redo.length;
+    $('btn-undo').textContent = eu ? `Undo: ${eu.text}` : 'Undo';
     renderHistory();
   }
   function afterMetaChange(tag) {
@@ -995,10 +1008,240 @@
     updateTemplateButtons(); updateDirty();
   }
   function updateDirty() {
-    const dirty = !!S.file && hasChanges() && stateKey() !== savedState;
+    const dirty = (!!S.file && hasChanges() && stateKey() !== savedState) || S.shots.some(e => e.dirty);
     $('dirty').classList.toggle('hidden', !dirty); $('btn-save').classList.toggle('primary', dirty);
     if (HOST && dirty !== S.hostDirty) { S.hostDirty = dirty; HOST.post('dirty', { dirty }); }
     $('btn-compare').disabled = !S.img || !S.ops.length;
+  }
+
+  // ---------- Shots window: many files grouped by weld, batch metadata edits ----------
+  Object.assign(S, { mode: 'editor', shots: [], shSel: new Set(), shGroup: 0x0008103E, shPending: {}, shUndo: [], shRedo: [], shThumbQueue: [] });
+  const BATCH_TAGS = COMMON.filter(([t]) => t !== 'Display').flatMap(([, tags]) => tags);
+  const shById = id => S.shots.find(e => e.id === id);
+  const selected = () => S.shots.filter(e => S.shSel.has(e.id));
+  function setView(v) {
+    S.mode = v; // which window is showing (S.view is the viewer's zoom and pan)
+    document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+    $('shots-view').classList.toggle('hidden', v !== 'shots');
+    document.querySelector('main.workspace').classList.toggle('hidden', v === 'shots');
+    ['btn-save', 'export-menu', 'btn-open'].forEach(id => $(id).classList.toggle('hidden', v === 'shots'));
+    $('fileinfo').textContent = v === 'shots' ? `${S.shots.length} shot${S.shots.length === 1 ? '' : 's'} in ${SH.groups(S.shots, S.shGroup).length} weld group(s)` : (S.name ? $('fileinfo').title : 'No file open. Files stay on this computer.');
+    if (v === 'shots') renderShots(); else { renderMeta(); resize(); }
+    refreshUndoUi();
+  }
+  // list: [{ bytes, name, path }]
+  async function addShots(list) {
+    await busy(async () => {
+      let added = 0; const bad = [];
+      for (const f of list) {
+        try {
+          const e = await SH.load(f.bytes, f.name, f.path);
+          const uid = D.getString(e.orig.ds, 0x00080018);
+          if (uid && S.shots.some(x => D.getString(x.orig.ds, 0x00080018) === uid)) continue; // already in the list
+          S.shots.push(e); S.shThumbQueue.push(e); added++;
+        } catch (err) { bad.push(`${f.name}: ${err.message}`); }
+      }
+      setView('shots');
+      toast(`Added ${added} shot${added === 1 ? '' : 's'}${bad.length ? `; ${bad.length} could not be read (${bad.slice(0, 3).join('; ')})` : ''}.`, !!bad.length && !added);
+      pumpThumbs();
+    }, 'Reading shots…');
+  }
+  async function filesToList(files) { const out = []; for (const f of files) if (!/^\./.test(f.name)) out.push({ bytes: new Uint8Array(await f.arrayBuffer()), name: f.name, path: f.webkitRelativePath || '' }); return out; }
+
+  // Thumbnails, one at a time in the background, from a reduced copy of the image. (INDUSTREX's stored icon is not
+  // used: on the owner's files its pixel data does not match its own description.)
+  function viewAngleOf(file) { const a = D.industrexXmlEntry(file.ds, 'ANGLE'), deg = a ? Math.round(Number(a[a.length - 1])) : 0, cw = (((360 - deg) % 360) + 360) % 360; return [0, 90, 180, 270].includes(cw) ? cw : 0; }
+  async function makeThumb(e) {
+    let img = D.getImage(e.orig);
+    if (img.compressed && window.Codec && Codec.canDecode(e.orig.transferSyntax)) { await Codec.load(); img = D.imageFromFrames(e.orig, Codec.decodeFrames(e.orig.ds.el.get(D.PIXEL).fragments, D.imageGeometry(e.orig))); }
+    if (img.error) return null;
+    const step = Math.max(1, Math.ceil(Math.max(img.cols, img.rows) / 320)), w = Math.floor(img.cols / step), h = Math.floor(img.rows / step);
+    const small = new img.frames[0].constructor(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) small[y * w + x] = img.frames[0][(y * step) * img.cols + x * step];
+    const win = I.autoWindow(small, img.slope, img.intercept, 0.5, 99.8, img.padding), rgba = I.render(small, img, win.center, win.width, false);
+    const src = document.createElement('canvas'); src.width = w; src.height = h; src.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+    const rot = viewAngleOf(e.orig), d = I.viewDims(w, h, rot), out = document.createElement('canvas'); out.width = d.w; out.height = d.h;
+    const cx = out.getContext('2d'); I.viewTransform(cx, w, h, rot); cx.drawImage(src, 0, 0);
+    return out.toDataURL('image/png');
+  }
+  let pumping = false;
+  async function pumpThumbs() {
+    if (pumping) return; pumping = true;
+    while (S.shThumbQueue.length) {
+      const e = S.shThumbQueue.shift();
+      try { e.thumb = await makeThumb(e); } catch (err) { console.warn(err); e.thumb = null; }
+      const img = document.querySelector(`.sh-card[data-id="${e.id}"] .ph`);
+      if (img && e.thumb) { const im = el('img', { src: e.thumb, alt: '' }); img.replaceWith(im); }
+      await new Promise(r => setTimeout(r, 0));
+    }
+    pumping = false;
+  }
+
+  function renderShots() {
+    const box = $('sh-groups'); box.innerHTML = '';
+    const q = $('sh-search').value.trim().toLowerCase();
+    const visible = S.shots.filter(e => !q || [e.name, ...SH.GROUP_FIELDS.map(t => D.getString(e.file.ds, t))].join(' ').toLowerCase().includes(q));
+    const groups = SH.groups(visible, S.shGroup), gname = D.tagInfo(S.shGroup).name;
+    $('sh-badge').textContent = S.shots.length ? `(${S.shots.length})` : '';
+    $('sh-count').textContent = S.shots.length ? `${S.shots.length} shots · ${groups.length} group(s) · ${S.shSel.size} selected` : '';
+    if (!S.shots.length) {
+      box.append(el('div', { class: 'sh-empty' }, el('h2', {}, 'Organise shots by weld'), el('p', {}, 'Add shots or a whole folder, or drop .dcm files here. Shots are grouped by weld, and you can edit their metadata together. Nothing is uploaded and originals are never changed.'),
+        el('div', { class: 'btns', style: 'justify-content:center' }, el('button', { class: 'primary', onclick: () => $('sh-add').click() }, 'Add shots…'), el('button', { onclick: () => $('sh-add-folder').click() }, 'Add folder…'))));
+    }
+    for (const g of groups) {
+      const all = g.shots.every(e => S.shSel.has(e.id)), edited = g.shots.filter(e => e.dirty).length;
+      const tick = el('input', { type: 'checkbox', 'aria-label': `Select all shots in ${g.key || 'no weld'}` }); tick.checked = all;
+      tick.onchange = () => { g.shots.forEach(e => (tick.checked ? S.shSel.add(e.id) : S.shSel.delete(e.id))); renderShots(); };
+      const wrap = el('section', { class: 'sh-group', 'data-key': g.key },
+        el('div', { class: 'sh-group-h' }, tick, el('b', {}, g.key || `No ${gname} set`), el('span', { class: 'note' }, `${g.shots.length} shot${g.shots.length === 1 ? '' : 's'}`), edited ? el('span', { class: 'badge' }, `${edited} edited`) : ''));
+      // drop shots here to move them to this weld
+      wrap.addEventListener('dragover', ev => { if (S.shDrag) { ev.preventDefault(); wrap.classList.add('drop'); } });
+      wrap.addEventListener('dragleave', () => wrap.classList.remove('drop'));
+      wrap.addEventListener('drop', ev => { ev.preventDefault(); wrap.classList.remove('drop'); if (S.shDrag) { const ids = S.shDrag; S.shDrag = null; setWeld(g.key, ids.map(shById).filter(Boolean)); } });
+      const cards = el('div', { class: 'sh-cards' });
+      for (const e of g.shots) {
+        const n = D.getString(e.file.ds, 0x00200013), date = D.getString(e.file.ds, 0x00080020) || D.getString(e.file.ds, 0x00080022);
+        const cb = el('input', { type: 'checkbox', 'aria-label': `Select ${e.name}` }); cb.checked = S.shSel.has(e.id);
+        const card = el('div', { class: 'sh-card' + (S.shSel.has(e.id) ? ' sel' : ''), 'data-id': e.id, draggable: 'true', tabindex: '0', title: `${e.name} — double-click to open in the editor` },
+          e.thumb ? el('img', { src: e.thumb, alt: '' }) : el('div', { class: 'ph' }, 'thumbnail…'), cb,
+          el('div', { class: 'nm' }, e.name),
+          el('div', { class: 'meta' }, `${n ? 'Shot ' + n : 'No shot number'}${date ? ' · ' + O.formatValue('DA', date) : ''}`),
+          el('div', { class: 'meta' }, e.dirty ? el('span', { class: 'badge' }, 'edited') : e.savedAs ? el('span', { class: 'badge ok' }, 'saved') : ''));
+        const toggle = () => { S.shSel.has(e.id) ? S.shSel.delete(e.id) : S.shSel.add(e.id); renderShots(); };
+        card.addEventListener('click', ev => { if (ev.detail > 1) return; if (ev.target === cb) return; toggle(); });
+        cb.addEventListener('change', toggle);
+        card.addEventListener('dblclick', () => openShot(e));
+        card.addEventListener('keydown', ev => { if (ev.key === 'Enter') openShot(e); else if (ev.key === ' ') { ev.preventDefault(); toggle(); } });
+        card.addEventListener('dragstart', ev => { S.shDrag = S.shSel.has(e.id) ? [...S.shSel] : [e.id]; ev.dataTransfer.setData('text/plain', 'shots'); ev.dataTransfer.effectAllowed = 'move'; });
+        cards.append(card);
+      }
+      wrap.append(cards); box.append(wrap);
+    }
+    // weld suggestions and the panel
+    const dl = $('sh-weld-list'); dl.innerHTML = ''; SH.groups(S.shots, S.shGroup).forEach(g => g.key && dl.append(el('option', { value: g.key })));
+    renderBatch(); updateDirty();
+    if (S.mode === 'shots') $('fileinfo').textContent = `${S.shots.length} shot${S.shots.length === 1 ? '' : 's'} in ${SH.groups(S.shots, S.shGroup).length} weld group(s)`;
+  }
+
+  function renderBatch() {
+    const sel = selected(), box = $('sh-batch'); box.innerHTML = '';
+    $('sh-sel-title').textContent = sel.length ? `Batch edit — ${sel.length} shot${sel.length === 1 ? '' : 's'} selected` : 'Batch edit';
+    $('sh-sel-note').classList.toggle('hidden', !!sel.length);
+    const pendingCount = Object.keys(S.shPending).length;
+    ['sh-set-weld', 'sh-renumber', 'sh-tpl-apply', 'sh-remove'].forEach(id => { $(id).disabled = !sel.length; });
+    $('sh-apply').disabled = !sel.length || !pendingCount; $('sh-reset').disabled = !pendingCount;
+    $('sh-apply').textContent = sel.length ? `Apply ${pendingCount || ''} change${pendingCount === 1 ? '' : 's'} to ${sel.length} shot${sel.length === 1 ? '' : 's'}`.replace('  ', ' ') : 'Apply';
+    const edited = S.shots.filter(e => e.dirty).length;
+    $('sh-save').disabled = !edited; $('sh-save').textContent = edited ? `Save ${edited} edited shot${edited === 1 ? '' : 's'}` : 'Save edited shots';
+    const t = loadTemplates(), tsel = $('sh-tpl'), cur = tsel.value; tsel.innerHTML = '';
+    tsel.append(el('option', { value: '' }, Object.keys(t).length ? 'Templates…' : 'No templates yet')); Object.keys(t).sort().forEach(n => tsel.append(el('option', { value: n }, n))); tsel.value = t[cur] ? cur : '';
+    if (!sel.length) return;
+    const cv = SH.commonValues(sel, BATCH_TAGS);
+    for (const tag of BATCH_TAGS) {
+      const k = SH.hex(tag), c = cv[k], pend = Object.prototype.hasOwnProperty.call(S.shPending, k), id = 'sb-' + k;
+      const name = D.describeTag(sel[0].file.ds, tag).name;
+      const input = el('input', { id, placeholder: c.mixed ? `Multiple values (${c.count}) — type to set all` : 'Not set — type to set', spellcheck: 'false' });
+      input.value = pend ? (S.shPending[k] ?? '') : c.value;
+      const row = el('div', { class: 'bfield' + (pend ? ' changed' : '') }, el('label', { for: id }, name), input,
+        el('button', { class: 'icon danger', title: `Remove ${name} from all selected shots`, 'aria-label': `Remove ${name} from all selected shots`, onclick: () => { S.shPending[k] = null; renderBatch(); } }, '×'));
+      if (pend && S.shPending[k] === null) { input.value = ''; input.placeholder = 'Will be removed from all selected shots'; }
+      input.addEventListener('input', () => {
+        if (input.value === c.value && !c.mixed) delete S.shPending[k]; else S.shPending[k] = input.value;
+        row.classList.toggle('changed', Object.prototype.hasOwnProperty.call(S.shPending, k));
+        const n = Object.keys(S.shPending).length; $('sh-apply').disabled = !n; $('sh-reset').disabled = !n;
+        $('sh-apply').textContent = `Apply ${n || ''} change${n === 1 ? '' : 's'} to ${sel.length} shot${sel.length === 1 ? '' : 's'}`.replace('  ', ' ');
+      });
+      box.append(row);
+    }
+  }
+
+  // Every Shots change goes through here: one undo step, editor kept in step when its shot is affected.
+  function shotsChange(entries, text, fn) {
+    const snap = SH.snapshot(entries), res = fn();
+    if (res && res.errors && res.errors.length) {
+      $('sh-errors').textContent = 'Nothing was changed: ' + res.errors.slice(0, 6).map(e => `${e.name} — ${e.field}: ${e.message}`).join('; ') + (res.errors.length > 6 ? ` (and ${res.errors.length - 6} more)` : '');
+      return false;
+    }
+    $('sh-errors').textContent = '';
+    entries.forEach(e => { e.dirty = SH.isEdited(e) || e.dirty; });
+    S.shUndo.push({ snap, text }); S.shRedo = [];
+    syncEditorAfterShots(entries);
+    renderShots(); refreshUndoUi(); toast(text + '. Undo is available.');
+    return true;
+  }
+  function syncEditorAfterShots(entries) {
+    if (S.entry && entries.includes(S.entry)) { S.origEls = S.entry.origEls; S.undo = S.undo.filter(u => u.kind !== 'meta'); S.redo = S.redo.filter(u => u.kind !== 'meta'); }
+  }
+  function applyPending() {
+    const sel = selected(), changes = Object.assign({}, S.shPending), n = Object.keys(changes).length;
+    if (!sel.length || !n) return;
+    if (shotsChange(sel, `Batch edit: ${n} field${n === 1 ? '' : 's'} on ${sel.length} shot${sel.length === 1 ? '' : 's'}`, () => SH.applyBatch(sel, changes))) S.shPending = {}, renderBatch();
+  }
+  function setWeld(value, entries) {
+    value = (value || '').trim(); if (!entries.length) return;
+    const k = SH.hex(S.shGroup), name = D.tagInfo(S.shGroup).name;
+    shotsChange(entries, `${name} set to “${value}” on ${entries.length} shot${entries.length === 1 ? '' : 's'}`, () => SH.applyBatch(entries, { [k]: value === '' ? null : value }));
+  }
+  function renumberSelected() {
+    const welds = SH.groups(selected(), S.shGroup).map(g => g.key), targets = SH.groups(S.shots, S.shGroup).filter(g => welds.includes(g.key));
+    const all = targets.flatMap(g => g.shots);
+    shotsChange(all, `Numbered shots 1…n in ${targets.length} weld${targets.length === 1 ? '' : 's'}`, () => { targets.forEach(g => SH.renumber(g.shots)); return null; });
+  }
+  function applyTemplateToShots() {
+    const name = $('sh-tpl').value, f = loadTemplates()[name], sel = selected(); if (!f || !sel.length) return;
+    const changes = {}; for (const [hexKey, v] of Object.entries(f)) changes[hexKey] = v.remove ? null : v.text;
+    shotsChange(sel, `Applied template “${name}” to ${sel.length} shot${sel.length === 1 ? '' : 's'}`, () => SH.applyBatch(sel, changes));
+  }
+  function shotsUndo() {
+    const u = S.shUndo.pop(); if (!u) return;
+    S.shRedo.push({ snap: SH.snapshot(u.snap.map(x => x.e)), text: u.text });
+    SH.restore(u.snap); u.snap.forEach(x => { x.e.dirty = SH.isEdited(x.e); }); syncEditorAfterShots(u.snap.map(x => x.e));
+    renderShots(); refreshUndoUi(); toast(`Undone: ${u.text}`);
+  }
+  function shotsRedo() {
+    const r = S.shRedo.pop(); if (!r) return;
+    S.shUndo.push({ snap: SH.snapshot(r.snap.map(x => x.e)), text: r.text });
+    SH.restore(r.snap); r.snap.forEach(x => { x.e.dirty = SH.isEdited(x.e); }); syncEditorAfterShots(r.snap.map(x => x.e));
+    renderShots(); refreshUndoUi(); toast(`Redone: ${r.text}`);
+  }
+  function removeSelected() {
+    const sel = selected(); if (!sel.length) return;
+    const unsaved = sel.filter(e => e.dirty).length;
+    if (unsaved && !confirm(`${unsaved} selected shot(s) have unsaved edits. Remove them from the list anyway?`)) return;
+    S.shots = S.shots.filter(e => !S.shSel.has(e.id)); S.shSel.clear();
+    S.shUndo = S.shUndo.filter(u => u.snap.every(x => S.shots.includes(x.e))); S.shRedo = S.shRedo.filter(u => u.snap.every(x => S.shots.includes(x.e)));
+    renderShots(); refreshUndoUi();
+  }
+  async function openShot(e) {
+    if (S.entry !== e && S.ops.length && !confirm(`Discard the unsaved image changes to ${S.name}? (Its metadata edits are kept.)`)) return;
+    await busy(async () => { await openParsed(e.orig, e.name, e); S.path = e.path; }, 'Opening…');
+    setView('editor');
+  }
+  // Saves a new copy of every edited shot: one ZIP in a browser, or files in a chosen folder in the Windows program.
+  async function saveShots() {
+    const list = S.shots.filter(e => e.dirty); if (!list.length) return;
+    await busy(async () => {
+      const names = SH.copyNames(list), results = [];
+      let folder = null;
+      if (HOST) { const r = await HOST.call('pickFolder', { near: (list[0].path || '') }); if (!r.ok) { toast('Not saved.'); return; } folder = r.folder; }
+      const files = [];
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i], b = SH.buildCopy(e);
+        const chk = window.Compat ? await Compat.check(b.bytes, e.orig, { edited: b.edited, xmlTag: (D.industrexInfo(e.orig.ds) || {}).xmlTag }) : [];
+        const fails = chk.filter(c => c.level === 'fail');
+        if (HOST) {
+          const r = await HOST.call('writeFile', { folder, name: names[i], data: toB64(b.bytes) });
+          if (!r.ok) { results.push(`${e.name}: not saved (${r.error || 'error'})`); continue; }
+          e.savedAs = r.path; results.push(`${r.name}${fails.length ? ` — ${fails.length} compatibility problem(s)` : ''}`);
+        } else { files.push({ name: names[i], data: b.bytes }); e.savedAs = names[i]; results.push(`${names[i]}${fails.length ? ` — ${fails.length} compatibility problem(s)` : ''}`); }
+        e.dirty = false;
+        if (fails.length) e.compatFails = fails.map(c => c.title); else delete e.compatFails;
+      }
+      if (!HOST) await download(X.zip(files), 'shots_edited.zip', 'application/zip');
+      const problems = list.filter(e => e.compatFails).length;
+      $('sh-result').textContent = `Saved ${list.length} cop${list.length === 1 ? 'y' : 'ies'}${folder ? ' to ' + folder : ' in shots_edited.zip'}. INDUSTREX compatibility: ${problems ? problems + ' with problems' : 'all passed'}. ` + results.join(' · ');
+      renderShots(); toast(`Saved ${list.length} edited shot${list.length === 1 ? '' : 's'}. Originals unchanged.`, !!problems);
+    }, 'Saving shots…');
   }
 
   // ---------- wiring ----------
@@ -1047,6 +1290,30 @@
     cmp.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setComparing(true); } });
     cmp.addEventListener('keyup', () => setComparing(false));
     $('btn-viewrot').onclick = rotateView;
+    document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+    $('sh-group').innerHTML = ''; SH.GROUP_FIELDS.forEach(t => $('sh-group').append(el('option', { value: SH.hex(t) }, D.tagInfo(t).name + (D.tagInfo(t).ndeName ? '' : ''))));
+    $('sh-group').value = SH.hex(S.shGroup); $('sh-group').onchange = () => { S.shGroup = parseInt($('sh-group').value, 16) >>> 0; renderShots(); };
+    $('sh-add').onclick = async () => {
+      if (!HOST) { $('sh-input').click(); return; }
+      const r = await HOST.call('openMany', {}); if (!r.ok && !r.cancelled) toast(`Could not open: ${r.error || 'error'}`, true);
+    };
+    $('sh-add-folder').onclick = async () => {
+      if (!HOST) { $('sh-folder-input').click(); return; }
+      const r = await HOST.call('openFolder', {}); if (!r.ok && !r.cancelled) toast(`Could not open: ${r.error || 'error'}`, true);
+    };
+    $('sh-input').onchange = async e => { const l = await filesToList([...e.target.files]); e.target.value = ''; if (l.length) addShots(l); };
+    $('sh-folder-input').onchange = async e => { const l = await filesToList([...e.target.files].filter(f => /\.(dcm|dicom|dic)$/i.test(f.name))); e.target.value = ''; if (l.length) addShots(l); else toast('No .dcm files in that folder.', true); };
+    const sm = document.querySelector('.shots-main');
+    sm.addEventListener('dragover', e => { if (!S.shDrag && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); sm.classList.add('drag'); } });
+    sm.addEventListener('dragleave', () => sm.classList.remove('drag'));
+    sm.addEventListener('drop', async e => { sm.classList.remove('drag'); if (S.shDrag || !e.dataTransfer.files.length) return; e.preventDefault(); addShots(await filesToList([...e.dataTransfer.files])); });
+    $('sh-search').oninput = renderShots;
+    $('sh-select-all').onclick = () => { S.shots.forEach(e => S.shSel.add(e.id)); renderShots(); };
+    $('sh-select-none').onclick = () => { S.shSel.clear(); renderShots(); };
+    $('sh-apply').onclick = applyPending; $('sh-reset').onclick = () => { S.shPending = {}; renderBatch(); };
+    $('sh-set-weld').onclick = () => setWeld($('sh-weld').value, selected());
+    $('sh-renumber').onclick = renumberSelected; $('sh-tpl').onchange = () => {}; $('sh-tpl-apply').onclick = applyTemplateToShots;
+    $('sh-save').onclick = saveShots; $('sh-remove').onclick = removeSelected;
     $('btn-overlay').onclick = () => setOverlay(!S.ov.opts.enabled);
     $('ov-on').onchange = e => setOverlay(e.target.checked);
     $('ov-labels').onchange = e => { S.ov.opts.labels = e.target.checked; saveOv(); draw(); };
@@ -1104,5 +1371,5 @@
     fillAddForm(); syncOverlayUi(); renderOverlayTab(); renderTemplates(); renderMeta(); renderHistory(); resize();
   }
   init();
-  window.__editor = { S, openBytes, overlayLines }; // for tests
+  window.__editor = { S, openBytes, overlayLines, addShots, setView }; // for tests
 })();

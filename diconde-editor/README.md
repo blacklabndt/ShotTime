@@ -14,6 +14,16 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
 
 ## What it does
 
+- **Shots window** (top bar: Shots | Editor): organise many shots by weld and edit their metadata together.
+  - **Adding shots**: Add shots, Add folder, or drop files. In the Windows program these use native dialogs.
+  - **Grouping**: shots are grouped by a chosen field (default Series Description, where INDUSTREX keeps the weld/shot ID, e.g. X-81). Within a weld they are ordered by shot number, then acquisition time. Thumbnails are shown at INDUSTREX's viewing angle.
+  - **Selecting**: click shots, or tick a whole weld.
+  - **Batch edit**: the usual fields, with shared values filled in and differing ones marked "Multiple values". Only fields you change are applied; × removes a field from all selected shots. Every value is checked against every shot first, so a bad value changes nothing and the panel says why.
+  - **Organising**: Set weld, drag shots onto another weld, number a weld's shots 1…n, apply a template to the selection.
+  - **Undo/Redo**: the top bar covers Shots changes while the Shots window is open.
+  - **Editing one shot**: double-click opens it in the editor on the same working copy, so changes made there show in Shots and the other way round.
+  - **Saving**: Save edited shots writes a new copy of every edited shot (name_edited.dcm) with INDUSTREX's XML copy updated, and runs the compatibility check on each. You get one ZIP in a browser; in the Windows program the files go to a folder you choose (default: the originals' folder), never overwriting an original or an existing file. Originals are never changed.
+  - Image processing stays a per-shot job in the editor (Save copy there).
 - **Metadata**: a Common view of the usual NDE fields (component, inspection, equipment and technique, display), and an All tags view that includes nested sequences. DICONDE names are shown with the underlying DICOM name, for example *Component ID Number* (DICOM: Patient ID). Values are checked against their VR (dates as YYYYMMDD, length limits, numbers, UIDs) before they are accepted. You can add, remove and revert tags. Templates save the fields you changed so you can apply them to other files; they are stored only in this browser.
 - **Viewing**:
   - JPEG 2000 images (as INDUSTREX saves them) are decoded when they open.
@@ -190,6 +200,7 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 | `windows/` | Windows program: `DicondeEditor.csproj`, `Program.cs` (WebView2 host), icon, README |
 | `tools/build-windows.sh` | Builds `dist/DICONDE-Editor-Windows.zip` |
 | `tools/check-industrex.cjs` | Command-line compatibility check |
+| `shots.js` | Shots workspace: loading, weld grouping, batch edits with validation, renumbering, undo snapshots, saved copies |
 | `overlay.js` | Overlay layout, value formatting and corner text drawing |
 | `codec.js` | JPEG 2000 decode/encode and frame splitting, using `vendor/openjpeg/` |
 | `vendor/openjpeg/` | OpenJPEG WebAssembly build (`@cornerstonejs/codec-openjpeg` 1.3.6, unmodified), checksums and licences |

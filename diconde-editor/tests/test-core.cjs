@@ -10,6 +10,7 @@ const { makeIndustrexLike, makeIndustrexJ2K, implicitBytes } = require('./indust
 const C = require('../codec.js');
 const O = require('../overlay.js');
 const K = require('../compat.js');
+const SH = require('../shots.js');
 
 let passed = 0;
 const tests = [];
@@ -550,6 +551,68 @@ test('find long scratches: only long thin less-radiation lines, not cracks, IQI 
   const t = new Uint16Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) t[x * h + y] = a[y * w + x];
   const ft = I.findScratches(t, h, w, {});
   assert.ok(ft.some(f => Math.abs(f.y0 - scratchAt(f.x0)) <= 3), JSON.stringify(ft));
+});
+
+async function shotSet() {
+  const mk = async (name, weld, inst, acq) => {
+    const f = makeIndustrexLike({ rows: 8, cols: 8 });
+    D.setText(f.ds, 0x0008103E, weld); D.setText(f.ds, 0x00200013, String(inst), 'IS'); D.setText(f.ds, 0x00080032, acq);
+    return SH.load(D.write(f), name);
+  };
+  return [await mk('a.dcm', 'X-81', 2, '101500'), await mk('b.dcm', 'X-82', 1, '110000'), await mk('c.dcm', 'X-81', 1, '101000'),
+    await mk('d.dcm', 'X-81', 1, '100500'), await mk('e.dcm', '', 1, '120000')];
+}
+
+test('shots: grouped by weld field, ordered by shot number then time, no-weld last', async () => {
+  const s = await shotSet();
+  const g = SH.groups(s, 0x0008103E);
+  assert.deepStrictEqual(g.map(x => x.key), ['X-81', 'X-82', '']);
+  assert.deepStrictEqual(g[0].shots.map(e => e.name), ['d.dcm', 'c.dcm', 'a.dcm']);
+  assert.deepStrictEqual(SH.groups(s, 0x00100020).map(x => x.shots.length), [5], 'all share the same Component ID');
+});
+
+test('shots: batch edit applies only changed fields, validates first, undo restores, renumber', async () => {
+  const s = await shotSet(), sel = s.slice(0, 3);
+  const cv = SH.commonValues(sel, [0x00081048, 0x0008103E]);
+  assert.deepStrictEqual(cv['00081048'], { value: 'Inspect Co', mixed: false });
+  assert.ok(cv['0008103e'].mixed && cv['0008103e'].count === 2);
+  // one bad value: nothing changes anywhere
+  const bad = SH.applyBatch(sel, { '00081048': 'New Co', '00080020': '2026-11-01' });
+  assert.strictEqual(bad.applied, 0); assert.strictEqual(bad.errors.length, 3);
+  assert.ok(sel.every(e => D.getString(e.file.ds, 0x00081048) === 'Inspect Co' && !SH.isEdited(e)));
+  const snap = SH.snapshot(sel);
+  const ok = SH.applyBatch(sel, { '00081048': 'New Co', '00204000': null, '00181004': 'PL-7' });
+  assert.deepStrictEqual([ok.applied, ok.errors.length], [3, 0]);
+  assert.ok(sel.every(e => D.getString(e.file.ds, 0x00081048) === 'New Co' && D.getString(e.file.ds, 0x00181004) === 'PL-7' && !e.file.ds.el.has(0x00204000)));
+  assert.deepStrictEqual(SH.changedTags(sel[0]).sort(), [0x00081048, 0x00181004, 0x00204000].sort());
+  assert.ok(!SH.isEdited(s[3]), 'unselected shots untouched');
+  assert.ok(sel[0].orig.ds.el.has(0x00204000) && D.getString(sel[0].orig.ds, 0x00081048) === 'Inspect Co', 'original parsed file never edited');
+  SH.restore(snap);
+  assert.ok(sel.every(e => D.getString(e.file.ds, 0x00081048) === 'Inspect Co' && !SH.isEdited(e)));
+  // setting a value back to the original clears the edit record
+  SH.applyBatch([s[0]], { '00081048': 'X' }); SH.applyBatch([s[0]], { '00081048': 'Inspect Co' });
+  assert.ok(!SH.isEdited(s[0]));
+  // renumber a weld 1..n in shown order, and move a shot to another weld
+  const x81 = SH.groups(s, 0x0008103E)[0].shots;
+  SH.renumber(x81);
+  assert.deepStrictEqual(x81.map(e => D.getString(e.file.ds, 0x00200013)), ['1', '2', '3']);
+  SH.applyBatch([s[4]], { '0008103e': 'X-82' });
+  assert.deepStrictEqual(SH.groups(s, 0x0008103E).map(x => x.key), ['X-81', 'X-82']);
+});
+
+test('shots: saved copies sync the INDUSTREX XML, get unique names, pass the compatibility check', async () => {
+  const s = await shotSet();
+  SH.applyBatch(s.slice(0, 2), { '00081048': 'Batch Co', '0008103e': 'X-90' });
+  const names = SH.copyNames([s[0], s[0], s[1]]);
+  assert.deepStrictEqual(names, ['a_edited.dcm', 'a_edited_2.dcm', 'b_edited.dcm']);
+  const { bytes, edited, synced } = SH.buildCopy(s[0]);
+  const out = await D.parse(bytes);
+  assert.strictEqual(D.getString(out.ds, 0x00081048), 'Batch Co');
+  assert.deepStrictEqual(D.industrexXmlValues(out.ds, 0x00081048), ['Batch Co']);
+  assert.ok(synced.includes(0x00081048));
+  assert.notStrictEqual(D.getString(out.ds, 0x00080018), D.getString(s[0].orig.ds, 0x00080018));
+  const fails = (await K.check(bytes, s[0].orig, { edited, xmlTag: 0x00331070 })).filter(c => c.level === 'fail');
+  assert.deepStrictEqual(fails.map(c => c.title), []);
 });
 
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);

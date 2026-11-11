@@ -18,7 +18,7 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
   await page.exposeFunction('__hostReceive', () => {});
   await page.addInitScript(b64 => {
     const listeners = [];
-    window.__host = { posted: [], saved: [], cancelNextSave: false, startFile: b64 };
+    window.__host = { posted: [], saved: [], written: [], cancelNextSave: false, startFile: b64[0], shotFiles: b64.slice(1) };
     const send = m => setTimeout(() => listeners.forEach(l => l({ data: m })), 0);
     window.chrome = { webview: {
       addEventListener: (t, l) => { if (t === 'message') listeners.push(l); },
@@ -26,6 +26,12 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
         window.__host.posted.push({ cmd: m.cmd, dirty: m.dirty, text: m.text, name: m.name });
         if (m.cmd === 'ready' && window.__host.startFile) send({ cmd: 'openFile', ok: true, name: 'start.dcm', path: 'C:\\jobs\\start.dcm', data: window.__host.startFile });
         if (m.cmd === 'open') send({ id: m.id, ok: true, name: 'picked.dcm', path: 'C:\\jobs\\picked.dcm', data: window.__host.startFile });
+        if (m.cmd === 'openMany') {
+          ['shot1.dcm', 'shot2.dcm'].forEach((n, i) => send({ cmd: 'addShot', ok: true, name: n, path: 'C:\\jobs\\' + n, data: window.__host.shotFiles[i] }));
+          send({ cmd: 'addShotsDone', count: 2 }); send({ id: m.id, ok: true, count: 2 });
+        }
+        if (m.cmd === 'pickFolder') { window.__host.near = m.near; send({ id: m.id, ok: true, folder: 'C:\\jobs\\out' }); }
+        if (m.cmd === 'writeFile') { window.__host.written.push({ folder: m.folder, name: m.name, data: m.data }); send({ id: m.id, ok: true, name: m.name, path: m.folder + '\\' + m.name }); }
         if (m.cmd === 'save') {
           if (window.__host.cancelNextSave) { window.__host.cancelNextSave = false; send({ id: m.id, ok: false, cancelled: true }); return; }
           window.__host.saved.push({ name: m.name, data: m.data });
@@ -33,7 +39,7 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
         }
       }
     } };
-  }, fixture.toString('base64'));
+  }, [fixture.toString('base64'), ...(await Promise.all([1, 2].map(async i => { const f = await makeIndustrexJ2K({ rows: 40, cols: 60 }); D.setText(f.ds, 0x0008103E, 'X-' + i); return Buffer.from(D.write(f)).toString('base64'); })))]);
   await page.goto('file://' + path.resolve(__dirname, '..', 'index.html'));
   let n = 0; const ok = () => n++;
 
@@ -74,6 +80,22 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
   await page.waitForFunction(() => window.__host.saved.some(s => s.name === 'picked.tif'));
   const tif = Buffer.from(await page.evaluate(() => window.__host.saved.find(s => s.name === 'picked.tif').data), 'base64');
   assert.strictEqual(tif.toString('latin1', 0, 2), 'II'); ok();
+
+  // Shots window: files arrive one message each; edited copies are written one by one into a chosen folder.
+  await page.click('[data-view=shots]');
+  await page.click('#sh-add');
+  await page.waitForFunction(() => /Added 2 shots/.test(document.getElementById('toast').textContent));
+  await page.click('#sh-select-all');
+  await page.fill('#sb-00181004', 'PL-HOST'); await page.click('#sh-apply');
+  await page.waitForFunction(() => /Batch edit/.test(document.getElementById('toast').textContent));
+  await page.click('#sh-save');
+  await page.waitForFunction(() => /Saved 2 copies to C:\\jobs\\out/.test(document.getElementById('sh-result').textContent));
+  const written = await page.evaluate(() => window.__host.written);
+  assert.deepStrictEqual(written.map(w => w.name).sort(), ['shot1_edited.dcm', 'shot2_edited.dcm']);
+  assert.strictEqual(await page.evaluate(() => window.__host.near), 'C:\\jobs\\shot1.dcm', 'folder dialog starts near the originals');
+  const w0 = await D.parse(Buffer.from(written[0].data, 'base64'));
+  assert.strictEqual(D.getString(w0.ds, 0x00181004), 'PL-HOST');
+  assert.match(await page.textContent('#sh-result'), /all passed/); ok();
 
   assert.deepStrictEqual(errors, []);
   await browser.close();

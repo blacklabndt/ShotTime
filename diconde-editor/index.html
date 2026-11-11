@@ -117,6 +117,33 @@ h3:first-child { margin-top: 4px; }
 #btn-overlay[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
 .pin[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .dim { opacity: .55; }
+.shots { flex: 1; display: grid; grid-template-columns: 1fr 420px; min-height: 0; }
+.sh-panel { flex: 1; overflow: auto; padding: 12px; }
+.shots-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sh-groups { flex: 1; overflow: auto; padding: 12px; }
+.sh-group { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; background: var(--panel); }
+.sh-group.drop { border-color: var(--accent); box-shadow: var(--focus); }
+.sh-group-h { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.sh-group-h b { font-size: 15px; }
+.sh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; padding: 10px; }
+.sh-card { border: 2px solid var(--border); border-radius: 8px; padding: 6px; cursor: pointer; background: var(--panel-2); user-select: none; position: relative; min-width: 0; }
+.sh-card.sel { border-color: var(--accent); }
+.sh-card img, .sh-card .ph { display: block; width: 100%; height: 90px; object-fit: contain; background: #0d0f12; border-radius: 4px; }
+.sh-card .ph { display: grid; place-items: center; color: #9aa3ae; font-size: 12px; }
+.sh-card .nm { font-size: 12px; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-card .meta { font-size: 11px; color: var(--muted); }
+.sh-card input[type=checkbox] { position: absolute; top: 10px; left: 10px; }
+.badge { display: inline-block; border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 600; background: var(--changed); color: var(--text); border: 1px solid var(--changed-edge); }
+.badge.ok { background: transparent; border-color: var(--ok); color: var(--ok); }
+.sh-empty { border: 2px dashed var(--border); border-radius: 14px; padding: 28px; text-align: center; color: var(--muted); margin: 20px auto; max-width: 520px; }
+.shots-main.drag .sh-empty, .shots-main.drag .sh-groups { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.bfield { display: grid; grid-template-columns: 1fr auto; gap: 4px 6px; padding: 5px 6px 5px 8px; border-left: 3px solid transparent; border-radius: 4px; }
+.bfield.changed { background: var(--changed); border-left-color: var(--changed-edge); }
+.bfield label { grid-column: 1 / -1; font-weight: 600; color: var(--text); font-size: 13px; }
+.bfield input { width: 100%; }
+.err-list { color: var(--danger); }
+#sh-badge:empty { display: none; }
+@media (max-width: 900px) { .shots { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; overflow: auto; } }
 .compat-list { list-style: none; padding: 0; margin: 6px 0; }
 .compat-list li { padding: 2px 0 2px 22px; position: relative; }
 .compat-list li::before { position: absolute; left: 0; font-weight: 700; }
@@ -138,6 +165,10 @@ h3:first-child { margin-top: 4px; }
 <body>
 <header class="topbar">
   <span class="brand">DICONDE Editor</span>
+  <div class="seg" role="group" aria-label="Window">
+    <button data-view="shots" aria-pressed="false">Shots <span id="sh-badge"></span></button>
+    <button data-view="editor" aria-pressed="true">Editor</button>
+  </div>
   <button id="btn-open" class="primary">Open file…</button>
   <input id="file-input" type="file" accept=".dcm,.dicom,.dic,application/dicom,*/*" hidden>
   <span id="fileinfo" class="fileinfo">No file open. Files stay on this computer.</span>
@@ -154,6 +185,46 @@ h3:first-child { margin-top: 4px; }
     </div>
   </div>
 </header>
+
+<main class="shots hidden" id="shots-view" aria-label="Shots by weld">
+  <section class="shots-main">
+    <div class="vtools">
+      <button id="sh-add" class="primary">Add shots…</button>
+      <button id="sh-add-folder">Add folder…</button>
+      <input id="sh-input" type="file" multiple accept=".dcm,.dicom,.dic,application/dicom,*/*" hidden>
+      <input id="sh-folder-input" type="file" webkitdirectory multiple hidden>
+      <label>Group by <select id="sh-group"></select></label>
+      <input type="search" id="sh-search" placeholder="Filter shots" aria-label="Filter shots">
+      <button id="sh-select-all">Select all</button>
+      <button id="sh-select-none">Clear selection</button>
+      <span class="readout" id="sh-count"></span>
+    </div>
+    <div class="sh-groups" id="sh-groups"></div>
+  </section>
+  <aside class="panel" aria-label="Batch edit">
+    <div class="sh-panel">
+      <h3 id="sh-sel-title">Batch edit</h3>
+      <p class="note" id="sh-sel-note">Select shots (click, or tick a weld) to edit their metadata together. Double-click a shot to open it in the editor.</p>
+      <div id="sh-batch"></div>
+      <div class="btns"><button id="sh-apply" class="primary" disabled>Apply</button><button id="sh-reset" disabled>Reset fields</button></div>
+      <div id="sh-errors" class="note err-list"></div>
+      <h3>Weld</h3>
+      <div class="btns">
+        <input id="sh-weld" list="sh-weld-list" placeholder="Weld, e.g. X-83" aria-label="Weld for selected shots">
+        <datalist id="sh-weld-list"></datalist>
+        <button id="sh-set-weld" disabled>Set weld</button>
+      </div>
+      <div class="btns"><button id="sh-renumber" disabled>Number shots 1…n in each selected weld</button></div>
+      <p class="note">You can also drag shots onto another weld.</p>
+      <h3>Templates</h3>
+      <div class="btns"><select id="sh-tpl" aria-label="Template"></select><button id="sh-tpl-apply" disabled>Apply to selected</button></div>
+      <h3>Save</h3>
+      <div class="btns"><button id="sh-save" class="primary" disabled>Save edited shots</button><button id="sh-remove" class="danger" disabled>Remove selected from list</button></div>
+      <p class="note">Each edited shot is saved as a new file (name_edited.dcm) with INDUSTREX's XML copy updated and a compatibility check. Originals are never changed.</p>
+      <div id="sh-result" class="note"></div>
+    </div>
+  </aside>
+</main>
 
 <main class="workspace">
   <section class="viewer" aria-label="Image viewer">
@@ -364,6 +435,7 @@ h3:first-child { margin-top: 4px; }
 <script src="codec.js"></script>
 <script src="overlay.js"></script>
 <script src="compat.js"></script>
+<script src="shots.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

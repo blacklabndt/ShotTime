@@ -472,6 +472,70 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     ok('undo history');
   }
 
+  // Shots window: group by weld, batch edit, move, renumber, open in the editor, save checked copies.
+  {
+    const mk = (name, weld, inst) => { const f = makeIndustrexLike({ rows: 40, cols: 60 }); if (weld) D.setText(f.ds, 0x0008103E, weld); else D.remove(f.ds, 0x0008103E); D.setText(f.ds, 0x00200013, String(inst), 'IS'); const pth = path.join(tmp, name); fs.writeFileSync(pth, D.write(f)); return pth; };
+    const files = [mk('w1a.dcm', 'X-1', 2), mk('w1b.dcm', 'X-1', 1), mk('w2a.dcm', 'X-2', 1), mk('none.dcm', '', 3)];
+    await page.click('[data-view=shots]');
+    await page.setInputFiles('#sh-input', files);
+    await page.waitForFunction(() => /Added 4 shots/.test(document.getElementById('toast').textContent));
+    const keys = () => page.evaluate(() => [...document.querySelectorAll('.sh-group')].map(g => g.dataset.key + ':' + g.querySelectorAll('.sh-card').length));
+    assert.deepStrictEqual(await keys(), ['X-1:2', 'X-2:1', ':1']);
+    assert.deepStrictEqual(await page.evaluate(() => [...document.querySelectorAll('.sh-group[data-key="X-1"] .nm')].map(n => n.textContent)), ['w1b.dcm', 'w1a.dcm'], 'ordered by shot number');
+    const shotVal = (name, tag) => page.evaluate(([n, t]) => { const e = window.__editor.S.shots.find(x => x.name === n); return window.Dicom.getString(e.file.ds, t); }, [name, tag]);
+    // batch edit the X-1 weld
+    await page.click('.sh-group[data-key="X-1"] .sh-group-h input');
+    assert.match(await page.textContent('#sh-sel-title'), /2 shots selected/);
+    assert.strictEqual(await page.inputValue('#sb-00081048'), 'Inspect Co');
+    await page.fill('#sb-00081048', 'Batch NDE');
+    await page.click('#sh-apply');
+    await page.waitForFunction(() => /Batch edit: 1 field on 2 shots/.test(document.getElementById('toast').textContent));
+    assert.strictEqual(await shotVal('w1a.dcm', 0x00081048), 'Batch NDE'); assert.strictEqual(await shotVal('w2a.dcm', 0x00081048), 'Inspect Co');
+    assert.strictEqual(await page.locator('.sh-group[data-key="X-1"] .badge').first().textContent(), '2 edited');
+    await page.click('#tb-undo'); assert.strictEqual(await shotVal('w1a.dcm', 0x00081048), 'Inspect Co');
+    await page.click('#tb-redo'); assert.strictEqual(await shotVal('w1b.dcm', 0x00081048), 'Batch NDE');
+    // a bad value changes nothing and says why
+    await page.fill('#sb-00080020', '2026-11-01'); await page.click('#sh-apply');
+    assert.match(await page.textContent('#sh-errors'), /Nothing was changed: w1.\.dcm — Study Date: Use a date like/);
+    await page.click('#sh-reset');
+    // drag the no-weld shot onto X-2, then number X-2's shots
+    await page.click('#sh-select-none');
+    await page.dragAndDrop('.sh-card:has-text("none.dcm")', '.sh-group[data-key="X-2"]');
+    await page.waitForFunction(() => /Series Description set to “X-2” on 1 shot/.test(document.getElementById('toast').textContent));
+    assert.deepStrictEqual(await keys(), ['X-1:2', 'X-2:2']);
+    await page.click('.sh-group[data-key="X-2"] .sh-group-h input'); await page.click('#sh-renumber');
+    assert.deepStrictEqual([await shotVal('w2a.dcm', 0x00200013), await shotVal('none.dcm', 0x00200013)], ['1', '2']);
+    // Set weld from the panel
+    await page.click('#sh-select-none'); await page.click('.sh-card:has-text("w2a.dcm")');
+    await page.fill('#sh-weld', 'X-3'); await page.click('#sh-set-weld');
+    assert.deepStrictEqual(await keys(), ['X-1:2', 'X-2:1', 'X-3:1']);
+    // open a shot in the editor: batch value is there, an editor edit shows back in Shots
+    await page.dblclick('.sh-card:has-text("w1a.dcm")');
+    await page.waitForFunction(() => /Opened w1a\.dcm/.test(document.getElementById('toast').textContent));
+    await page.click('[data-tab=meta]'); await page.click('[data-metaview="common"]');
+    assert.strictEqual(await field(page, '(0008,1048)').locator('input').inputValue(), 'Batch NDE');
+    const own = field(page, '(0018,1004)').locator('input'); await own.fill('PL-W1A'); await own.press('Enter');
+    await page.click('[data-view=shots]');
+    assert.strictEqual(await shotVal('w1a.dcm', 0x00181004), 'PL-W1A');
+    // save every edited shot: one ZIP, XML synced, all pass the compatibility check
+    const zipS = await grab(page, () => page.click('#sh-save'));
+    assert.strictEqual(zipS.name, 'shots_edited.zip');
+    const outs = []; const zb = zipS.bytes; let zp = 0;
+    while (zb.readUInt32LE(zp) === 0x04034b50) { const size = zb.readUInt32LE(zp + 18), nl = zb.readUInt16LE(zp + 26); outs.push({ name: zb.toString('utf8', zp + 30, zp + 30 + nl), data: zb.subarray(zp + 30 + nl, zp + 30 + nl + size) }); zp += 30 + nl + size; }
+    assert.deepStrictEqual(outs.map(o => o.name).sort(), ['none_edited.dcm', 'w1a_edited.dcm', 'w1b_edited.dcm', 'w2a_edited.dcm']);
+    const w1a = await D.parse(outs.find(o => o.name === 'w1a_edited.dcm').data);
+    assert.strictEqual(D.getString(w1a.ds, 0x00081048), 'Batch NDE'); assert.strictEqual(D.getString(w1a.ds, 0x00181004), 'PL-W1A');
+    assert.deepStrictEqual(D.industrexXmlValues(w1a.ds, 0x00081048), ['Batch NDE']);
+    assert.match(await page.textContent('#sh-result'), /Saved 4 copies in shots_edited\.zip\. INDUSTREX compatibility: all passed/);
+    assert.strictEqual(await page.locator('.badge.ok').count(), 4);
+    assert.ok(await page.isDisabled('#sh-save'));
+    // remove from the list
+    await page.click('#sh-select-all'); await page.click('#sh-remove');
+    assert.deepStrictEqual(await keys(), []);
+    await page.click('[data-view=editor]');
+    ok('shots window');
+  }
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');

@@ -31,6 +31,7 @@ namespace DicondeEditor
         readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         string pendingFile;       // file given on the command line ("Open with", double-click)
         string openedPath;        // the file the editor is showing; never overwritten
+        readonly HashSet<string> originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // every file opened; never overwritten
         bool dirty, allowClose;
 
         public MainForm(string file)
@@ -91,6 +92,10 @@ namespace DicondeEditor
                     case "ready": if (pendingFile != null) { SendFile("openFile", null, pendingFile); pendingFile = null; } break;
                     case "open": Open(id); break;
                     case "save": Save(id, m); break;
+                    case "openMany": OpenMany(id); break;
+                    case "openFolder": OpenFolder(id); break;
+                    case "pickFolder": PickFolder(id, Get(m, "near")); break;
+                    case "writeFile": WriteFile(id, m); break;
                     case "dirty": dirty = Get(m, "dirty") == "True"; break;
                     case "title": Text = string.IsNullOrEmpty(Get(m, "text")) ? "DICONDE Editor" : Get(m, "text") + " - DICONDE Editor"; break;
                 }
@@ -118,8 +123,64 @@ namespace DicondeEditor
             var msg = new Dictionary<string, object> { { "ok", true }, { "name", info.Name }, { "path", info.FullName }, { "data", Convert.ToBase64String(File.ReadAllBytes(path)) } };
             if (cmd != null) msg["cmd"] = cmd;
             if (id != null) msg["id"] = id;
-            openedPath = info.FullName;
+            if (cmd != "addShot") openedPath = info.FullName;
+            originals.Add(info.FullName);
             web.CoreWebView2.PostWebMessageAsJson(json.Serialize(msg));
+        }
+
+        // Shots window: several files, or every .dcm file in a folder, sent one message per file.
+        void OpenMany(object id)
+        {
+            using (var dlg = new OpenFileDialog { Title = "Add shots", Multiselect = true, Filter = "DICOM / DICONDE files (*.dcm;*.dicom;*.dic)|*.dcm;*.dicom;*.dic|All files (*.*)|*.*", CheckFileExists = true })
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "cancelled", true } }); return; }
+                SendShots(id, dlg.FileNames);
+            }
+        }
+
+        void OpenFolder(object id)
+        {
+            using (var dlg = new FolderBrowserDialog { Description = "Choose a folder of shots (.dcm files)", ShowNewFolderButton = false })
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "cancelled", true } }); return; }
+                var files = new List<string>();
+                foreach (var pattern in new[] { "*.dcm", "*.dicom", "*.dic" }) files.AddRange(Directory.GetFiles(dlg.SelectedPath, pattern, SearchOption.TopDirectoryOnly));
+                files.Sort(StringComparer.OrdinalIgnoreCase);
+                if (files.Count == 0) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "error", "No .dcm files in that folder." } }); return; }
+                SendShots(id, files.ToArray());
+            }
+        }
+
+        void SendShots(object id, string[] paths)
+        {
+            int sent = 0;
+            foreach (var p in paths) { try { SendFile("addShot", null, p); sent++; } catch (Exception ex) { MessageBox.Show(this, Path.GetFileName(p) + ": " + ex.Message, "DICONDE Editor"); } }
+            web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new Dictionary<string, object> { { "cmd", "addShotsDone" }, { "count", sent } }));
+            Reply(id, new Dictionary<string, object> { { "ok", true }, { "count", sent } });
+        }
+
+        void PickFolder(object id, string near)
+        {
+            using (var dlg = new FolderBrowserDialog { Description = "Choose where to save the edited copies", ShowNewFolderButton = true })
+            {
+                try { if (!string.IsNullOrEmpty(near) && File.Exists(near)) dlg.SelectedPath = Path.GetDirectoryName(near); } catch { }
+                if (dlg.ShowDialog(this) != DialogResult.OK) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "cancelled", true } }); return; }
+                Reply(id, new Dictionary<string, object> { { "ok", true }, { "folder", dlg.SelectedPath } });
+            }
+        }
+
+        // Writes one copy into the chosen folder. Never overwrites an opened original or an existing file:
+        // a free name is found instead (name_2.dcm, name_3.dcm, ...).
+        void WriteFile(object id, Dictionary<string, object> m)
+        {
+            string folder = Get(m, "folder"), name = Path.GetFileName(Get(m, "name"));
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder) || string.IsNullOrEmpty(name)) throw new IOException("Folder or file name missing.");
+            string stem = Path.GetFileNameWithoutExtension(name), ext = Path.GetExtension(name), target = Path.Combine(folder, name);
+            for (int i = 2; File.Exists(target) || originals.Contains(Path.GetFullPath(target)); i++) target = Path.Combine(folder, stem + "_" + i + ext);
+            string tmp = target + ".saving";
+            File.WriteAllBytes(tmp, Convert.FromBase64String(Get(m, "data")));
+            File.Move(tmp, target);
+            Reply(id, new Dictionary<string, object> { { "ok", true }, { "path", target }, { "name", Path.GetFileName(target) } });
         }
 
         void Save(object id, Dictionary<string, object> m)
