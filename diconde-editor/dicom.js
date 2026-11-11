@@ -413,7 +413,14 @@
     setText(ds, 0x00280010, String(img.rows), 'US');
     setText(ds, 0x00280011, String(img.cols), 'US');
     if (img.frames.length > 1 || ds.el.has(0x00280008)) setText(ds, 0x00280008, String(img.frames.length), 'IS');
-    remove(ds, 0x00280106); remove(ds, 0x00280107); // stale after editing; optional attributes
+    // Smallest/Largest Image Pixel Value: INDUSTREX writes both, so keep them, recalculated for the new pixels.
+    if (ds.el.has(0x00280106) || ds.el.has(0x00280107)) {
+      let lo = Infinity, hi = -Infinity;
+      img.frames.forEach(a => { for (let i = 0; i < a.length; i++) { const v = a[i]; if (v < lo) lo = v; if (v > hi) hi = v; } });
+      const vr = img.signed ? 'SS' : 'US';
+      if (img.bitsAllocated <= 16) { setText(ds, 0x00280106, String(lo), vr); setText(ds, 0x00280107, String(hi), vr); }
+      else { remove(ds, 0x00280106); remove(ds, 0x00280107); }
+    }
     if (opts.swapSpacing) for (const t of [0x00280030, 0x00181164]) { const s = getString(ds, t).split('\\'); if (s.length === 2) setText(ds, t, `${s[1]}\\${s[0]}`); }
     ds.el.set(PIXEL, { tag: PIXEL, vr: img.bitsAllocated > 8 ? 'OW' : 'OB', value: bytes });
   }
@@ -523,7 +530,10 @@
   }
   // Stores compressed frames (one codestream per frame, empty offset table) and the transfer syntax they use.
   function setEncapsulated(file, codestreams, ts) {
-    file.ds.el.set(PIXEL, { tag: PIXEL, vr: 'OB', fragments: [new Uint8Array(0)].concat(codestreams) });
+    // Basic Offset Table with one entry per frame, as INDUSTREX writes it (an empty table is also legal).
+    const bot = new Uint8Array(4 * codestreams.length), dv = new DataView(bot.buffer); let off = 0;
+    codestreams.forEach((c, i) => { dv.setUint32(i * 4, off, true); off += 8 + c.length + (c.length & 1); });
+    file.ds.el.set(PIXEL, { tag: PIXEL, vr: 'OB', fragments: [bot].concat(codestreams) });
     file.transferSyntax = ts; file.encapsulated = true;
   }
 

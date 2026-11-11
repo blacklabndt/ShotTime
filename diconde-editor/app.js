@@ -21,7 +21,7 @@
     origEls: new Map(),       // key -> original element (or null if it did not exist)
     frame: 0, win: { c: 0, w: 1 }, invertView: false,
     view: { zoom: 1, x: 0, y: 0 }, viewRot: 0, tool: 'pan',
-    edge: { on: false, gc: 1, dc: 1, sh: 1, nr: 0, mm: 6, br: 0, ds: false }, edgeCache: null, rawWin: null,
+    edge: { on: false, gc: 1, dc: 1, sh: 1, nr: 0, mm: 20, br: 0, ds: false }, edgeCache: null, rawWin: null,
     crop: null, regions: [], metaView: 'common', drag: null, bmp: null, dirtyImage: true
   };
 
@@ -677,7 +677,12 @@
       const out = region ? I.crop(S.img, region) : S.img;
       D.setImage(copy, out, { swapSpacing: S.turns % 2 === 1 });
       copy.transferSyntax = D.TS.EXPLICIT_LE; copy.encapsulated = false;
-      if (wantJ2k()) D.setEncapsulated(copy, out.frames.map(a => Codec.encodeFrameLossless(a, { width: out.cols, height: out.rows, bitsPerSample: out.bitsStored, isSigned: out.signed })), Codec.J2K_LOSSLESS);
+      if (wantJ2k()) {
+        // Follow the source codestream (INDUSTREX: 16-bit precision, RLCP) so INDUSTREX gets what it writes itself.
+        const src = S.orig.encapsulated && Codec.codestreamInfo(Codec.frameStreams(S.orig.ds.el.get(D.PIXEL).fragments, 1)[0]) || {};
+        const bits = src.precision >= out.bitsStored && src.precision <= out.bitsAllocated ? src.precision : out.bitsStored;
+        D.setEncapsulated(copy, out.frames.map(a => Codec.encodeFrameLossless(a, { width: out.cols, height: out.rows, bitsPerSample: bits, isSigned: out.signed, progression: src.progression })), Codec.J2K_LOSSLESS);
+      }
     }
     storeWindow(copy.ds);
     // INDUSTREX mirrors the fields in its XML presentation state; keep that copy in step (processed copies drop the XML).
@@ -699,6 +704,7 @@
       if (copy.synced && copy.synced.length) extra += ` Updated ${copy.synced.length} field(s) in INDUSTREX's XML copy.`;
       toast(`Saved ${baseName()}_edited.dcm (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
       markSaved();
+      runCompat(bytes, `${baseName()}_edited.dcm`, removed, S.ops.length > 0);
     }, saveLabel());
   }
   function exportSplit() {
@@ -724,6 +730,20 @@
       download(z, `${baseName()}_split.zip`, 'application/zip');
       toast(`Saved ${files.length} files in ${baseName()}_split.zip. The original file is unchanged.`);
     }, $('save-format').value === 'j2k' ? 'Compressing JPEG 2000…' : 'Saving…');
+  }
+  // Re-reads the bytes just written and checks them against INDUSTREX's requirements and the original file.
+  async function runCompat(bytes, name, removed, pixelsChanged) {
+    if (!window.Compat) return;
+    const box = $('compat'); box.textContent = 'Checking…';
+    try {
+      const r = await Compat.check(bytes, S.orig, { removed, edited: changedTopLevel(), pixelsChanged, xmlTag: (D.industrexInfo(S.orig.ds) || {}).xmlTag });
+      const sm = Compat.summary(r); box.innerHTML = '';
+      box.append(el('div', {}, el('b', {}, sm.fail ? `${sm.fail} problem(s) found` : sm.warn ? `Passed with ${sm.warn} warning(s)` : 'All checks passed'), ` for ${name} (${sm.pass} passed).`),
+        el('ul', { class: 'compat-list' }, ...r.sort((a, b) => ['fail', 'warn', 'info', 'pass'].indexOf(a.level) - ['fail', 'warn', 'info', 'pass'].indexOf(b.level))
+          .map(c => el('li', { class: c.level }, c.title, c.detail ? el('div', { class: 'd' }, c.detail) : ''))),
+        el('div', {}, 'These checks follow Carestream\'s conformance statement and real INDUSTREX files. Opening the copy in INDUSTREX is the final confirmation.'));
+      if (sm.fail) toast(`INDUSTREX compatibility check found ${sm.fail} problem(s) in the saved copy. See the Changes tab.`, true);
+    } catch (e) { box.textContent = 'The check could not run: ' + e.message; }
   }
   let savedState = '';
   const stateKey = () => `${S.ops.length}:${S.ops.join('|')}:${[...S.origEls.keys()].join(',')}`;
@@ -869,7 +889,7 @@
       $(id).addEventListener('change', () => set(Math.min(+$(id).max, Math.max(+$(id).min, parseFloat($(id).value)))));
     });
     $('edge-ds').onchange = e => { S.edge.ds = e.target.checked; updateEdge(true); };
-    $('edge-reset').onclick = () => { Object.assign(S.edge, { gc: 1, dc: 1, sh: 1, nr: 0, mm: 6, br: 0, ds: false }); syncEdgeInputs(); updateEdge(true); };
+    $('edge-reset').onclick = () => { Object.assign(S.edge, { gc: 1, dc: 1, sh: 1, nr: 0, mm: 20, br: 0, ds: false }); syncEdgeInputs(); updateEdge(true); };
     $('edge-bake').onclick = bakeEdge;
     $('wl-auto').onclick = () => resetWindow('auto'); $('wl-full').onclick = () => resetWindow('full'); $('wl-file').onclick = () => resetWindow('file');
     $('view-invert').onchange = e => { S.invertView = e.target.checked; S.dirtyImage = true; draw(); };

@@ -211,8 +211,10 @@
   // published; this is an approximation with controls of the same names.
   //   out = mean + kG·(L − mean) + kD·(M − L) + kS·(I − M)
   // I = input after optional noise reduction and despeckle, L = large-kernel blur (kernelPx), M = small blur.
-  // At the default 1.0 settings kG = 0.4 (thickness latitude compressed), kD = 1.6 (detail raised) and
-  // kS = 1.8 (fine edges raised). kG = kD = kS = 1 returns the input unchanged.
+  // At the default 1.0 settings kG = 0.5 (thickness latitude compressed), kD = 2.4 (detail raised) and
+  // kS = 1.8 (fine edges raised); with a 20 mm kernel these gave the closest match to an INDUSTREX EDGE HD 1
+  // screenshot of the owner's plate (correlation 0.55 → 0.69 overall, 0.33 → 0.46 for detail; sharpness
+  // cannot be judged at screenshot zoom). kG = kD = kS = 1 returns the input unchanged.
   // detailLimit (pixel units) softly caps the detail band to limit halos. Returns Float32Array in pixel-value
   // units; padding pixels (value `padding`) become NaN.
   function edgeEnhance(a, w, h, o = {}) {
@@ -229,7 +231,7 @@
     if (nr > 0) { const g = gaussianFrame(src, w, h, 1); I = new Float32Array(n); for (let i = 0; i < n; i++) I[i] = src[i] + nr * (g[i] - src[i]); }
     const L = boxBlur(boxBlur(I, w, h, r), w, h, r); // two box passes ≈ a smooth kernel about kernelPx wide
     const M = gaussianFrame(I, w, h, 1.5);
-    const kG = o.kG ?? 0.4 * gc, kD = o.kD ?? 1.6 * dc, kS = o.kS ?? 1 + 0.8 * sh;
+    const kG = o.kG ?? 0.5 * gc, kD = o.kD ?? 2.4 * dc, kS = o.kS ?? 1 + 0.8 * sh;
     // Optional soft limit on the detail band: ordinary detail passes almost unchanged, but the huge swings
     // next to very bright or dark objects (wires, markers, plate edges) are capped, which keeps halos small.
     const T = o.detailLimit > 0 ? o.detailLimit : 0;

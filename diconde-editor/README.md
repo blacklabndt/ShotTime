@@ -21,7 +21,7 @@ Open `index.html` in Chrome, Edge or Firefox, or build a single shareable file w
   - An approximation of INDUSTREX's EDGE display filter. Carestream has not published its algorithm, so the look differs from INDUSTREX.
   - It follows the Kodak CR approach the stored settings point to (`ImagingSystem: Kodak_CR`). The image is split into a large-scale band (thickness changes) and detail bands. Global contrast scales the large-scale band, detail contrast the medium band, and sharpness the finest band. A soft limit keeps halos small next to wires and markers.
   - Other controls: noise reduction, kernel size in mm (converted with Imager Pixel Spacing), brightness and despeckle (removes white dust specks on whichever side displays white).
-  - Setting 1.0 is this editor's default strength, not a calibrated match to INDUSTREX.
+  - Setting 1.0 is this editor's default strength. It was tuned against an INDUSTREX EDGE HD 1 screenshot of the owner's plate: a 20 mm kernel and stronger detail contrast raised the match from 0.55 to 0.69 overall and from 0.33 to 0.46 for detail. Close, but not identical; sharpness could not be judged at screenshot zoom.
   - **Use these** loads the EDGE settings INDUSTREX stored in the file (CSH_NDT xx72).
   - Display only: shown on screen and in PNG/PDF exports. **Apply to pixels** writes it into the image as an undoable step, recorded in Derivation Description, and the copy is marked DERIVED.
   - Takes about 1 second on a full 1353×4266 plate.
@@ -104,14 +104,37 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 - Processed copies are saved as **JPEG 2000 Lossless** by default, about the same size as INDUSTREX's own files. They can be saved uncompressed instead from the Image tab.
   - The codestream precision equals Bits Stored (12 for these files).
   - The number of wavelet levels drops automatically for small crops and split parts.
-- INDUSTREX stores its viewing angle in the XML (`ANGLE 0,0,90`). On the supplied files, applying it counter-clockwise shows the location numbers upright and reading left to right, so the viewer opens INDUSTREX files that way.
+- INDUSTREX stores its viewing angle in the XML (`ANGLE 0,0,90`). Applying it counter-clockwise matches an INDUSTREX screenshot of the same plate (0 → 35 on top, 35 → 70 below), so the viewer opens INDUSTREX files that way.
+
+**Compatibility check**
+
+- Every saved copy is re-read and checked; the result appears on the Changes tab. `compat.js` checks:
+  - file structure and meta header;
+  - a transfer syntax and SOP class INDUSTREX accepts;
+  - consistent image attributes and pixel data length;
+  - JPEG 2000 header, wavelet, precision and full decode;
+  - pixel values inside Bits Stored and correct Smallest/Largest values;
+  - every original element kept and value representations unchanged;
+  - only edited and derived fields changed;
+  - the INDUSTREX private block kept at the same place;
+  - DERIVED marking;
+  - valid values;
+  - the INDUSTREX XML intact and in step with edits.
+- `node tools/check-industrex.cjs edited.dcm original.dcm` runs the same check from the command line.
+- Copies follow the source file's own JPEG 2000 settings (INDUSTREX 7.2.1: 16-bit precision, RLCP progression) and write a Basic Offset Table entry per frame, as INDUSTREX does. Smallest/Largest Image Pixel Value are recalculated rather than removed.
+- One remaining difference: INDUSTREX writes 512×512 tiles, while the bundled encoder writes one tile per image. That is baseline JPEG 2000, which compliant decoders must read.
+- Verified November 2026 on the owner's five INDUSTREX 7.2.1 files, with 25 edited copies (metadata-only, rotated, cropped, EDGE applied, uncompressed):
+  - all passed the check with 0 failures;
+  - DCMTK's strict parser and GDCM accepted every copy;
+  - GDCM decoded pixel-for-pixel the same image as the editor.
+
+  Opening the copies in INDUSTREX itself is still needed for final confirmation.
 
 **Open items**
 
 - **Not yet confirmed in INDUSTREX**:
   - Whether INDUSTREX reads fields from its XML copy or from the DICOM tags.
   - How INDUSTREX displays a processed copy without its XML.
-  - That the viewing-angle direction matches what INDUSTREX shows.
 
 ## File support
 
@@ -134,6 +157,8 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 | `dicom.js` | Parser, writer, value validation, data dictionary, derived-copy marking |
 | `imaging.js` | Rotate, flip, crop, median, smoothing, sharpening, bad pixels, windowing |
 | `export.js` | ZIP, TIFF and PDF builders |
+| `compat.js` | INDUSTREX compatibility check of a saved copy against the original |
+| `tools/check-industrex.cjs` | Command-line compatibility check |
 | `overlay.js` | Overlay layout, value formatting and corner text drawing |
 | `codec.js` | JPEG 2000 decode/encode and frame splitting, using `vendor/openjpeg/` |
 | `vendor/openjpeg/` | OpenJPEG WebAssembly build (`@cornerstonejs/codec-openjpeg` 1.3.6, unmodified), checksums and licences |

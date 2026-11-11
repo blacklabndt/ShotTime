@@ -117,6 +117,14 @@ h3:first-child { margin-top: 4px; }
 #btn-overlay[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
 .pin[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .dim { opacity: .55; }
+.compat-list { list-style: none; padding: 0; margin: 6px 0; }
+.compat-list li { padding: 2px 0 2px 22px; position: relative; }
+.compat-list li::before { position: absolute; left: 0; font-weight: 700; }
+.compat-list li.pass::before { content: '✓'; color: var(--ok); }
+.compat-list li.warn::before { content: '!'; color: var(--changed-edge); }
+.compat-list li.fail::before { content: '✗'; color: var(--danger); }
+.compat-list li.info::before { content: 'i'; color: var(--muted); }
+.compat-list li .d { color: var(--muted); font-size: 12px; }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 55vh auto; overflow: auto; }
   .panel { border-left: 0; border-top: 1px solid var(--border); min-width: 0; }
@@ -235,12 +243,12 @@ h3:first-child { margin-top: 4px; }
           <div class="ctl"><label for="edge-dc">Detail contrast</label><input type="range" id="edge-dc-r" min="0" max="3" step="0.05" value="1"><input type="number" id="edge-dc" min="0" max="3" step="0.05" value="1"></div>
           <div class="ctl"><label for="edge-sh">Sharpness</label><input type="range" id="edge-sh-r" min="0" max="3" step="0.05" value="1"><input type="number" id="edge-sh" min="0" max="3" step="0.05" value="1"></div>
           <div class="ctl"><label for="edge-nr">Noise reduction</label><input type="range" id="edge-nr-r" min="0" max="1" step="0.05" value="0"><input type="number" id="edge-nr" min="0" max="1" step="0.05" value="0"></div>
-          <div class="ctl"><label for="edge-mm">Kernel size (mm)</label><input type="range" id="edge-mm-r" min="1" max="30" step="0.5" value="6"><input type="number" id="edge-mm" min="1" max="30" step="0.5" value="6"></div>
+          <div class="ctl"><label for="edge-mm">Kernel size (mm)</label><input type="range" id="edge-mm-r" min="1" max="40" step="0.5" value="20"><input type="number" id="edge-mm" min="1" max="40" step="0.5" value="20"></div>
           <div class="ctl"><label for="edge-br">Brightness</label><input type="range" id="edge-br-r" min="-1" max="1" step="0.05" value="0"><input type="number" id="edge-br" min="-1" max="1" step="0.05" value="0"></div>
           <label class="note"><input type="checkbox" id="edge-ds"> Despeckle (remove white dust specks)</label>
           <div class="btns"><button id="edge-reset">Reset</button><button id="edge-bake" title="Write the enhanced image into the pixels of the copy you save">Apply to pixels</button></div>
         </div>
-        <p class="note">An approximation of INDUSTREX's EDGE display filter: large-scale (thickness) contrast is reduced and fine detail is raised. Carestream has not published its algorithm, so the look will differ from INDUSTREX. Setting 1.0 is this editor's default strength. The enhancement is shown on screen and in PNG/PDF exports; saved files are unchanged unless you choose Apply to pixels.</p>
+        <p class="note">An approximation of INDUSTREX's EDGE display filter: large-scale (thickness) contrast is reduced and fine detail is raised. Carestream has not published its algorithm, so the look will differ from INDUSTREX. Setting 1.0 is this editor's default strength, tuned against an INDUSTREX EDGE HD 1 screenshot; it is close but not identical. The enhancement is shown on screen and in PNG/PDF exports; saved files are unchanged unless you choose Apply to pixels.</p>
 
         <h3>Orientation</h3>
         <div class="btns">
@@ -319,6 +327,8 @@ h3:first-child { margin-top: 4px; }
     </div>
 
     <div class="tabpanel" id="tab-history" role="tabpanel">
+      <h3>INDUSTREX compatibility (last save)</h3>
+      <div id="compat" class="note">Save a copy to check it.</div>
       <h3>Image steps</h3><ol class="hist" id="hist-img"></ol>
       <h3>Metadata changes</h3><ul class="hist" id="hist-meta"></ul>
       <h3>File</h3><div id="file-details" class="note"></div>
@@ -335,6 +345,7 @@ h3:first-child { margin-top: 4px; }
 <script src="vendor/openjpeg/openjpegwasm.js"></script>
 <script src="codec.js"></script>
 <script src="overlay.js"></script>
+<script src="compat.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

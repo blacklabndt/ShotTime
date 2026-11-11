@@ -9,6 +9,7 @@ const { makeSample } = require('../tools/make-sample.cjs');
 const { makeIndustrexLike, makeIndustrexJ2K, implicitBytes } = require('./industrex-fixture.cjs');
 const C = require('../codec.js');
 const O = require('../overlay.js');
+const K = require('../compat.js');
 
 let passed = 0;
 const tests = [];
@@ -413,6 +414,43 @@ test('overlay: damaged saved layouts are cleaned, corners found', () => {
   assert.strictEqual(O.cornerOf(c, 'live:zoom'), 'tl');
   assert.strictEqual(O.cornerOf(c, '00999999'), null);
   assert.strictEqual(O.cleanLayout(null).br.length, O.DEFAULT_LAYOUT.br.length);
+});
+
+test('INDUSTREX compatibility check: edited copies pass, broken ones are caught', async () => {
+  await C.load();
+  const src = await D.parse(D.write(await makeIndustrexJ2K()));
+  const fails = r => r.filter(c => c.level === 'fail').map(c => c.title + (c.detail ? ' — ' + c.detail : ''));
+  // metadata-only, XML synced
+  const meta = D.clone(src); D.setText(meta.ds, 0x00100020, 'NEW'); D.syncIndustrexXml(meta.ds, [0x00100020]); D.derive(meta, src, {});
+  assert.deepStrictEqual(fails(await K.check(D.write(meta), src, { edited: [0x00100020], xmlTag: 0x00331070 })), []);
+  // processed, re-encoded like the source, Smallest/Largest recalculated
+  const img = D.imageFromFrames(src, C.decodeFrames(src.ds.el.get(D.PIXEL).fragments, D.imageGeometry(src)));
+  const rot = I.rotate(img, 1), proc = D.clone(src), removed = [];
+  D.setText(proc.ds, 0x00280106, '0', 'US'); D.setText(proc.ds, 0x00280107, '4095', 'US');
+  D.setImage(proc, rot, { swapSpacing: true });
+  const si = C.codestreamInfo(C.frameStreams(src.ds.el.get(D.PIXEL).fragments, 1)[0]);
+  D.setEncapsulated(proc, [C.encodeFrameLossless(rot.frames[0], { width: rot.cols, height: rot.rows, bitsPerSample: si.precision, isSigned: false, progression: si.progression })], C.J2K_LOSSLESS);
+  D.derive(proc, src, { pixelsChanged: true, description: 'Rotated', removed });
+  const rp = await K.check(D.write(proc), src, { removed, pixelsChanged: true });
+  assert.deepStrictEqual(fails(rp), []);
+  assert.ok(rp.some(c => c.title === 'Smallest/Largest Image Pixel Value match the pixels' && c.level === 'pass'));
+  assert.ok(rp.some(c => c.title === 'JPEG 2000 encoded like the original' && c.level === 'pass'));
+  // broken: Rows disagree with the pixel data
+  const bad = D.clone(proc); D.setText(bad.ds, 0x00280010, '79', 'US');
+  assert.ok(fails(await K.check(D.write(bad), src, { removed, pixelsChanged: true })).some(t => /JPEG 2000 header matches Rows/.test(t)));
+  // broken: an original element silently lost and a VR changed
+  const lost = D.clone(meta); D.remove(lost.ds, 0x00181260); lost.ds.el.get(0x00080090).vr = 'LO';
+  const lf = fails(await K.check(D.write(lost), src, { edited: [0x00100020] }));
+  assert.ok(lf.some(t => /Every original element is kept.* — missing: \(0018,1260\)/.test(t)) && lf.some(t => /Value representations unchanged — \(0008,0090\) PN→LO/.test(t)), lf.join('; '));
+  // broken: XML left disagreeing with an edited field
+  const stale = D.clone(src); D.setText(stale.ds, 0x00100020, 'NOT-SYNCED'); D.derive(stale, src, {});
+  assert.ok(fails(await K.check(D.write(stale), src, { edited: [0x00100020] })).some(t => /XML copy agrees/.test(t)));
+  // broken: a transfer syntax INDUSTREX does not list
+  const ls = D.clone(src); ls.transferSyntax = '1.2.840.10008.1.2.4.80'; D.derive(ls, src, {});
+  assert.ok(fails(await K.check(D.write(ls), src, {})).some(t => /Transfer syntax is one INDUSTREX reads/.test(t)));
+  // a non-INDUSTREX SOP class is flagged
+  const sc = makeSample(); D.setText(sc.ds, 0x00080016, '1.2.840.10008.5.1.4.1.1.7');
+  assert.ok(fails(await K.check(D.write(sc))).some(t => /SOP class/.test(t)));
 });
 
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);

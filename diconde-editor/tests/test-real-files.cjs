@@ -11,6 +11,7 @@ const path = require('path');
 const D = require('../dicom.js');
 const C = require('../codec.js');
 const I = require('../imaging.js');
+const K = require('../compat.js');
 
 const dir = process.env.DICONDE_REAL_DIR;
 if (!dir) { console.log('diconde real files: skipped (set DICONDE_REAL_DIR to a folder of .dcm files)'); process.exit(0); }
@@ -35,6 +36,8 @@ const ser = e => e.fragments ? e.fragments.map(f => Buffer.from(f).toString('hex
       assert.strictEqual(ser(out.ds.el.get(t)), ser(e), `${f}: ${D.tagHex(t)} changed`);
     }
     assert.strictEqual(D.getString(out.ds, tag), 'diconde-editor test');
+    const mf = (await K.check(D.write(copy), src, { edited: [tag], xmlTag: ix && ix.xmlTag })).filter(c => c.level === 'fail');
+    assert.deepStrictEqual(mf.map(c => c.title + ' ' + c.detail), [], `${f}: metadata-only copy compatibility`);
     if (ix && ix.xmlTag && D.industrexXmlValues(src.ds, tag)) {
       assert.deepStrictEqual(D.industrexXmlValues(out.ds, tag), ['diconde-editor test'], `${f}: XML copy`);
       const x = new TextDecoder().decode(out.ds.el.get(ix.xmlTag).value);
@@ -50,6 +53,14 @@ const ser = e => e.fragments ? e.fragments.map(f => Buffer.from(f).toString('hex
       const again = new img.frames[0].constructor(C.decodeFrame(cs).data.buffer);
       assert.ok(again.every((v, i) => v === img.frames[0][i]), `${f}: lossless re-encode`);
       pix = `, decoded ${img.cols}×${img.rows} range ${st.min}–${st.max}, re-encoded ${(cs.length / 1e6).toFixed(2)} MB`;
+      // A processed copy encoded like the source must pass the INDUSTREX compatibility check.
+      const si = C.codestreamInfo(C.frameStreams(src.ds.el.get(D.PIXEL).fragments, 1)[0]), rot = I.rotate(img, 1), proc = D.clone(src), removed = [];
+      D.setImage(proc, rot, { swapSpacing: true });
+      D.setEncapsulated(proc, rot.frames.map(a => C.encodeFrameLossless(a, { width: rot.cols, height: rot.rows, bitsPerSample: si.precision || img.bitsStored, isSigned: rot.signed, progression: si.progression })), C.J2K_LOSSLESS);
+      D.derive(proc, src, { pixelsChanged: true, description: 'Rotated', removed });
+      const pf = (await K.check(D.write(proc), src, { removed, pixelsChanged: true })).filter(c => c.level === 'fail');
+      assert.deepStrictEqual(pf.map(c => c.title), [], `${f}: processed copy compatibility`);
+      pix += ', processed copy passes the INDUSTREX check';
     }
     console.log(`  ${f.slice(0, 40)}: ${src.ds.el.size} elements, ${D.TS_NAMES[src.transferSyntax] || src.transferSyntax}${ix ? `, INDUSTREX ${ix.version}` : ''}${synced.length ? ', XML synced' : ''}${pix}`);
   }

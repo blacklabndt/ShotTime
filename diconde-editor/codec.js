@@ -37,8 +37,24 @@
         data: new Uint8Array(dec.getDecodedBuffer()).slice() };
     } catch (e) { throw wrap('decoder', e); } finally { if (dec.delete) dec.delete(); }
   }
-  // Lossless (reversible 5/3 wavelet) codestream of one greyscale frame.
-  function encodeFrameLossless(pixels, { width, height, bitsPerSample, isSigned }) {
+  // Main-header facts of a J2K codestream (SIZ and COD), used to write copies the way the source was written.
+  const PROGRESSIONS = ['LRCP', 'RLCP', 'RPCL', 'PCRL', 'CPRL'];
+  function codestreamInfo(b) {
+    const u16 = p => (b[p] << 8) | b[p + 1], u32 = p => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
+    if (!b || b.length < 4 || u16(0) !== 0xFF4F) return null;
+    const info = {}; let p = 2;
+    while (p + 4 <= b.length) {
+      const m = u16(p), len = u16(p + 2);
+      if (m === 0xFF51 && p + 42 < b.length) Object.assign(info, { width: u32(p + 6), height: u32(p + 10), tileWidth: u32(p + 22), tileHeight: u32(p + 26), components: u16(p + 38), precision: (b[p + 40] & 0x7F) + 1, signed: !!(b[p + 40] & 0x80) });
+      if (m === 0xFF52 && p + 13 < b.length) Object.assign(info, { progression: PROGRESSIONS[b[p + 5]] || String(b[p + 5]), layers: u16(p + 6), levels: b[p + 9], reversible: b[p + 13] === 1 });
+      if (m === 0xFF90 || len < 2) break;
+      p += 2 + len;
+    }
+    return info;
+  }
+  // Lossless (reversible 5/3 wavelet) codestream of one greyscale frame. `progression` (e.g. 'RLCP') and
+  // `bitsPerSample` let a copy follow the source file's own encoding (INDUSTREX writes RLCP, 16-bit precision).
+  function encodeFrameLossless(pixels, { width, height, bitsPerSample, isSigned, progression }) {
     const enc = new (need().J2KEncoder)();
     try {
       enc.getDecodedBuffer({ width, height, bitsPerSample, componentCount: 1, isSigned: !!isSigned })
@@ -46,6 +62,7 @@
       enc.setQuality(true, 0);
       // OpenJPEG needs each side to be at least 2^levels pixels; the default is 5 levels.
       enc.setDecompositions(Math.max(0, Math.min(5, Math.floor(Math.log2(Math.max(1, Math.min(width, height)))))));
+      if (progression && PROGRESSIONS.includes(progression)) enc.setProgressionOrder(PROGRESSIONS.indexOf(progression));
       enc.encode();
       return new Uint8Array(enc.getEncodedBuffer()).slice();
     } catch (e) { throw wrap('encoder', e); } finally { if (enc.delete) enc.delete(); }
@@ -81,5 +98,5 @@
     });
   }
 
-  return { J2K_LOSSLESS, load, canDecode, isReady: () => !!lib, decodeFrame, encodeFrameLossless, frameStreams, decodeFrames };
+  return { J2K_LOSSLESS, codestreamInfo, load, canDecode, isReady: () => !!lib, decodeFrame, encodeFrameLossless, frameStreams, decodeFrames };
 });
