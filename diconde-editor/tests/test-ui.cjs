@@ -291,6 +291,41 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   assert.ok(bakedImg.frames[0].every(v => v >= 0 && v <= 4095), 'values stay within 12 bits');
   ok('EDGE-style enhancement');
 
+  // Information overlay: pin from Metadata, arrange, export, never saved into the file, remembered.
+  await page.click('[data-tab=meta]'); await page.click('[data-metaview="common"]');
+  // Plate Type is in the default layout (bottom left): hide it, then pin it again (pins go top left).
+  await field(page, '(0018,1260)').getByRole('button', { name: 'Hide Plate Type in the image overlay' }).click();
+  assert.ok(await page.evaluate(() => !JSON.stringify(window.__editor.S.ov.layout).includes('00181260')));
+  await field(page, '(0018,1260)').getByRole('button', { name: 'Show Plate Type in the image overlay' }).click();
+  assert.ok(await page.evaluate(() => window.__editor.S.ov.layout.tl.includes('00181260') && window.__editor.S.ov.opts.enabled), 'pinned top left and overlay switched on');
+  assert.strictEqual(await page.getAttribute('#btn-overlay', 'aria-pressed'), 'true');
+  await page.click('[data-tab=overlay]');
+  await page.locator('.ov-item[data-key="00181260"] select').selectOption('br');
+  assert.ok(await page.evaluate(() => window.__editor.S.ov.layout.br.includes('00181260')));
+  const brText = await page.evaluate(() => window.__editor.overlayLines().br.join(' | '));
+  assert.match(brText, /Plate Type: 3 Shot - S\/M/);
+  assert.match(brText, /Window \/ level: W \d+ L \d+/);
+  await page.uncheck('#ov-labels');
+  assert.ok((await page.evaluate(() => window.__editor.overlayLines().br)).includes('3 Shot - S/M'));
+  const pngOv = await grab(page, async () => { await page.click('#btn-export'); await page.click('[data-export=png]'); });
+  await page.uncheck('#ov-exports');
+  const pngNoOv = await grab(page, async () => { await page.click('#btn-export'); await page.click('[data-export=png]'); });
+  assert.ok(Buffer.compare(pngOv.bytes, pngNoOv.bytes) !== 0, 'overlay is drawn into exports when chosen');
+  await page.check('#ov-exports');
+  const withOv = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+  await page.click('#btn-overlay');
+  assert.strictEqual(await page.getAttribute('#btn-overlay', 'aria-pressed'), 'false');
+  const withoutOv = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+  assert.deepStrictEqual(Buffer.from(withOv.ds.el.get(D.PIXEL).fragments ? withOv.ds.el.get(D.PIXEL).fragments[1] : withOv.ds.el.get(D.PIXEL).value),
+    Buffer.from(withoutOv.ds.el.get(D.PIXEL).fragments ? withoutOv.ds.el.get(D.PIXEL).fragments[1] : withoutOv.ds.el.get(D.PIXEL).value), 'overlay never reaches the saved pixels');
+  await page.click('#btn-overlay');
+  await page.reload();
+  assert.ok(await page.evaluate(() => window.__editor.S.ov.layout.br.includes('00181260') && window.__editor.S.ov.opts.enabled && !window.__editor.S.ov.opts.labels), 'layout remembered');
+  await page.evaluate(() => localStorage.setItem('diconde-editor.overlay.v1', '{"layout":{"tl":"broken"},"opts":{"size":"m"}}'));
+  await page.reload();
+  assert.deepStrictEqual(await page.evaluate(() => window.__editor.S.ov.layout.tl.length), 5, 'damaged saved layout falls back');
+  ok('information overlay');
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');

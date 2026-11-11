@@ -109,6 +109,13 @@ h3:first-child { margin-top: 4px; }
 .busy.on { display: grid; }
 .warnbox { background: var(--changed); border: 1px solid var(--changed-edge); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
 .hidden { display: none !important; }
+.ov-corner { border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+.ov-item { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; padding: 3px 0; }
+.ov-item .ctrls { display: flex; gap: 4px; }
+.ov-add { display: flex; gap: 6px; margin-top: 6px; }
+.ov-add select { flex: 1; min-width: 0; }
+#btn-overlay[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.pin[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
 .dim { opacity: .55; }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 55vh auto; overflow: auto; }
@@ -152,6 +159,7 @@ h3:first-child { margin-top: 4px; }
       <button id="btn-viewrot" disabled title="Rotate the view 90° (display only; pixels and saved files are not changed). INDUSTREX files open at INDUSTREX's stored angle.">⟳ View: upright</button>
       <button id="zoom-1">1:1</button>
       <button class="icon" id="zoom-in" aria-label="Zoom in">+</button>
+      <button id="btn-overlay" aria-pressed="false" disabled title="Show the selected fields on the image (I)">Info overlay</button>
       <button id="btn-compare" aria-pressed="false" disabled title="Hold (or hold C) to see the original pixels">Hold to compare</button>
       <label class="hidden" id="frame-wrap">Frame <select id="frame"></select></label>
       <span class="readout" id="readout" aria-live="off"></span>
@@ -177,6 +185,7 @@ h3:first-child { margin-top: 4px; }
       <button role="tab" aria-selected="true" data-tab="meta">Metadata</button>
       <button role="tab" aria-selected="false" data-tab="image">Image</button>
       <button role="tab" aria-selected="false" data-tab="crop">Crop &amp; split</button>
+      <button role="tab" aria-selected="false" data-tab="overlay">Overlay</button>
       <button role="tab" aria-selected="false" data-tab="history">Changes</button>
     </div>
 
@@ -260,7 +269,7 @@ h3:first-child { margin-top: 4px; }
 
         <h3>Undo</h3>
         <div class="btns"><button id="btn-undo" disabled>Undo</button><button id="btn-redo" disabled>Redo</button><button id="btn-revert-img" class="danger" disabled>Revert all image changes</button></div>
-        <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, F fit, V rotate view, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
+        <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, F fit, V rotate view, I info overlay, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
         <p class="note">Processed copies are marked DERIVED and record each step in Derivation Description. Check your procedure or code before using enhanced images for acceptance.</p>
       </div>
     </div>
@@ -297,6 +306,18 @@ h3:first-child { margin-top: 4px; }
       </div>
     </div>
 
+    <div class="tabpanel" id="tab-overlay" role="tabpanel">
+      <label><input type="checkbox" id="ov-on"> Show selected fields on the image</label>
+      <div class="btns">
+        <label class="note"><input type="checkbox" id="ov-labels"> Field names</label>
+        <label class="note">Text size <select id="ov-size"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select></label>
+        <label class="note"><input type="checkbox" id="ov-exports"> Include in PNG/PDF exports</label>
+      </div>
+      <p class="note">Pin fields with 📌 on the Metadata tab, or arrange them here. The overlay is shown on screen and in exports only; it is never written into the DICONDE file. The layout is remembered in this browser.</p>
+      <div id="ov-corners"></div>
+      <div class="btns"><button id="ov-reset">Reset layout</button></div>
+    </div>
+
     <div class="tabpanel" id="tab-history" role="tabpanel">
       <h3>Image steps</h3><ol class="hist" id="hist-img"></ol>
       <h3>Metadata changes</h3><ul class="hist" id="hist-meta"></ul>
@@ -313,6 +334,7 @@ h3:first-child { margin-top: 4px; }
 <script src="vendor/openjpeg/openjpegwasm-binary.js"></script>
 <script src="vendor/openjpeg/openjpegwasm.js"></script>
 <script src="codec.js"></script>
+<script src="overlay.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

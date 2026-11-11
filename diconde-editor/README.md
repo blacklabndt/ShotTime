@@ -11,6 +11,12 @@ Open `index.html` in Chrome, Edge or Firefox, or build a single shareable file w
   - JPEG 2000 images (as INDUSTREX saves them) are decoded when they open.
   - The starting window is set from the main exposure, leaving out unexposed plate areas, padding and markers.
   - INDUSTREX files open at INDUSTREX's stored viewing angle. **⟳ View** (or V) turns the view without changing pixels; PNG and PDF exports follow the view.
+- **Information overlay** (**Info overlay** button, or I):
+  - Selected fields are shown in the corners of the viewer, like INDUSTREX's on-screen annotations. Pin fields with 📌 on the Metadata tab, or arrange them per corner on the Overlay tab (move, reorder, remove, add any field).
+  - Live items: window/level, zoom, image size, view rotation, file name and frame.
+  - Values are written for people: dates as 2026-11-01, times as 10:14:51, names without `^`. Empty fields are left out.
+  - Options: show or hide field names, choose the text size, include the overlay in PNG/PDF exports (zoom is left out of exports).
+  - The overlay is never written into the DICONDE file. The layout is remembered in this browser (`localStorage`).
 - **EDGE-style enhancement** (Image tab):
   - An approximation of INDUSTREX's EDGE display filter. Carestream has not published its algorithm, so the look differs from INDUSTREX.
   - It follows the Kodak CR approach the stored settings point to (`ImagingSystem: Kodak_CR`). The image is split into a large-scale band (thickness changes) and detail bands. Global contrast scales the large-scale band, detail contrast the medium band, and sharpness the finest band. A soft limit keeps halos small next to wires and markers.
@@ -128,6 +134,7 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 | `dicom.js` | Parser, writer, value validation, data dictionary, derived-copy marking |
 | `imaging.js` | Rotate, flip, crop, median, smoothing, sharpening, bad pixels, windowing |
 | `export.js` | ZIP, TIFF and PDF builders |
+| `overlay.js` | Overlay layout, value formatting and corner text drawing |
 | `codec.js` | JPEG 2000 decode/encode and frame splitting, using `vendor/openjpeg/` |
 | `vendor/openjpeg/` | OpenJPEG WebAssembly build (`@cornerstonejs/codec-openjpeg` 1.3.6, unmodified), checksums and licences |
 | `tools/vendor-openjpeg.cjs` | Regenerates `vendor/openjpeg/` from the npm package |

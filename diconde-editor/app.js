@@ -1,7 +1,7 @@
 /* DICONDE Editor UI. The opened file is never modified on disk; every save writes a new file. */
 'use strict';
 (function () {
-  const D = window.Dicom, I = window.Imaging, X = window.Exporters;
+  const D = window.Dicom, I = window.Imaging, X = window.Exporters, O = window.Overlay;
   const $ = id => document.getElementById(id);
   const MAX_UNDO = 12;
   const READ_ONLY = new Set([0x00080016, 0x00080018, 0x00280002, 0x00280004, 0x00280006, 0x00280008, 0x00280010, 0x00280011, 0x00280100, 0x00280101, 0x00280102, 0x00280103, D.PIXEL]);
@@ -86,7 +86,7 @@
     updateViewRotLabel(); $('btn-viewrot').disabled = !S.img;
     if (S.img) { resetWindow('file'); S.dirtyImage = true; fit(); }
     else { S.bmp = null; draw(); }
-    syncEdgeInputs(); showEdgeFileSettings();
+    syncEdgeInputs(); showEdgeFileSettings(); $('btn-overlay').disabled = !S.img; renderOverlayTab();
     renderMeta(); refreshImageUi(); renderRegions(); renderHistory();
     toast(`Opened ${name}`);
   }
@@ -127,6 +127,7 @@
       S.dirtyImage = true; draw();
     }
     renderHistory(); updateTemplateButtons();
+    if (S.ov.opts.enabled) draw();
   }
 
   function fieldRow(ds, tag, path, depth) {
@@ -161,6 +162,10 @@
     const acts = el('div', { class: 'acts' });
     const refreshRowActions = () => {
       acts.innerHTML = '';
+      if (!path && tag !== D.PIXEL && !(e && e.items)) {
+        const on = !!O.cornerOf(S.ov.layout, O.hexOf(tag));
+        acts.append(el('button', { class: 'icon pin', 'aria-pressed': String(on), title: on ? 'Shown in the image overlay (click to hide)' : 'Show in the image overlay', 'aria-label': `${on ? 'Hide' : 'Show'} ${info.name} in the image overlay`, onclick: () => togglePin(tag) }, '📌'));
+      }
       if (S.origEls.has(key)) acts.append(el('button', { class: 'icon', title: 'Undo this change', 'aria-label': `Revert ${info.name}`, onclick: () => revertField(ds, tag, path) }, '↺'));
       if (ds.el.get(tag) && !ro && tag !== D.PIXEL) acts.append(el('button', { class: 'icon danger', title: 'Remove this tag', 'aria-label': `Remove ${info.name}`, onclick: () => deleteField(ds, tag, path) }, '×'));
     };
@@ -276,6 +281,64 @@
     toast(problems.length ? `Applied with problems — ${problems.join('; ')}` : `Applied template “${name}”`, !!problems.length);
   }
   function deleteTemplate() { const name = $('tpl-select').value; if (!name || !confirm(`Delete template “${name}”?`)) return; const t = loadTemplates(); delete t[name]; saveTemplates(t); renderTemplates(); }
+
+  // ---------- information overlay ----------
+  const OV_KEY = 'diconde-editor.overlay.v1', OV_PX = { s: 11, m: 13, l: 16 };
+  S.ov = (() => {
+    try { const v = JSON.parse(localStorage.getItem(OV_KEY) || 'null'); if (v) return { layout: O.cleanLayout(v.layout), opts: Object.assign({}, O.DEFAULT_OPTIONS, v.opts) }; } catch (e) { /* storage unavailable */ }
+    return { layout: O.cleanLayout(O.DEFAULT_LAYOUT), opts: Object.assign({}, O.DEFAULT_OPTIONS) };
+  })();
+  function saveOv() { try { localStorage.setItem(OV_KEY, JSON.stringify(S.ov)); } catch (e) { /* per-browser convenience only */ } }
+  function liveValues(forExport) {
+    if (!S.img) return {};
+    const n = S.img.frames.length;
+    return { 'live:wl': `W ${Math.round(S.win.w)} L ${Math.round(S.win.c)}${S.edge.on ? ' (enhanced)' : ''}`, 'live:zoom': forExport ? '' : `${Math.round(S.view.zoom * 100)}%`,
+      'live:size': `${S.img.cols} × ${S.img.rows}`, 'live:view': S.viewRot ? viewRotText(S.viewRot) : '', 'live:file': S.name, 'live:frame': n > 1 ? `${S.frame + 1} of ${n}` : '' };
+  }
+  const overlayLines = forExport => O.lines(S.file.ds, S.ov.layout, liveValues(forExport), { labels: S.ov.opts.labels });
+  function setOverlay(on) { S.ov.opts.enabled = on; saveOv(); syncOverlayUi(); draw(); }
+  function syncOverlayUi() {
+    const o = S.ov.opts;
+    $('ov-on').checked = o.enabled; $('ov-labels').checked = o.labels; $('ov-size').value = o.size; $('ov-exports').checked = o.inExports;
+    $('btn-overlay').setAttribute('aria-pressed', String(o.enabled));
+  }
+  function togglePin(tag) {
+    const k = O.hexOf(tag), c = O.cornerOf(S.ov.layout, k);
+    if (c) S.ov.layout[c] = S.ov.layout[c].filter(x => x !== k); else { S.ov.layout.tl.push(k); if (!S.ov.opts.enabled) S.ov.opts.enabled = true; }
+    saveOv(); syncOverlayUi(); renderMeta(); renderOverlayTab(); draw();
+    toast(c ? `${D.describeTag(S.file.ds, tag).name} removed from the overlay` : `${D.describeTag(S.file.ds, tag).name} shown top left; arrange it on the Overlay tab`);
+  }
+  function overlayChoices() {
+    const ds = S.file ? S.file.ds : null, seen = new Set(), out = [];
+    Object.keys(O.LIVE).forEach(k => out.push([k, O.LIVE[k] + ' (live)']));
+    const add = t => { const k = O.hexOf(t); if (seen.has(k) || (t >>> 16) === 0x0002 || t === D.PIXEL) return; seen.add(k); out.push([k, `${D.describeTag(ds, t).name} ${D.tagHex(t)}`]); };
+    COMMON.forEach(([, tags]) => tags.forEach(add));
+    if (ds) [...ds.el.keys()].sort((a, b) => a - b).filter(t => { const e = ds.el.get(t); return e.value && D.editable(e.vr); }).forEach(add);
+    return out;
+  }
+  function renderOverlayTab() {
+    const box = $('ov-corners'); box.innerHTML = '';
+    const ds = S.file ? S.file.ds : null, choices = overlayChoices();
+    for (const c of O.CORNERS) {
+      const list = S.ov.layout[c], wrap = el('div', { class: 'ov-corner' }, el('h3', {}, O.CORNER_NAMES[c]));
+      if (!list.length) wrap.append(el('div', { class: 'note' }, 'Nothing here.'));
+      list.forEach((k, i) => {
+        const move = el('select', { 'aria-label': `Move ${O.itemName(k, ds)}` }, ...O.CORNERS.map(x => el('option', { value: x, selected: x === c }, O.CORNER_NAMES[x])));
+        move.onchange = () => { S.ov.layout[c].splice(i, 1); S.ov.layout[move.value].push(k); ovChanged(); };
+        wrap.append(el('div', { class: 'ov-item', 'data-key': k }, el('span', {}, O.itemName(k, ds)),
+          el('span', { class: 'ctrls' },
+            el('button', { class: 'icon', 'aria-label': `Move ${O.itemName(k, ds)} up`, disabled: i === 0, onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; ovChanged(); } }, '↑'),
+            el('button', { class: 'icon', 'aria-label': `Move ${O.itemName(k, ds)} down`, disabled: i === list.length - 1, onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; ovChanged(); } }, '↓'),
+            move,
+            el('button', { class: 'icon danger', 'aria-label': `Remove ${O.itemName(k, ds)} from the overlay`, onclick: () => { list.splice(i, 1); ovChanged(); } }, '×'))));
+      });
+      const pick = el('select', { 'aria-label': `Field to add to ${O.CORNER_NAMES[c].toLowerCase()}` }, el('option', { value: '' }, 'Add a field…'), ...choices.filter(([k]) => !O.cornerOf(S.ov.layout, k)).map(([k, label]) => el('option', { value: k }, label)));
+      wrap.append(el('div', { class: 'ov-add' }, pick, el('button', { onclick: () => { if (pick.value) { list.push(pick.value); if (!S.ov.opts.enabled) S.ov.opts.enabled = true; ovChanged(); } } }, 'Add')));
+      box.append(wrap);
+    }
+  }
+  function ovChanged() { S.ov.layout = O.cleanLayout(S.ov.layout); saveOv(); syncOverlayUi(); renderOverlayTab(); if (S.file) renderMeta(); draw(); }
+  function drawOverlay(c, w, h, px, forExport) { if (S.file && S.img && S.ov.opts.enabled) O.draw(c, { x: 0, y: 0, w, h }, overlayLines(forExport), px); }
 
   // ---------- viewer ----------
   const canvas = $('view'), ctx = canvas.getContext('2d');
@@ -407,6 +470,7 @@
     }
     S.regions.forEach((r, i) => box(r, '#f5a623', String(i + 1)));
     if (S.drag && S.drag.rect && S.drag.mode === 'regions') box(S.drag.rect, '#f5a623', String(S.regions.length + 1), true);
+    drawOverlay(ctx, canvas.width / dpr, canvas.height / dpr, OV_PX[S.ov.opts.size] || 13, false);
   }
   function fitView(img) {
     const r = canvas.getBoundingClientRect(), pad = 16, d = I.viewDims(img.cols, img.rows, S.viewRot);
@@ -669,6 +733,13 @@
   // The image as displayed (window, invert and view rotation), at full resolution.
   function renderedCanvas() {
     if (S.dirtyImage) rebuildBitmap();
+    if (S.ov.opts.enabled && S.ov.opts.inExports) {
+      const d = I.viewDims(S.img.cols, S.img.rows, S.viewRot), c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
+      const cx = c.getContext('2d'); cx.save(); I.viewTransform(cx, S.img.cols, S.img.rows, S.viewRot); cx.drawImage(S.bmp, 0, 0); cx.restore();
+      const scale = { s: 0.8, m: 1, l: 1.25 }[S.ov.opts.size] || 1;
+      drawOverlay(cx, d.w, d.h, Math.max(12, Math.round(Math.min(d.w, d.h) / 45 * scale)), true);
+      return c;
+    }
     if (!S.viewRot) return S.bmp;
     const d = I.viewDims(S.img.cols, S.img.rows, S.viewRot), c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
     const cx = c.getContext('2d'); I.viewTransform(cx, S.img.cols, S.img.rows, S.viewRot); cx.drawImage(S.bmp, 0, 0);
@@ -775,6 +846,12 @@
     cmp.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setComparing(true); } });
     cmp.addEventListener('keyup', () => setComparing(false));
     $('btn-viewrot').onclick = rotateView;
+    $('btn-overlay').onclick = () => setOverlay(!S.ov.opts.enabled);
+    $('ov-on').onchange = e => setOverlay(e.target.checked);
+    $('ov-labels').onchange = e => { S.ov.opts.labels = e.target.checked; saveOv(); draw(); };
+    $('ov-size').onchange = e => { S.ov.opts.size = e.target.value; saveOv(); draw(); };
+    $('ov-exports').onchange = e => { S.ov.opts.inExports = e.target.checked; saveOv(); };
+    $('ov-reset').onclick = () => { S.ov.layout = O.cleanLayout(O.DEFAULT_LAYOUT); ovChanged(); };
     $('zoom-in').onclick = () => zoomAt(1.25); $('zoom-out').onclick = () => zoomAt(0.8); $('zoom-fit').onclick = fit;
     $('zoom-1').onclick = () => { if (!S.img) return; zoomAt(1 / S.view.zoom); };
     $('frame').onchange = e => { S.frame = +e.target.value; S.dirtyImage = true; draw(); };
@@ -810,14 +887,15 @@
       else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
       else if (!mod && e.key.toLowerCase() === 'f') fit();
       else if (!mod && e.key.toLowerCase() === 'v') rotateView();
+      else if (!mod && e.key.toLowerCase() === 'i' && S.img) setOverlay(!S.ov.opts.enabled);
       else if (!mod && e.key.toLowerCase() === 'c' && !e.repeat && !$('btn-compare').disabled) setComparing(true);
       else if (e.key === 'Escape') { S.crop = null; syncCropInputs(); draw(); }
     });
     document.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'c') setComparing(false); });
     window.addEventListener('beforeunload', e => { if (hasChanges() && stateKey() !== savedState) { e.preventDefault(); e.returnValue = ''; } });
 
-    fillAddForm(); renderTemplates(); renderMeta(); renderHistory(); resize();
+    fillAddForm(); syncOverlayUi(); renderOverlayTab(); renderTemplates(); renderMeta(); renderHistory(); resize();
   }
   init();
-  window.__editor = { S, openBytes }; // for tests
+  window.__editor = { S, openBytes, overlayLines }; // for tests
 })();

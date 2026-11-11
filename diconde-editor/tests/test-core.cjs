@@ -8,6 +8,7 @@ const X = require('../export.js');
 const { makeSample } = require('../tools/make-sample.cjs');
 const { makeIndustrexLike, makeIndustrexJ2K, implicitBytes } = require('./industrex-fixture.cjs');
 const C = require('../codec.js');
+const O = require('../overlay.js');
 
 let passed = 0;
 const tests = [];
@@ -385,6 +386,33 @@ test('INDUSTREX display settings are read from the file', () => {
   f.ds.el.get(0x00331072).value = new Uint8Array(0);
   assert.strictEqual(D.industrexDisplaySettings(f.ds), null);
   assert.strictEqual(D.industrexDisplaySettings(makeSample().ds), null);
+});
+
+test('overlay: values written for people, empty fields left out, live items, labels', () => {
+  assert.strictEqual(O.formatValue('PN', 'Cline^Mark^^^'), 'Cline Mark');
+  assert.strictEqual(O.formatValue('DA', '20261101'), '2026-11-01');
+  assert.strictEqual(O.formatValue('TM', '101451.123'), '10:14:51');
+  assert.strictEqual(O.formatValue('TM', '1014'), '10:14');
+  assert.strictEqual(O.formatValue('DS', '0.1\\0.1'), '0.1, 0.1');
+  assert.strictEqual(O.formatValue('LT', 'a\\b  c'), 'a\\b c');
+  const f = makeIndustrexLike();
+  D.setText(f.ds, 0x00081060, 'Inspector^One');
+  const layout = { tl: ['00100020', '00080020', '00181004'], tr: ['00081060'], bl: [], br: ['live:wl', 'live:zoom'] };
+  const l = O.lines(f.ds, layout, { 'live:wl': 'W 300 L 2800', 'live:zoom': '' }, { labels: true });
+  assert.deepStrictEqual(l.tl, ['Component ID Number: WELD-0042', 'Study Date: 2026-10-14'], 'Plate ID is empty and left out');
+  assert.deepStrictEqual(l.tr, ['Certifying Inspector Name: Inspector One']);
+  assert.deepStrictEqual(l.br, ['Window / level: W 300 L 2800'], 'empty live item left out');
+  assert.deepStrictEqual(O.lines(f.ds, layout, {}, { labels: false }).tl, ['WELD-0042', '2026-10-14']);
+});
+
+test('overlay: damaged saved layouts are cleaned, corners found', () => {
+  const c = O.cleanLayout({ tl: ['00100020', 'nonsense', 5, 'live:zoom'], tr: 'x', zz: ['00100010'] });
+  assert.deepStrictEqual(c.tl, ['00100020', 'live:zoom']);
+  assert.deepStrictEqual(c.tr, O.DEFAULT_LAYOUT.tr, 'malformed corner falls back to the default');
+  assert.ok(!('zz' in c));
+  assert.strictEqual(O.cornerOf(c, 'live:zoom'), 'tl');
+  assert.strictEqual(O.cornerOf(c, '00999999'), null);
+  assert.strictEqual(O.cleanLayout(null).br.length, O.DEFAULT_LAYOUT.br.length);
 });
 
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);
