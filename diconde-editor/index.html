@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:">
 <title>DICONDE Editor</title>
 <style>
 :root {
@@ -148,6 +148,7 @@ h3:first-child { margin-top: 4px; }
       </div>
       <button class="icon" id="zoom-out" aria-label="Zoom out">−</button>
       <button id="zoom-fit">Fit</button>
+      <button id="btn-viewrot" disabled title="Rotate the view 90° (display only; pixels and saved files are not changed). INDUSTREX files open at INDUSTREX's stored angle.">⟳ View: upright</button>
       <button id="zoom-1">1:1</button>
       <button class="icon" id="zoom-in" aria-label="Zoom in">+</button>
       <button id="btn-compare" aria-pressed="false" disabled title="Hold (or hold C) to see the original pixels">Hold to compare</button>
@@ -233,9 +234,17 @@ h3:first-child { margin-top: 4px; }
         <div class="ctl"><label for="sh-a">Sharpen amount</label><input type="range" id="sh-a-r" min="0.1" max="3" step="0.1" value="0.8"><input type="number" id="sh-a" min="0.1" max="10" step="0.1" value="0.8"></div>
         <div class="btns"><button data-op="sharpen">Sharpen (unsharp mask)</button></div>
 
+        <h3>Saving</h3>
+        <label class="note" for="save-format">Processed copies are saved as</label>
+        <select id="save-format" aria-describedby="save-format-note">
+          <option value="j2k">JPEG 2000 lossless (smaller)</option>
+          <option value="raw">Uncompressed</option>
+        </select>
+        <p class="note" id="save-format-note">Both are lossless and readable by INDUSTREX. Metadata-only copies keep the original image data unchanged.</p>
+
         <h3>Undo</h3>
         <div class="btns"><button id="btn-undo" disabled>Undo</button><button id="btn-redo" disabled>Redo</button><button id="btn-revert-img" class="danger" disabled>Revert all image changes</button></div>
-        <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, F fit, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
+        <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, F fit, V rotate view, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
         <p class="note">Processed copies are marked DERIVED and record each step in Derivation Description. Check your procedure or code before using enhanced images for acceptance.</p>
       </div>
     </div>
@@ -244,7 +253,7 @@ h3:first-child { margin-top: 4px; }
       <div class="warnbox hidden" id="crop-unavail"></div>
       <div id="crop-tools">
         <h3>Crop</h3>
-        <p class="note">Choose the Crop tool and drag on the image, or type the box.</p>
+        <p class="note">Choose the Crop tool and drag on the image, or type the box in image pixels.</p>
         <div class="btns">
           <label>X <input type="number" id="cr-x" min="0"></label><label>Y <input type="number" id="cr-y" min="0"></label>
           <label>W <input type="number" id="cr-w" min="1"></label><label>H <input type="number" id="cr-h" min="1"></label>
@@ -255,7 +264,7 @@ h3:first-child { margin-top: 4px; }
         <div class="btns">
           <label>Parts <input type="number" id="sp-n" min="2" max="50" value="3"></label>
           <label>Overlap px <input type="number" id="sp-o" min="0" value="0"></label>
-          <select id="sp-dir" aria-label="Split direction"><option value="cols">Side by side</option><option value="rows">Stacked</option></select>
+          <select id="sp-dir" aria-label="Split direction"><option value="cols">Side by side (as shown)</option><option value="rows">Stacked (as shown)</option></select>
           <button id="sp-make">Make equal parts</button>
         </div>
         <p class="note">Or choose the Regions tool and drag boxes on the image.</p>
@@ -285,6 +294,9 @@ h3:first-child { margin-top: 4px; }
 <script src="imaging.js"></script>
 <script src="export.js"></script>
 <script src="sample.js"></script>
+<script src="vendor/openjpeg/openjpegwasm-binary.js"></script>
+<script src="vendor/openjpeg/openjpegwasm.js"></script>
+<script src="codec.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -2,11 +2,15 @@
 
 An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. It is a separate tool from the RT Handbook Android app and shares no code or storage with it.
 
-Open `index.html` in Chrome, Edge or Firefox, or build a single shareable file with `node tools/build-single.cjs` (writes `dist/diconde-editor.html`). Nothing is uploaded: files are read and written locally in the browser.
+Open `index.html` in Chrome, Edge or Firefox, or build a single shareable file with `node tools/build-single.cjs` (writes `dist/diconde-editor.html`, about 670 KB including the JPEG 2000 codec). Nothing is uploaded: files are read and written locally in the browser.
 
 ## What it does
 
 - **Metadata**: a Common view of the usual NDE fields (component, inspection, equipment and technique, display), and an All tags view that includes nested sequences. DICONDE names are shown with the underlying DICOM name, for example *Component ID Number* (DICOM: Patient ID). Values are checked against their VR (dates as YYYYMMDD, length limits, numbers, UIDs) before they are accepted. You can add, remove and revert tags. Templates save the fields you changed so you can apply them to other files; they are stored only in this browser.
+- **Viewing**:
+  - JPEG 2000 images (as INDUSTREX saves them) are decoded when they open.
+  - The starting window is set from the main exposure, leaving out unexposed plate areas, padding and markers.
+  - INDUSTREX files open at INDUSTREX's stored viewing angle. **⟳ View** (or V) turns the view without changing pixels; PNG and PDF exports follow the view.
 - **Image clean-up**: window and level (display only; you can store it as the copy's default), invert view, rotate, flip, 3×3 median noise reduction, bad-pixel repair, Gaussian smoothing, unsharp-mask sharpening, invert pixel values, and up to 12 undo steps.
 - **Crop and split**: drag or type a crop box. Split into equal parts side by side or stacked, with optional overlap, or draw regions by hand. Each part's label can go into Image Comments or be appended to Component ID. Split parts download together as a ZIP.
 - **Export**: PNG (as displayed), TIFF (raw pixel values, 8/16/32-bit) and a two-page PDF report (key fields and the displayed image).
@@ -76,13 +80,24 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
   - Because the XML is dropped, INDUSTREX should open these copies with its default view, so you may need to rotate the view there.
 - **Compatible output format**: copies are written as Explicit VR Little Endian, which INDUSTREX's conformance statement lists as readable.
 
+**JPEG 2000**
+
+- The bundled OpenJPEG 2.5.4 WebAssembly codec decodes the images when they open. It was added with the owner's approval; see `vendor/openjpeg/`.
+- Checked on all five supplied files:
+  - The decoded pixel range matches each file's Smallest/Largest Image Pixel Value.
+  - Re-encoding is lossless.
+  - Decoding takes under a second per image.
+- Processed copies are saved as **JPEG 2000 Lossless** by default, about the same size as INDUSTREX's own files. They can be saved uncompressed instead from the Image tab.
+  - The codestream precision equals Bits Stored (12 for these files).
+  - The number of wavelet levels drops automatically for small crops and split parts.
+- INDUSTREX stores its viewing angle in the XML (`ANGLE 0,0,90`). On the supplied files, applying it counter-clockwise shows the location numbers upright and reading left to right, so the viewer opens INDUSTREX files that way.
+
 **Open items**
 
-- **No JPEG 2000 decoder yet**: the image tools (clean-up, crop, split, PNG/TIFF/PDF export) cannot run on these files. The planned route is to bundle the OpenJPEG WebAssembly codec. That needs the owner's go-ahead because it adds third-party code. With it, processed copies could also be saved as JPEG 2000 Lossless instead of uncompressed (about 11.5 MB instead of about 2.5 MB per image).
 - **Not yet confirmed in INDUSTREX**:
   - Whether INDUSTREX reads fields from its XML copy or from the DICOM tags.
   - How INDUSTREX displays a processed copy without its XML.
-- **Viewer orientation**: the editor's viewer does not yet apply INDUSTREX's stored 90° viewing angle.
+  - That the viewing-angle direction matches what INDUSTREX shows.
 
 ## File support
 
@@ -90,11 +105,12 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
   - Explicit and implicit VR little endian, explicit VR big endian and deflated transfer syntaxes.
   - Files with or without the 128-byte preamble.
   - Defined and undefined-length sequences.
-- **Writes**: explicit VR little endian.
+- **Writes**: explicit VR little endian, or JPEG 2000 Lossless for processed images (the default when the source was JPEG 2000).
 - **Image tools**: uncompressed greyscale (MONOCHROME1/2) images, 8, 16 or 32 bits allocated, signed or unsigned, single or multi-frame.
-- **Compressed files** (JPEG, JPEG-LS, JPEG 2000, RLE, HTJ2K):
+- **JPEG 2000** (lossless, lossy, HTJ2K): decoded for viewing and image tools. Metadata-only copies keep the original codestream byte for byte.
+- **Other compressed files** (JPEG, JPEG-LS, RLE):
   - Open for metadata editing. Their compressed image data is copied unchanged and the transfer syntax is kept.
-  - Image tools are disabled because there is no decoder.
+  - Image tools are disabled because no decoder is bundled for them.
 - **Not supported**: colour images and private tags (odd groups). Private tags in a file are kept unchanged.
 
 ## Files
@@ -104,6 +120,9 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 | `dicom.js` | Parser, writer, value validation, data dictionary, derived-copy marking |
 | `imaging.js` | Rotate, flip, crop, median, smoothing, sharpening, bad pixels, windowing |
 | `export.js` | ZIP, TIFF and PDF builders |
+| `codec.js` | JPEG 2000 decode/encode and frame splitting, using `vendor/openjpeg/` |
+| `vendor/openjpeg/` | OpenJPEG WebAssembly build (`@cornerstonejs/codec-openjpeg` 1.3.6, unmodified), checksums and licences |
+| `tools/vendor-openjpeg.cjs` | Regenerates `vendor/openjpeg/` from the npm package |
 | `sample.js` | Synthetic sample radiograph (not real inspection data) |
 | `app.js`, `index.html` | User interface |
 | `tools/build-single.cjs` | Builds the single-file HTML |

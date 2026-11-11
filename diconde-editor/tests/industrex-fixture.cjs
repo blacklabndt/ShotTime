@@ -10,12 +10,13 @@ const { makeSample } = require('../sample.js');
 const bytes = s => Uint8Array.from(Buffer.from(s, 'latin1'));
 function presentationXml(ds) {
   const entry = (key, vals) => `<diconde KEY="${key}">${vals.map(v => `<value>${v}</value>`).join('')}</diconde>`;
+  const nd = (key, vals) => `<non_diconde KEY="${key}">${vals.map(v => `<value>${v}</value>`).join('')}</non_diconde>`;
   const tagVals = (t) => (D.getString(ds, t) ? D.getString(ds, t).split('\\') : ['']);
   return '<?xml version="1.0" encoding="UTF-8" standalone="no" ?><presentation_state><display_state><color_table>0</color_table>' +
     '<rotation>0,0,90</rotation><viewplane_rect>-100.0,50.0,300.0,200.0</viewplane_rect><wl_range>11.0000,2915.00</wl_range><zoom>0.500000,0.500000</zoom></display_state><metadata>' +
     entry('0008,0060', ['CR']) + entry('0008,0008', ['ORIGINAL', 'PRIMARY']) + entry('0010,0010', tagVals(0x00100010)) + entry('0010,0020', tagVals(0x00100020)) +
     entry('0008,1048', ['Inspect Co']) + '<diconde KEY="0020,4000"/>' + entry('0033,XX72', ['EDGE', 'Image Class: HD 1']) +
-    entry('DEFAULTWL', ['1513.00', '1488.00']) + entry('ANGLE', ['0', '0', '90']) + entry('FILENAME', ['C:\\fixture\\sample.dcm']) +
+    nd('DEFAULTWL', ['1513.00', '1488.00']) + nd('ANGLE', ['0', '0', '90']) + nd('FILENAME', ['C:\\fixture\\sample.dcm']) +
     '</metadata><graphics /></presentation_state>';
 }
 
@@ -67,4 +68,13 @@ function implicitBytes(file) {
   return Buffer.concat([Buffer.alloc(128), Buffer.from('DICM'), gl, tsEl, ts, ...parts]);
 }
 
-module.exports = { makeIndustrexLike, implicitBytes };
+// The same file with JPEG 2000 Lossless pixel data, as INDUSTREX 7.2.1 exports it.
+async function makeIndustrexJ2K(opts = {}) {
+  const C = require('../codec.js');
+  await C.load();
+  const f = makeIndustrexLike(opts), img = D.getImage(f);
+  D.setEncapsulated(f, img.frames.map(a => C.encodeFrameLossless(a, { width: img.cols, height: img.rows, bitsPerSample: img.bitsStored, isSigned: img.signed })), C.J2K_LOSSLESS);
+  return f;
+}
+
+module.exports = { makeIndustrexLike, makeIndustrexJ2K, implicitBytes };

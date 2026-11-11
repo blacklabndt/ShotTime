@@ -7,7 +7,8 @@ const path = require('path');
 const { chromium } = require('playwright');
 const D = require('../dicom.js');
 const { makeSample } = require('../sample.js');
-const { makeIndustrexLike } = require('./industrex-fixture.cjs');
+const { makeIndustrexLike, makeIndustrexJ2K } = require('./industrex-fixture.cjs');
+const C = require('../codec.js');
 
 const PAGE = 'file://' + path.resolve(__dirname, '..', 'index.html');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diconde-ui-'));
@@ -156,20 +157,29 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
 
   // Compressed file: metadata editable, image tools explain why they are unavailable.
   const comp = makeSample({ rows: 4, cols: 4 });
-  comp.transferSyntax = '1.2.840.10008.1.2.4.90';
+  comp.transferSyntax = '1.2.840.10008.1.2.4.80'; // JPEG-LS: no decoder bundled
   comp.ds.el.set(D.PIXEL, { tag: D.PIXEL, vr: 'OB', fragments: [new Uint8Array(0), new Uint8Array([0xFF, 0x4F, 0xFF, 0x51])] });
   const compPath = path.join(tmp, 'j2k.dcm'); fs.writeFileSync(compPath, D.write(comp));
   await page.setInputFiles('#file-input', compPath); // beforeunload-style confirm is accepted by the dialog handler
   await page.waitForFunction(() => /Opened j2k/.test(document.getElementById('toast').textContent));
   await page.click('[data-tab=image]');
-  assert.match(await page.textContent('#img-unavail'), /compressed \(JPEG 2000 Lossless\)/);
+  assert.match(await page.textContent('#img-unavail'), /compressed \(JPEG-LS Lossless\)/);
   await page.click('[data-tab=meta]'); await page.click('[data-metaview="common"]');
   const cn = field(page, '(0010,0010)').locator('input'); await cn.fill('Renamed'); await cn.press('Enter');
   const c2 = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
-  assert.strictEqual(c2.transferSyntax, '1.2.840.10008.1.2.4.90');
+  assert.strictEqual(c2.transferSyntax, '1.2.840.10008.1.2.4.80');
   assert.strictEqual(D.getString(c2.ds, 0x00100010), 'Renamed');
   assert.deepStrictEqual([...c2.ds.el.get(D.PIXEL).fragments[1]], [0xFF, 0x4F, 0xFF, 0x51]);
   assert.strictEqual(D.getString(c2.ds, 0x00080008), 'ORIGINAL\\PRIMARY'); ok('compressed metadata-only');
+
+  // Damaged JPEG 2000 data: explained, metadata still editable.
+  comp.transferSyntax = '1.2.840.10008.1.2.4.90';
+  const badPath = path.join(tmp, 'bad-j2k.dcm'); fs.writeFileSync(badPath, D.write(comp));
+  await page.setInputFiles('#file-input', badPath);
+  await page.waitForFunction(() => /Opened bad-j2k/.test(document.getElementById('toast').textContent));
+  await page.click('[data-tab=image]');
+  assert.match(await page.textContent('#img-unavail'), /JPEG 2000 image could not be decoded .*Metadata can still be edited/);
+  await page.click('[data-tab=meta]'); ok('damaged JPEG 2000');
 
   // Template applies to another file.
   await page.selectOption('#tpl-select', 'Site A'); await page.click('#tpl-apply');
@@ -213,6 +223,48 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   assert.strictEqual(D.getString(ixOut.ds, 0x00100020), 'WELD-7&8');
   assert.strictEqual(D.getString(ixOut.ds, 0x00080016), '1.2.840.10008.5.1.4.1.1.1');
   ok('INDUSTREX-style file');
+
+  // JPEG 2000 INDUSTREX-style file: decoded on open, shown at INDUSTREX's angle, saved as JPEG 2000 or uncompressed.
+  const j2kSrc = await makeIndustrexJ2K({ sopUID: '1.2.826.0.1.88' });
+  const j2kPath = path.join(tmp, 'industrex-j2k.dcm'); fs.writeFileSync(j2kPath, D.write(j2kSrc));
+  await page.setInputFiles('#file-input', j2kPath);
+  await page.waitForFunction(() => /Opened industrex-j2k/.test(document.getElementById('toast').textContent));
+  assert.ok(await page.evaluate(() => window.__editor.S.decoded), 'decoded');
+  assert.strictEqual(await page.textContent('#btn-viewrot'), '⟳ View: 90° left', 'INDUSTREX ANGLE 90 shown as a quarter turn left');
+  assert.strictEqual(await page.inputValue('#save-format'), 'j2k');
+  await page.click('[data-tab=image]');
+  assert.ok(await page.isHidden('#img-unavail'));
+  // Side by side as shown on screen = split along image rows when the view is turned.
+  await page.click('[data-tab=crop]');
+  await page.fill('#sp-n', '2'); await page.fill('#sp-o', '0'); await page.selectOption('#sp-dir', 'cols'); await page.click('#sp-make');
+  assert.deepStrictEqual(await page.evaluate(() => window.__editor.S.regions.map(r => [r.x, r.y, r.w, r.h])), [[0, 0, 80, 20], [0, 20, 80, 20]]);
+  await page.click('#sp-clear');
+  // PNG export follows the view: 40 rows × 80 columns turned a quarter = 40 wide, 80 tall.
+  const png = await grab(page, async () => { await page.click('#btn-export'); await page.click('[data-export=png]'); });
+  assert.deepStrictEqual([png.bytes.readUInt32BE(16), png.bytes.readUInt32BE(20)], [40, 80]);
+  await page.click('#btn-viewrot');
+  assert.strictEqual(await page.textContent('#btn-viewrot'), '⟳ View: upright');
+  // Flip and save as JPEG 2000 lossless.
+  await page.click('[data-tab=image]'); await page.click('[data-op=flip-h]');
+  await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+  const flipped = await page.evaluate(() => Array.from(window.__editor.S.img.frames[0]));
+  await C.load();
+  const decodeOut = f => D.imageFromFrames(f, C.decodeFrames(f.ds.el.get(D.PIXEL).fragments, D.imageGeometry(f)));
+  const j2kOut = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+  assert.strictEqual(j2kOut.transferSyntax, C.J2K_LOSSLESS);
+  assert.deepStrictEqual(Array.from(decodeOut(j2kOut).frames[0]), flipped, 'JPEG 2000 copy is lossless');
+  assert.strictEqual(D.getElement(j2kOut.ds, 0x00331070), null);
+  await page.selectOption('#save-format', 'raw');
+  const rawOut = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+  assert.strictEqual(rawOut.transferSyntax, D.TS.EXPLICIT_LE);
+  assert.deepStrictEqual(Array.from(D.getImage(rawOut).frames[0]), flipped);
+  // Metadata-only copy of the JPEG 2000 file keeps the original codestream.
+  await page.click('#btn-revert-img');
+  await page.waitForFunction(() => window.__editor.S.ops.length === 0);
+  const metaOnly = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+  assert.strictEqual(metaOnly.transferSyntax, C.J2K_LOSSLESS);
+  assert.deepStrictEqual([...metaOnly.ds.el.get(D.PIXEL).fragments[1]], [...j2kSrc.ds.el.get(D.PIXEL).fragments[1]]);
+  ok('JPEG 2000 file');
 
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });

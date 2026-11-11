@@ -6,7 +6,8 @@ const D = require('../dicom.js');
 const I = require('../imaging.js');
 const X = require('../export.js');
 const { makeSample } = require('../tools/make-sample.cjs');
-const { makeIndustrexLike, implicitBytes } = require('./industrex-fixture.cjs');
+const { makeIndustrexLike, makeIndustrexJ2K, implicitBytes } = require('./industrex-fixture.cjs');
+const C = require('../codec.js');
 
 let passed = 0;
 const tests = [];
@@ -272,6 +273,79 @@ test('character sets: editor text is folded, user text is checked', async () => 
   assert.strictEqual(D.getString(plain.ds, 0x00104000), 'Weld n° 3');
 });
 
+test('JPEG 2000 lossless round trip: 12-bit, 16-bit and signed', async () => {
+  await C.load();
+  let seed = 3; const r = m => ((seed = (seed * 1103515245 + 12345) >>> 0) % m);
+  for (const [Ctor, bits, signed] of [[Uint16Array, 12, false], [Uint16Array, 16, false], [Int16Array, 16, true]]) {
+    const w = 37, h = 23, a = new Ctor(w * h);
+    for (let i = 0; i < a.length; i++) a[i] = signed ? r(65536) - 32768 : r(2 ** bits);
+    const cs = C.encodeFrameLossless(a, { width: w, height: h, bitsPerSample: bits, isSigned: signed });
+    assert.deepStrictEqual([...cs.subarray(0, 4)], [0xFF, 0x4F, 0xFF, 0x51], 'raw J2K codestream');
+    const d = C.decodeFrame(cs);
+    assert.deepStrictEqual([d.width, d.height, d.componentCount], [w, h, 1]);
+    assert.deepStrictEqual([...new Ctor(d.data.buffer)], [...a], `${bits}-bit ${signed ? 'signed' : 'unsigned'}`);
+  }
+  for (const [w, h] of [[1, 1], [3, 200], [31, 31]]) { // small crops and split parts need fewer wavelet levels
+    const a = Uint16Array.from({ length: w * h }, (_, i) => (i * 131) % 4096);
+    assert.deepStrictEqual([...new Uint16Array(C.decodeFrame(C.encodeFrameLossless(a, { width: w, height: h, bitsPerSample: 12 })).data.buffer)], [...a], `${w}x${h}`);
+  }
+  assert.throws(() => C.decodeFrames([new Uint8Array(0), Uint8Array.from([0xFF, 0x4F, 0xFF, 0x51, 1, 2, 3])], { rows: 4, cols: 4, frames: 1, bitsAllocated: 16 }), /decoded|failed/, 'damaged data is reported');
+});
+
+test('frame splitting: offset table, one fragment per frame, and start markers', () => {
+  const j = (...b) => Uint8Array.from(b);
+  const f1a = j(0xFF, 0x4F, 0xFF, 0x51, 1), f1b = j(2, 3), f2 = j(0xFF, 0x4F, 0xFF, 0x51, 9);
+  const bot = new Uint8Array(8); new DataView(bot.buffer).setUint32(4, (8 + f1a.length) + (8 + f1b.length), true);
+  assert.deepStrictEqual(C.frameStreams([bot, f1a, f1b, f2], 2).map(x => [...x]), [[0xFF, 0x4F, 0xFF, 0x51, 1, 2, 3], [0xFF, 0x4F, 0xFF, 0x51, 9]]);
+  assert.deepStrictEqual(C.frameStreams([new Uint8Array(0), f1a, f2], 2).map(x => x.length), [5, 5]);
+  assert.deepStrictEqual(C.frameStreams([new Uint8Array(0), f1a, f1b, f2], 2).map(x => x.length), [7, 5]);
+  assert.deepStrictEqual(C.frameStreams([new Uint8Array(0), f1a, f1b], 1).map(x => x.length), [7]);
+  assert.throws(() => C.frameStreams([new Uint8Array(0), f1a, f1b, f2], 4), /expected 4/);
+});
+
+test('INDUSTREX-style JPEG 2000 file: decode, metadata-only copy keeps codestream, processed copy re-encodes losslessly', async () => {
+  const src = await D.parse(D.write(await makeIndustrexJ2K()));
+  assert.strictEqual(src.transferSyntax, C.J2K_LOSSLESS);
+  assert.ok(D.getImage(src).compressed);
+  const expect = D.getImage(makeIndustrexLike());
+  const img = D.imageFromFrames(src, C.decodeFrames(src.ds.el.get(D.PIXEL).fragments, D.imageGeometry(src)));
+  assert.deepStrictEqual([img.rows, img.cols, img.bitsStored, img.photometric, img.padding], [40, 80, 12, 'MONOCHROME1', 0]);
+  assert.deepStrictEqual([...img.frames[0]], [...expect.frames[0]]);
+  // metadata only
+  const meta = D.clone(src); D.setText(meta.ds, 0x00100020, 'X'); D.derive(meta, src, {});
+  const mo = await D.parse(D.write(meta));
+  assert.strictEqual(mo.transferSyntax, C.J2K_LOSSLESS);
+  assert.deepStrictEqual([...mo.ds.el.get(D.PIXEL).fragments[1]], [...src.ds.el.get(D.PIXEL).fragments[1]]);
+  // processed
+  const rot = I.rotate(img, 1), proc = D.clone(src);
+  D.setImage(proc, rot, { swapSpacing: true });
+  D.setEncapsulated(proc, rot.frames.map(a => C.encodeFrameLossless(a, { width: rot.cols, height: rot.rows, bitsPerSample: 12, isSigned: false })), C.J2K_LOSSLESS);
+  D.derive(proc, src, { pixelsChanged: true, description: 'Rotated' });
+  const po = await D.parse(D.write(proc));
+  assert.strictEqual(po.transferSyntax, C.J2K_LOSSLESS);
+  const back = D.imageFromFrames(po, C.decodeFrames(po.ds.el.get(D.PIXEL).fragments, D.imageGeometry(po)));
+  assert.deepStrictEqual([back.rows, back.cols], [80, 40]);
+  assert.deepStrictEqual([...back.frames[0]], [...rot.frames[0]]);
+  assert.strictEqual(D.getString(po.ds, 0x00080008), 'DERIVED\\SECONDARY');
+});
+
+test('decoded size must match the file', async () => {
+  const f = await makeIndustrexJ2K();
+  D.setText(f.ds, 0x00280010, '41', 'US');
+  assert.throws(() => C.decodeFrames(f.ds.el.get(D.PIXEL).fragments, D.imageGeometry(f)), /decoded as 80×40×1, but the file says 80×41/);
+});
+
+test('view rotation maps coordinates both ways', () => {
+  const W = 30, H = 10;
+  for (const rot of [0, 90, 180, 270]) for (const [x, y] of [[0, 0], [3, 7], [29.5, 9.5]]) {
+    const v = I.toView(x, y, W, H, rot), back = I.fromView(v.x, v.y, W, H, rot);
+    assert.deepStrictEqual([back.x, back.y], [x, y], `rot ${rot}`);
+  }
+  assert.deepStrictEqual(I.viewDims(W, H, 90), { w: 10, h: 30 });
+  assert.deepStrictEqual(I.toView(0, 0, W, H, 90), { x: 10, y: 0 }, 'top-left goes to top-right when turned right');
+  assert.deepStrictEqual(I.rectToView({ x: 2, y: 1, w: 5, h: 3 }, W, H, 270), { x: 1, y: 23, w: 3, h: 5 });
+});
+
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);
 
 test('rotation, flips and crop move pixels correctly', () => {
@@ -327,7 +401,16 @@ test('smooth and sharpen stay in range and behave', () => {
 test('auto window and split regions', () => {
   const vals = []; for (let i = 0; i < 10000; i++) vals.push(i);
   const w = I.autoWindow(Uint16Array.from(vals));
-  assert.ok(Math.abs(w.center - 5000) < 20 && Math.abs(w.width - 9900) < 30);
+  assert.ok(Math.abs(w.center - 5010) < 30 && Math.abs(w.width - 9930) < 40, JSON.stringify(w)); // uniform: 0.5th–99.8th percentile
+  const padded = Uint16Array.from(vals.map((v, i) => (i < 5000 ? 0 : v)));
+  const wp = I.autoWindow(padded, 1, 0, 0.5, 99.8, 0);
+  assert.ok(wp.center - wp.width / 2 > 5000, 'padding pixels are ignored');
+  assert.strictEqual(I.stats(padded, 0).count, 5000);
+  // A plate with an unexposed half (pile at 1), a long ramp, a few marker pixels, and the exposure around 2800.
+  const plate = new Uint16Array(20000);
+  for (let i = 0; i < plate.length; i++) plate[i] = i < 8000 ? 1 : i < 9000 ? 1 + (i - 8000) * 2 : i < 9050 ? 300 : 2700 + (i % 300);
+  const wpl = I.autoWindow(plate);
+  assert.ok(wpl.center - wpl.width / 2 > 2650 && wpl.center + wpl.width / 2 < 3010, JSON.stringify(wpl));
   const r = I.splitRegions(100, 301, 3, 'cols', 5);
   assert.deepStrictEqual(r, [{ x: 0, y: 0, w: 105, h: 100 }, { x: 95, y: 0, w: 106 + 5, h: 100 }, { x: 196, y: 0, w: 105, h: 100 }]);
   assert.deepStrictEqual(I.splitRegions(10, 10, 2, 'rows').map(x => [x.y, x.h]), [[0, 5], [5, 5]]);

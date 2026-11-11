@@ -1,0 +1,9 @@
+{
+  "package": "@cornerstonejs/codec-openjpeg",
+  "version": "1.3.6",
+  "openjpeg": "2.5.4",
+  "files": {
+    "dist/openjpegwasm.js": "7da697c067da8c0ee0dd81071bc6cca0ab17a93b70274945e03c690ee89c163a",
+    "dist/openjpegwasm.wasm": "77084ac4c723115ee2b883b818fbcbf6a918c3242b5704989b5f53e0e4a5025b"
+  }
+}

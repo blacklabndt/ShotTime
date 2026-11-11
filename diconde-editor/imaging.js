@@ -98,20 +98,49 @@
   }
 
   // Histogram-based statistics of one frame (percentiles are approximate to 1/4096 of the range).
-  function stats(a) {
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < a.length; i++) { const v = a[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  // `ignore` (optional) is a value to leave out, such as the Pixel Padding Value outside the plate.
+  function stats(a, ignore) {
+    let lo = Infinity, hi = -Infinity, count = 0;
+    const skip = ignore != null;
+    for (let i = 0; i < a.length; i++) { const v = a[i]; if (skip && v === ignore) continue; count++; if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!count) { lo = hi = skip ? ignore : 0; }
     const bins = 4096, hist = new Uint32Array(bins), span = hi - lo || 1;
-    for (let i = 0; i < a.length; i++) hist[Math.min(bins - 1, Math.floor(((a[i] - lo) / span) * bins))]++;
-    const pct = p => { const target = p / 100 * a.length; let acc = 0; for (let b = 0; b < bins; b++) { acc += hist[b]; if (acc >= target) return lo + (b + 0.5) / bins * span; } return hi; };
-    return { min: lo, max: hi, pct };
+    for (let i = 0; i < a.length; i++) { if (skip && a[i] === ignore) continue; hist[Math.min(bins - 1, Math.max(0, Math.floor(((a[i] - lo) / span) * bins)))]++; }
+    const pct = p => { const target = p / 100 * count; let acc = 0; for (let b = 0; b < bins; b++) { acc += hist[b]; if (acc >= target) return lo + (b + 0.5) / bins * span; } return hi; };
+    return { min: lo, max: hi, count, pct };
   }
-  function autoWindow(a, slope = 1, intercept = 0, lowPct = 0.5, highPct = 99.5) {
-    const s = stats(a);
-    let lo = s.pct(lowPct) * slope + intercept, hi = s.pct(highPct) * slope + intercept;
-    if (lo > hi) [lo, hi] = [hi, lo];
-    const width = Math.max(1, hi - lo);
-    return { center: lo + width / 2, width };
+  // Starting window for a radiograph. CR/DR plates often have unexposed areas, saturated edges, lead markers
+  // and wires far from the useful exposure, so:
+  //  1. a pile-up at either extreme (more than 5% of pixels within 0.5% of the range from an end) is left out;
+  //  2. the main cluster is found around the histogram peak, stopping where bins stay below 0.5% of the peak
+  //     for more than 2% of the range;
+  //  3. the window spans the lowPct-highPct percentiles of that cluster.
+  // `ignore` is a value to leave out entirely, such as the Pixel Padding Value.
+  function autoWindow(a, slope = 1, intercept = 0, lowPct = 0.5, highPct = 99.8, ignore) {
+    const skip = ignore != null, use = v => !(skip && v === ignore);
+    let mn = Infinity, mx = -Infinity, n = 0;
+    for (let i = 0; i < a.length; i++) { const v = a[i]; if (!use(v)) continue; n++; if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (!n) return { center: (skip ? ignore : 0) * slope + intercept, width: 1 };
+    const e = (mx - mn) * 0.005;
+    let lowPile = 0, highPile = 0;
+    for (let i = 0; i < a.length; i++) { const v = a[i]; if (!use(v)) continue; if (v <= mn + e) lowPile++; else if (v >= mx - e) highPile++; }
+    let lo = mn, hi = mx;
+    if (e > 0 && lowPile > 0.05 * n) { let m = Infinity; for (let i = 0; i < a.length; i++) { const v = a[i]; if (use(v) && v > mn + e && v < m) m = v; } if (m !== Infinity) lo = m; }
+    if (e > 0 && highPile > 0.05 * n) { let m = -Infinity; for (let i = 0; i < a.length; i++) { const v = a[i]; if (use(v) && v < mx - e && v > m) m = v; } if (m !== -Infinity) hi = m; }
+    if (hi < lo) { lo = mn; hi = mx; }
+    const B = 512, span = hi - lo || 1, h = new Float64Array(B);
+    for (let i = 0; i < a.length; i++) { const v = a[i]; if (use(v) && v >= lo && v <= hi) h[Math.min(B - 1, Math.floor((v - lo) / span * B))]++; }
+    let pk = 0; for (let i = 1; i < B; i++) if (h[i] > h[pk]) pk = i;
+    const thr = h[pk] * 0.005, gapMax = Math.round(B * 0.02);
+    let b0 = pk, b1 = pk;
+    for (let i = pk - 1, g = 0; i >= 0; i--) { if (h[i] >= thr) { b0 = i; g = 0; } else if (++g > gapMax) break; }
+    for (let i = pk + 1, g = 0; i < B; i++) { if (h[i] >= thr) { b1 = i; g = 0; } else if (++g > gapMax) break; }
+    let tot = 0; for (let i = b0; i <= b1; i++) tot += h[i];
+    const pct = p => { const t = p / 100 * tot; let acc = 0; for (let i = b0; i <= b1; i++) { acc += h[i]; if (acc >= t) return lo + (i + 0.5) / B * span; } return lo + (b1 + 1) / B * span; };
+    let w0 = pct(lowPct) * slope + intercept, w1 = pct(highPct) * slope + intercept;
+    if (w0 > w1) [w0, w1] = [w1, w0];
+    const width = Math.max(1, w1 - w0);
+    return { center: w0 + width / 2, width };
   }
 
   // Equal parts along one direction, each widened by `overlap` pixels where it meets a neighbour.
@@ -147,5 +176,26 @@
     return o;
   }
 
-  return { rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
+  // Display-only view rotation (0/90/180/270° clockwise). Maps image pixel coordinates to the rotated
+  // frame and back; W = columns, H = rows of the unrotated image.
+  const viewDims = (cols, rows, rot) => (rot % 180 ? { w: rows, h: cols } : { w: cols, h: rows });
+  function toView(x, y, cols, rows, rot) {
+    switch (rot) { case 90: return { x: rows - y, y: x }; case 180: return { x: cols - x, y: rows - y }; case 270: return { x: y, y: cols - x }; default: return { x, y }; }
+  }
+  function fromView(x, y, cols, rows, rot) {
+    switch (rot) { case 90: return { x: y, y: rows - x }; case 180: return { x: cols - x, y: rows - y }; case 270: return { x: cols - y, y: x }; default: return { x, y }; }
+  }
+  // Canvas transform that draws an unrotated image (at 0,0) in the rotated frame.
+  function viewTransform(ctx, cols, rows, rot) {
+    if (rot === 90) { ctx.translate(rows, 0); ctx.rotate(Math.PI / 2); }
+    else if (rot === 180) { ctx.translate(cols, rows); ctx.rotate(Math.PI); }
+    else if (rot === 270) { ctx.translate(0, cols); ctx.rotate(-Math.PI / 2); }
+  }
+  // Axis-aligned rectangle of an image-space box in the rotated frame.
+  function rectToView(r, cols, rows, rot) {
+    const a = toView(r.x, r.y, cols, rows, rot), b = toView(r.x + r.w, r.y + r.h, cols, rows, rot);
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  }
+
+  return { viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
 });

@@ -20,7 +20,7 @@
     undo: [], redo: [], ops: [], turns: 0,
     origEls: new Map(),       // key -> original element (or null if it did not exist)
     frame: 0, win: { c: 0, w: 1 }, invertView: false,
-    view: { zoom: 1, x: 0, y: 0 }, tool: 'pan',
+    view: { zoom: 1, x: 0, y: 0 }, viewRot: 0, tool: 'pan',
     crop: null, regions: [], metaView: 'common', drag: null, bmp: null, dirtyImage: true
   };
 
@@ -32,7 +32,8 @@
     const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
-  async function busy(fn) {
+  async function busy(fn, label) {
+    $('busy').textContent = label || 'Working…';
     $('busy').classList.add('on');
     await new Promise(r => setTimeout(r, 30));
     try { return await fn(); } catch (e) { console.error(e); toast(e.message || String(e), true); } finally { $('busy').classList.remove('on'); }
@@ -48,8 +49,21 @@
     try { file = await D.parse(bytes); } catch (e) { toast(`Could not open ${name}: ${e.message}`, true); return; }
     S.orig = file; S.file = D.clone(file); S.name = name;
     S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.frame = 0; S.comparing = false; savedState = '';
-    const img = D.getImage(S.file);
+    let img = D.getImage(S.file);
+    S.decoded = false;
+    if (img.compressed && window.Codec && Codec.canDecode(file.transferSyntax)) {
+      try {
+        $('busy').textContent = 'Decompressing JPEG 2000…';
+        await Codec.load();
+        const g = D.imageGeometry(S.file);
+        img = g.samplesPerPixel !== 1 ? { error: 'Only greyscale images can be processed. Metadata can still be edited.' }
+          : D.imageFromFrames(S.file, Codec.decodeFrames(S.file.ds.el.get(D.PIXEL).fragments, g));
+        S.decoded = !img.error;
+      } catch (e) { console.warn(e); img = { error: `The JPEG 2000 image could not be decoded (${e.message}). Metadata can still be edited.` }; }
+    }
     S.imgError = img.error || ''; S.img = img.error ? null : img; S.origImg = S.img;
+    $('save-format').value = S.decoded ? 'j2k' : 'raw';
+    $('save-format').disabled = !S.img || S.img.bitsAllocated > 16;
     $('empty').classList.add('hidden');
     ['btn-save', 'btn-export'].forEach(id => { $(id).disabled = false; });
     const rows = D.getNumber(S.file.ds, 0x00280010), cols = D.getNumber(S.file.ds, 0x00280011);
@@ -62,12 +76,19 @@
       $(box).textContent = S.imgError; $(box).classList.toggle('hidden', !S.imgError); $(tools).classList.toggle('hidden', !!S.imgError);
     }
     $('export-menu').querySelectorAll('[data-export]').forEach(b => { b.disabled = !S.img; });
+    // INDUSTREX stores its viewing angle as ANGLE "0,0,a" with a counter-clockwise (on the owner's files, 90
+    // shows the location numbers upright and reading left to right); the viewer's rotation is clockwise.
+    const angle = D.industrexXmlEntry(file.ds, 'ANGLE'), deg = angle ? Math.round(Number(angle[angle.length - 1])) : 0;
+    const cw = (((360 - deg) % 360) + 360) % 360;
+    S.viewRot = [0, 90, 180, 270].includes(cw) ? cw : 0;
+    S.viewRotFrom = angle ? 'INDUSTREX' : ''; S.viewRotStart = S.viewRot;
+    updateViewRotLabel(); $('btn-viewrot').disabled = !S.img;
     if (S.img) { resetWindow('file'); S.dirtyImage = true; fit(); }
     else { S.bmp = null; draw(); }
     renderMeta(); refreshImageUi(); renderRegions(); renderHistory();
     toast(`Opened ${name}`);
   }
-  async function openFile(f) { if (!f) return; if (hasChanges() && !confirm('Discard unsaved changes to the current file?')) return; await busy(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name)); }
+  async function openFile(f) { if (!f) return; if (hasChanges() && !confirm('Discard unsaved changes to the current file?')) return; await busy(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name), 'Opening…'); }
 
   // ---------- metadata ----------
   const keyOf = (path, tag) => (path ? path + '/' : '') + tag.toString(16).padStart(8, '0');
@@ -271,20 +292,28 @@
     S.dirtyImage = false;
   }
   // Hold-to-compare: the original pixels with the current window, in the same place when the size is unchanged.
+  // Hold-to-compare: the original pixels with the current window, in the same place when the size is unchanged.
   function drawOriginal() {
     const o = S.origImg, sameSize = o.rows === S.img.rows && o.cols === S.img.cols;
     const c = document.createElement('canvas'); c.width = o.cols; c.height = o.rows;
     const cx = c.getContext('2d'), id = cx.createImageData(o.cols, o.rows);
     I.render(o.frames[Math.min(S.frame, o.frames.length - 1)], o, S.win.c, S.win.w, S.invertView, id.data); cx.putImageData(id, 0, 0);
-    let v = S.view;
-    if (!sameSize) { const r = canvas.getBoundingClientRect(), z = Math.min((r.width - 32) / o.cols, (r.height - 32) / o.rows); v = { zoom: z, x: (r.width - o.cols * z) / 2, y: (r.height - o.rows * z) / 2 }; }
-    ctx.imageSmoothingEnabled = v.zoom < 1;
-    ctx.drawImage(c, v.x, v.y, o.cols * v.zoom, o.rows * v.zoom);
+    const v = sameSize ? S.view : fitView(o);
+    drawRotated(c, o, v);
     ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#4cc3ff'; ctx.fillRect(8, 8, 84, 22); ctx.fillStyle = '#000'; ctx.fillText('ORIGINAL', 16, 24);
+  }
+  function drawRotated(bitmap, img, v) {
+    ctx.save(); ctx.translate(v.x, v.y); ctx.scale(v.zoom, v.zoom);
+    I.viewTransform(ctx, img.cols, img.rows, S.viewRot);
+    ctx.imageSmoothingEnabled = v.zoom < 1;
+    ctx.drawImage(bitmap, 0, 0);
+    ctx.restore();
   }
   function setComparing(on) { if (S.comparing === on) return; S.comparing = on; $('btn-compare').setAttribute('aria-pressed', String(on)); draw(); }
   let raf = 0;
   function draw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawNow(); }); }
+  // Screen rectangle of an image-space box, honouring zoom, pan and view rotation.
+  function screenRect(r) { const q = I.rectToView(r, S.img.cols, S.img.rows, S.viewRot), v = S.view; return { x: v.x + q.x * v.zoom, y: v.y + q.y * v.zoom, w: q.w * v.zoom, h: q.h * v.zoom }; }
   function drawNow() {
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#0d0f12'; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -292,27 +321,37 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (S.comparing && S.origImg && S.origImg !== S.img) { drawOriginal(); return; }
     if (S.dirtyImage) rebuildBitmap();
-    const v = S.view;
-    ctx.imageSmoothingEnabled = v.zoom < 1;
-    ctx.drawImage(S.bmp, v.x, v.y, S.img.cols * v.zoom, S.img.rows * v.zoom);
+    drawRotated(S.bmp, S.img, S.view);
     const box = (r, color, label, dash) => {
-      const x = v.x + r.x * v.zoom, y = v.y + r.y * v.zoom, w = r.w * v.zoom, h = r.h * v.zoom;
+      const { x, y, w, h } = screenRect(r);
       ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.setLineDash(dash ? [6, 4] : []); ctx.strokeRect(x + .5, y + .5, w, h); ctx.setLineDash([]);
       if (label) { ctx.font = 'bold 13px system-ui'; const tw = ctx.measureText(label).width + 10; ctx.fillStyle = color; ctx.fillRect(x, y, tw, 20); ctx.fillStyle = '#000'; ctx.fillText(label, x + 5, y + 14); }
     };
     if (S.crop) {
-      const x = v.x + S.crop.x * v.zoom, y = v.y + S.crop.y * v.zoom, w = S.crop.w * v.zoom, h = S.crop.h * v.zoom;
+      const { x, y, w, h } = screenRect(S.crop);
       ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.rect(0, 0, canvas.width / dpr, canvas.height / dpr); ctx.rect(x, y + h, w, -h); ctx.fill('evenodd');
       box(S.crop, '#4cc3ff', `${Math.round(S.crop.w)}×${Math.round(S.crop.h)}`, true);
     }
     S.regions.forEach((r, i) => box(r, '#f5a623', String(i + 1)));
     if (S.drag && S.drag.rect && S.drag.mode === 'regions') box(S.drag.rect, '#f5a623', String(S.regions.length + 1), true);
   }
+  function fitView(img) {
+    const r = canvas.getBoundingClientRect(), pad = 16, d = I.viewDims(img.cols, img.rows, S.viewRot);
+    const z = Math.max(0.01, Math.min((r.width - pad * 2) / d.w, (r.height - pad * 2) / d.h));
+    return { zoom: z, x: (r.width - d.w * z) / 2, y: (r.height - d.h * z) / 2 };
+  }
   function fit() {
     if (!S.img) return;
-    const r = canvas.getBoundingClientRect(), pad = 16;
-    const z = Math.min((r.width - pad * 2) / S.img.cols, (r.height - pad * 2) / S.img.rows);
-    S.fitted = true; S.view.zoom = Math.max(0.01, z); S.view.x = (r.width - S.img.cols * S.view.zoom) / 2; S.view.y = (r.height - S.img.rows * S.view.zoom) / 2; draw();
+    S.fitted = true; Object.assign(S.view, fitView(S.img)); draw();
+  }
+  function rotateView() {
+    if (!S.img) return;
+    S.viewRot = (S.viewRot + 90) % 360; updateViewRotLabel(); fit();
+  }
+  const viewRotText = r => ({ 0: 'upright', 90: '90° right', 180: '180°', 270: '90° left' }[r]);
+  function updateViewRotLabel() {
+    $('btn-viewrot').textContent = `⟳ View: ${viewRotText(S.viewRot)}`;
+    $('btn-viewrot').setAttribute('aria-label', `Rotate view, now ${viewRotText(S.viewRot)}${S.viewRotFrom && S.viewRot === S.viewRotStart ? ' as in INDUSTREX' : ''} (display only)`);
   }
   function zoomAt(factor, cx, cy) {
     if (!S.img) return;
@@ -320,7 +359,12 @@
     S.fitted = false; const nz = Math.min(32, Math.max(0.01, S.view.zoom * factor)), k = nz / S.view.zoom;
     S.view.x = cx - (cx - S.view.x) * k; S.view.y = cy - (cy - S.view.y) * k; S.view.zoom = nz; draw();
   }
-  function toImage(ev) { const r = canvas.getBoundingClientRect(); return { x: (ev.clientX - r.left - S.view.x) / S.view.zoom, y: (ev.clientY - r.top - S.view.y) / S.view.zoom, sx: ev.clientX - r.left, sy: ev.clientY - r.top }; }
+  function toImage(ev) {
+    const r = canvas.getBoundingClientRect(), sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+    if (!S.img) return { x: -1, y: -1, sx, sy };
+    const p = I.fromView((sx - S.view.x) / S.view.zoom, (sy - S.view.y) / S.view.zoom, S.img.cols, S.img.rows, S.viewRot);
+    return { x: p.x, y: p.y, sx, sy };
+  }
   const clampRect = (a, b) => {
     const x0 = Math.max(0, Math.min(S.img.cols, Math.min(a.x, b.x))), y0 = Math.max(0, Math.min(S.img.rows, Math.min(a.y, b.y)));
     const x1 = Math.max(0, Math.min(S.img.cols, Math.max(a.x, b.x))), y1 = Math.max(0, Math.min(S.img.rows, Math.max(a.y, b.y)));
@@ -329,7 +373,7 @@
   function readout(p) {
     if (!S.img) { $('readout').textContent = ''; return; }
     const x = Math.floor(p.x), y = Math.floor(p.y);
-    let s = `Zoom ${Math.round(S.view.zoom * 100)}% · W ${fmt(S.win.w)} L ${fmt(S.win.c)}`;
+    let s = `Zoom ${Math.round(S.view.zoom * 100)}%${S.viewRot ? ` · view ${viewRotText(S.viewRot)}` : ''} · W ${fmt(S.win.w)} L ${fmt(S.win.c)}`;
     if (x >= 0 && y >= 0 && x < S.img.cols && y < S.img.rows) {
       const raw = frameData()[y * S.img.cols + x];
       s = `x ${x}, y ${y} · value ${raw}${S.img.slope !== 1 || S.img.intercept !== 0 ? ` (${fmt(raw * S.img.slope + S.img.intercept)})` : ''} · ` + s;
@@ -368,8 +412,8 @@
     if (!S.img) return;
     const a = frameData(), sl = S.img.slope, ic = S.img.intercept;
     if (kind === 'file' && S.img.windowWidth > 0) { S.win = { c: S.img.windowCenter, w: S.img.windowWidth }; }
-    else if (kind === 'full') { const st = I.stats(a), lo = st.min * sl + ic, hi = st.max * sl + ic; S.win = { c: (lo + hi) / 2, w: Math.max(1, Math.abs(hi - lo)) }; }
-    else { const w = I.autoWindow(a, sl, ic); S.win = { c: w.center, w: w.width }; }
+    else if (kind === 'full') { const st = I.stats(a, S.img.padding), lo = st.min * sl + ic, hi = st.max * sl + ic; S.win = { c: (lo + hi) / 2, w: Math.max(1, Math.abs(hi - lo)) }; }
+    else { const w = I.autoWindow(a, sl, ic, undefined, undefined, S.img.padding); S.win = { c: w.center, w: w.width }; }
     S.dirtyImage = true; syncWindowInputs(); draw();
   }
   function windowRange() { const sl = S.img.slope, ic = S.img.intercept, a = S.img.min * sl + ic, b = S.img.max * sl + ic; return [Math.min(a, b), Math.max(a, b)]; }
@@ -378,7 +422,7 @@
     const [lo, hi] = windowRange(), step = (hi - lo) / 1000 || 1;
     for (const [r, n, v, min] of [['wl-c-r', 'wl-c', S.win.c, lo], ['wl-w-r', 'wl-w', S.win.w, 1]]) {
       Object.assign($(r), { min, max: r === 'wl-w-r' ? hi - lo : hi, step }); $(r).value = v;
-      if (document.activeElement !== $(n)) $(n).value = fmt(v);
+      if (document.activeElement !== $(n)) $(n).value = String(Math.round(v * 10) / 10);
     }
     $('wl-file').disabled = !(S.img.windowWidth > 0);
   }
@@ -427,7 +471,7 @@
         case 'smooth': { const s = numIn('sm-s', 0.3, 10); return pushImage(I.smooth(img, s), `Smoothed (Gaussian radius ${s})`); }
         case 'sharpen': { const s = numIn('sh-s', 0.3, 10), a = numIn('sh-a', 0.1, 10); return pushImage(I.sharpen(img, s, a), `Sharpened (unsharp mask radius ${s}, amount ${a})`); }
         case 'badpix': {
-          const pct = numIn('bp-t', 1, 100), st = I.stats(frameData()), thr = Math.max(1, (st.max - st.min) * pct / 100);
+          const pct = numIn('bp-t', 1, 100), st = I.stats(frameData(), S.img.padding), thr = Math.max(1, (st.max - st.min) * pct / 100);
           const out = I.fixBadPixels(img, thr);
           if (!out.fixedCount) { toast('No bad pixels found at this limit.'); return; }
           pushImage(out, `Fixed ${out.fixedCount} bad pixel${out.fixedCount === 1 ? '' : 's'} (limit ${pct}% of range)`);
@@ -476,7 +520,10 @@
     if (!S.img) return;
     const n = parseInt($('sp-n').value, 10), o = Math.max(0, parseInt($('sp-o').value, 10) || 0);
     if (!(n >= 2 && n <= 50)) { toast('Choose 2 to 50 parts.', true); return; }
-    S.regions = I.splitRegions(S.img.rows, S.img.cols, n, $('sp-dir').value, o).map((r, i) => ({ ...r, label: String(i + 1) }));
+    // "Side by side" and "Stacked" follow the screen, so swap when the view is turned 90° and number parts left-to-right / top-to-bottom.
+    let dir = $('sp-dir').value; if (S.viewRot % 180) dir = dir === 'cols' ? 'rows' : 'cols';
+    const key = r => { const q = I.rectToView(r, S.img.cols, S.img.rows, S.viewRot); return $('sp-dir').value === 'cols' ? q.x : q.y; };
+    S.regions = I.splitRegions(S.img.rows, S.img.cols, n, dir, o).sort((a, b) => key(a) - key(b)).map((r, i) => ({ ...r, label: String(i + 1) }));
     renderRegions(); draw();
   }
 
@@ -489,7 +536,12 @@
   function buildCopy(region, partInfo, removed) {
     const pixelsChanged = S.ops.length > 0 || !!region;
     const copy = D.clone(S.file);
-    if (S.img && pixelsChanged) D.setImage(copy, region ? I.crop(S.img, region) : S.img, { swapSpacing: S.turns % 2 === 1 });
+    if (S.img && pixelsChanged) {
+      const out = region ? I.crop(S.img, region) : S.img;
+      D.setImage(copy, out, { swapSpacing: S.turns % 2 === 1 });
+      copy.transferSyntax = D.TS.EXPLICIT_LE; copy.encapsulated = false;
+      if (wantJ2k()) D.setEncapsulated(copy, out.frames.map(a => Codec.encodeFrameLossless(a, { width: out.cols, height: out.rows, bitsPerSample: out.bitsStored, isSigned: out.signed })), Codec.J2K_LOSSLESS);
+    }
     storeWindow(copy.ds);
     // INDUSTREX mirrors the fields in its XML presentation state; keep that copy in step (processed copies drop the XML).
     if (!pixelsChanged) copy.synced = D.syncIndustrexXml(copy.ds, changedTopLevel().concat($('store-window').checked ? [0x00281050, 0x00281051] : []));
@@ -497,20 +549,25 @@
     D.derive(copy, S.orig, { pixelsChanged, description: steps.join('; '), seriesUID: partInfo ? partInfo.series : (pixelsChanged ? D.newUID() : null), instanceNumber: partInfo ? partInfo.index : null, removed });
     return copy;
   }
+  const wantJ2k = () => $('save-format').value === 'j2k' && !$('save-format').disabled && window.Codec && Codec.isReady();
+  async function prepareCodec() { if ($('save-format').value === 'j2k' && !$('save-format').disabled && window.Codec) await Codec.load(); }
+  const saveLabel = () => (S.ops.length && $('save-format').value === 'j2k' ? 'Compressing JPEG 2000…' : 'Saving…');
   function saveCopy() {
     if (!S.file) return;
-    busy(() => {
+    busy(async () => {
+      await prepareCodec();
       const removed = [], copy = buildCopy(null, null, removed), bytes = D.write(copy);
       download(bytes, `${baseName()}_edited.dcm`, 'application/dicom');
       let extra = removed.length ? ` Left out ${removed.length} element(s) that described the original pixels.` : '';
       if (copy.synced && copy.synced.length) extra += ` Updated ${copy.synced.length} field(s) in INDUSTREX's XML copy.`;
       toast(`Saved ${baseName()}_edited.dcm (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
       markSaved();
-    });
+    }, saveLabel());
   }
   function exportSplit() {
     if (!S.regions.length || !S.img) return;
-    busy(() => {
+    busy(async () => {
+      await prepareCodec();
       const series = D.newUID(), target = $('sp-target').value, files = [], used = new Set();
       S.regions.forEach((r, i) => {
         const label = (r.label || String(i + 1)).trim() || String(i + 1);
@@ -529,14 +586,21 @@
       const z = X.zip(files);
       download(z, `${baseName()}_split.zip`, 'application/zip');
       toast(`Saved ${files.length} files in ${baseName()}_split.zip. The original file is unchanged.`);
-    });
+    }, $('save-format').value === 'j2k' ? 'Compressing JPEG 2000…' : 'Saving…');
   }
   let savedState = '';
   const stateKey = () => `${S.ops.length}:${S.ops.join('|')}:${[...S.origEls.keys()].join(',')}`;
   function markSaved() { savedState = stateKey(); updateDirty(); }
 
   // ---------- export ----------
-  function renderedCanvas() { if (S.dirtyImage) rebuildBitmap(); return S.bmp; }
+  // The image as displayed (window, invert and view rotation), at full resolution.
+  function renderedCanvas() {
+    if (S.dirtyImage) rebuildBitmap();
+    if (!S.viewRot) return S.bmp;
+    const d = I.viewDims(S.img.cols, S.img.rows, S.viewRot), c = document.createElement('canvas'); c.width = d.w; c.height = d.h;
+    const cx = c.getContext('2d'); I.viewTransform(cx, S.img.cols, S.img.rows, S.viewRot); cx.drawImage(S.bmp, 0, 0);
+    return c;
+  }
   async function exportAs(kind) {
     $('export-menu').classList.remove('open'); $('btn-export').setAttribute('aria-expanded', 'false');
     if (!S.img) return;
@@ -637,6 +701,7 @@
     ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach(t => cmp.addEventListener(t, () => setComparing(false)));
     cmp.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setComparing(true); } });
     cmp.addEventListener('keyup', () => setComparing(false));
+    $('btn-viewrot').onclick = rotateView;
     $('zoom-in').onclick = () => zoomAt(1.25); $('zoom-out').onclick = () => zoomAt(0.8); $('zoom-fit').onclick = fit;
     $('zoom-1').onclick = () => { if (!S.img) return; zoomAt(1 / S.view.zoom); };
     $('frame').onchange = e => { S.frame = +e.target.value; S.dirtyImage = true; draw(); };
@@ -661,6 +726,7 @@
       if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
       else if (!mod && e.key.toLowerCase() === 'f') fit();
+      else if (!mod && e.key.toLowerCase() === 'v') rotateView();
       else if (!mod && e.key.toLowerCase() === 'c' && !e.repeat && !$('btn-compare').disabled) setComparing(true);
       else if (e.key === 'Escape') { S.crop = null; syncCropInputs(); draw(); }
     });

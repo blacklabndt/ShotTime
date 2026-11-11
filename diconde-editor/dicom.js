@@ -403,7 +403,7 @@
     }
     const num = t => { const v = getNumber(ds, t); return v == null || !isFinite(v) ? null : v; };
     return { rows, cols, frames: out, bitsAllocated: ba, bitsStored: bs, signed: !!pr, photometric, min, max,
-      slope: num(0x00281053) ?? 1, intercept: num(0x00281052) ?? 0, windowCenter: num(0x00281050), windowWidth: num(0x00281051) };
+      slope: num(0x00281053) ?? 1, intercept: num(0x00281052) ?? 0, padding: num(0x00280120), windowCenter: num(0x00281050), windowWidth: num(0x00281051) };
   }
 
   function setImage(file, img, opts = {}) {
@@ -450,12 +450,15 @@
     return /^\s*<\?xml|^\s*<presentation_state/.test(text) ? { tag: ix.xmlTag, text } : null;
   }
   // Values INDUSTREX keeps in its XML for a DICOM tag, or null when the XML has no entry for it.
-  function industrexXmlValues(ds, tag) {
+  function industrexXmlValues(ds, tag) { return industrexXmlEntry(ds, `${hex4(tag >>> 16)},${hex4(tag & 0xFFFF)}`); }
+  // Any entry of the XML mirror by key, e.g. 'ANGLE' (INDUSTREX's viewing rotation) or '0010,0020'.
+  function industrexXmlEntry(ds, key) {
     const x = industrexXml(ds); if (!x) return null;
-    const key = `${hex4(tag >>> 16)},${hex4(tag & 0xFFFF)}`;
-    const m = new RegExp(`<diconde KEY="${key}"\\s*(?:/>|>([\\s\\S]*?)</diconde>)`).exec(x.text);
+    key = key.replace(/[^\w,]/g, '');
+    // DICOM fields are <diconde KEY="gggg,eeee">; INDUSTREX's own settings (ANGLE, DEFAULTWL, …) are <non_diconde>.
+    const m = new RegExp(`<(non_diconde|diconde) KEY="${key}"\\s*(?:/>|>([\\s\\S]*?)</\\1>)`).exec(x.text);
     if (!m) return null;
-    return [...(m[1] || '').matchAll(/<value>([\s\S]*?)<\/value>|<value\s*\/>/g)].map(v => xmlUnesc(v[1] || ''));
+    return [...(m[2] || '').matchAll(/<value>([\s\S]*?)<\/value>|<value\s*\/>/g)].map(v => xmlUnesc(v[1] || ''));
   }
   // Copies the current values of `tags` into existing entries of INDUSTREX's XML mirror, leaving the rest
   // of the XML byte for byte. Returns the tags updated. Tags without an entry are not added.
@@ -487,6 +490,26 @@
     const ix = g === 0x0033 ? industrexInfo(ds) : null;
     const name = ix && ix.block === e >> 8 && INDUSTREX_NAMES[e & 0xFF] ? INDUSTREX_NAMES[e & 0xFF] : `Private data${creator ? ' (' + creator + ')' : ''}`;
     return Object.assign({}, info, { name, dicomName: name });
+  }
+
+  // Image attributes needed to decode compressed pixel data.
+  function imageGeometry(file) {
+    const ds = file.ds, ba = getNumber(ds, 0x00280100) || 16;
+    return { rows: getNumber(ds, 0x00280010), cols: getNumber(ds, 0x00280011), frames: Math.max(1, getNumber(ds, 0x00280008) || 1),
+      bitsAllocated: ba, bitsStored: getNumber(ds, 0x00280101) || ba, signed: !!getNumber(ds, 0x00280103), samplesPerPixel: getNumber(ds, 0x00280002) || 1 };
+  }
+  // An editable image from decoded frames (raw little-endian bytes), leaving the file's compressed data alone.
+  function imageFromFrames(file, frameBytes) {
+    let n = 0; frameBytes.forEach(b => { n += b.length; });
+    const all = new Uint8Array(n); let p = 0; frameBytes.forEach(b => { all.set(b, p); p += b.length; });
+    const ds = { el: new Map(file.ds.el) };
+    ds.el.set(PIXEL, { tag: PIXEL, vr: 'OW', value: all });
+    return getImage({ meta: file.meta, ds, transferSyntax: TS.EXPLICIT_LE });
+  }
+  // Stores compressed frames (one codestream per frame, empty offset table) and the transfer syntax they use.
+  function setEncapsulated(file, codestreams, ts) {
+    file.ds.el.set(PIXEL, { tag: PIXEL, vr: 'OB', fragments: [new Uint8Array(0)].concat(codestreams) });
+    file.transferSyntax = ts; file.encapsulated = true;
   }
 
   function now() {
@@ -529,5 +552,5 @@
   }
 
   return { TS, TS_NAMES, PIXEL, DicomError, DICT, parse, write, clone, tagInfo, tagHex, parseTag, findTagsByText, validate, editable, valueToText,
-    textToBytes, getElement, charsetMode, foldText, industrexInfo, industrexXmlValues, syncIndustrexXml, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
+    textToBytes, getElement, imageGeometry, imageFromFrames, setEncapsulated, charsetMode, foldText, industrexInfo, industrexXmlValues, industrexXmlEntry, syncIndustrexXml, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
 });
