@@ -34,6 +34,13 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
   - Display only: shown on screen and in PNG/PDF exports. **Apply to pixels** writes it into the image as an undoable step, recorded in Derivation Description, and the copy is marked DERIVED.
   - Takes about 1 second on a full 1353×4266 plate.
 - **Image clean-up**: window and level (display only; you can store it as the copy's default), invert view, rotate, flip, 3×3 median noise reduction, bad-pixel repair, Gaussian smoothing, unsharp-mask sharpening, invert pixel values, and up to 12 undo steps.
+- **Scratch repair** (Image tab, and the **Scratch** mouse tool) for damaged plates:
+  - Only thin lines (up to a set width, default 7 px) that read as less radiation than the plate on both sides are repaired. That is the direction a damaged phosphor or dust shifts a CR image. Each is filled by straight interpolation between the plate either side.
+  - Lines reading as more radiation (cracks, lack of fusion, porosity, undercut) are never changed, and a spot next to one is left alone. Steps such as plate edges or weld toes, plate texture (a line must dip at least 1% of the plate-to-background range) and wide bands are not changed either.
+  - **Scratch tool**: drag along a scratch to repair what lies inside that narrow band. Dragging over a lead marker or IQI wire could alter it, so draw only over scratches.
+  - **Find long scratches**: proposes long straight scratches (half the plate or longer, tilted up to 2°), such as scanner roller scratches, drawn in cyan for checking before **Repair found scratches**. IQI wires and markers are too short to be proposed, and the gap between two strips is recognised and skipped.
+  - Every repair is an undoable step, recorded in Derivation Description; the copy is marked DERIVED.
+  - On the owner's five plates nothing was proposed (no scratches). A synthetic 2-pixel scratch added to one of them was found and restored to within 1.9 counts of the original (the plate's noise level), with no other pixel changed.
 - **Find film pieces** (Crop & split tab):
   - Finds each piece of film or plate on its own from the background around it (near-zero signal or the Pixel Padding Value) and turns them into split regions.
   - Works by cutting along the cleanest gap first, in either direction, then trimming each piece to its edges. Pieces scanned together can be separated by a thin line tilted up to 2°; the dividing line is found and drawn in red.

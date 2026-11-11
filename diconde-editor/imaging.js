@@ -410,6 +410,154 @@
       return rect;
     }).filter(r => r.w >= minSize && r.h >= minSize);
   }
+  // Which way "less radiation" goes: towards the no-signal (background) level. On raw CR/DR data that is low
+  // values (+1); if the image border sits near the top of the range it is high (-1). Plate scratches and dust
+  // read as less radiation; cracks, lack of fusion, porosity and undercut read as more radiation.
+  function lessRadiationSign(a, w, h, pad) {
+    const st = stats(a, pad); let sum = 0, n = 0; const step = Math.max(1, Math.floor(Math.min(w, h) / 200));
+    for (let x = 0; x < w; x += step) { sum += a[x] + a[(h - 1) * w + x]; n += 2; }
+    for (let y = 0; y < h; y += step) { sum += a[y * w] + a[y * w + w - 1]; n += 2; }
+    return sum / n > st.pct(90) ? -1 : 1;
+  }
+
+  // Pixel noise of a frame: robust spread of each pixel's difference from the mean of its left/right neighbours.
+  function noiseLevel(a, w, h, pad) {
+    const d = []; const step = Math.max(1, Math.floor((w * h) / 200000));
+    for (let i = w + 1; i < w * h - w - 1; i += step) {
+      const x = i % w; if (x < 1 || x > w - 2) continue;
+      if (pad != null && (a[i] === pad || a[i - 1] === pad || a[i + 1] === pad)) continue;
+      d.push(Math.abs(a[i] - (a[i - 1] + a[i + 1]) / 2));
+    }
+    d.sort((p, q) => p - q);
+    return d.length ? Math.max(1, 1.4826 * d[d.length >> 1] / Math.sqrt(1.5)) : 1;
+  }
+
+  // Repairs a thin scratch along a drawn segment { x0, y0, x1, y1 }. At each step along the segment, pixels
+  // across it (within ±band) are examined: a run at most maxWidth wide that is darker-in-radiation terms
+  // ("less radiation", `sign`) than the plate on BOTH sides by more than 4× the local noise is replaced by a
+  // straight interpolation between the two sides. Features reading as more radiation (cracks, voids) and plain
+  // edges (a step with one side unchanged) are never changed. Returns { frame, count } (a new array).
+  function repairScratch(a, w, h, seg, o = {}) {
+    const out = a.slice(), B = Math.max(4, Math.round(o.band ?? 8)), maxW = Math.max(1, Math.round(o.maxWidth ?? 9));
+    const sign = o.sign || 1, lo = o.min ?? -Infinity, hi = o.max ?? Infinity, pad = o.padding;
+    const dx = seg.x1 - seg.x0, dy = seg.y1 - seg.y0, vertical = Math.abs(dy) >= Math.abs(dx);
+    const len = Math.max(1, Math.round(Math.max(Math.abs(dx), Math.abs(dy))));
+    const half = Math.ceil(maxW / 2) + 1, vals = new Float64Array(2 * B + 1), idx = new Int32Array(2 * B + 1);
+    const med = arr => { const c = arr.slice().sort((p, q) => p - q); return c.length ? c[c.length >> 1] : NaN; };
+    let count = 0;
+    for (let i = 0; i <= len; i++) {
+      const cx = Math.round(seg.x0 + dx * i / len), cy = Math.round(seg.y0 + dy * i / len);
+      let ok = true;
+      for (let d = -B; d <= B; d++) {
+        const x = vertical ? cx + d : cx, y = vertical ? cy : cy + d;
+        if (x < 0 || y < 0 || x >= w || y >= h) { ok = false; break; }
+        idx[d + B] = y * w + x; vals[d + B] = sign * a[y * w + x];
+        if (pad != null && a[y * w + x] === pad) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const left = [], right = [];
+      for (let d = half; d <= B; d++) { left.push(vals[B - d]); right.push(vals[B + d]); }
+      const mL = med(left), mR = med(right), ref = Math.min(mL, mR);
+      const noise = o.noise > 0 ? o.noise : 1.4826 * med(left.concat(right).map(v => Math.abs(v - med(left.concat(right))))) || 1;
+      const thr = Math.max(o.minContrast || 0, 4 * noise);
+      // Never repair next to a feature reading as more radiation (a crack, void or undercut): leave the spot alone.
+      let brighter = false;
+      for (let d = -B; d <= B && !brighter; d++) if (vals[B + d] - Math.max(mL, mR) > thr) brighter = true;
+      if (brighter) continue;
+      // deepest point near the centre, then the run around it
+      let c = 0, best = -Infinity;
+      for (let d = -half + 1; d < half; d++) { const depth = ref - vals[B + d]; if (depth > best) { best = depth; c = d; } }
+      if (best <= thr) continue;
+      let l = c, r = c;
+      while (l - 1 > -half && ref - vals[B + l - 1] > thr * 0.5) l--;
+      while (r + 1 < half && ref - vals[B + r + 1] > thr * 0.5) r++;
+      if (r - l + 1 > maxW) continue;
+      const vl = sign * (vals[B + l - 1] + vals[B + l - 2]) / 2, vr = sign * (vals[B + r + 1] + vals[B + r + 2]) / 2;
+      for (let d = l; d <= r; d++) {
+        const t = (d - l + 1) / (r - l + 2), v = vl + (vr - vl) * t;
+        out[idx[B + d]] = Math.min(hi, Math.max(lo, Math.round(v)));
+        count++;
+      }
+    }
+    return { frame: out, count };
+  }
+
+  // Finds long, straight, thin scratches (such as scanner roller scratches along a plate), up to maxTiltDeg from
+  // vertical or horizontal. A pixel is "line-like" when it reads as less radiation than the plate on both sides
+  // (3–8 px away) by more than 4× the image's noise. Rows are grouped into blocks; a line is reported where
+  // line-like pixels follow one straight path through at least minCoverage of the blocks it spans and the line
+  // is at least minLength long. Dips going most of the way to background (the gap between two pieces) are
+  // left alone. IQI wires and markers are far shorter than minLength. Returns [{ x0, y0, x1, y1, coverage }].
+  function findScratches(a, w, h, o = {}) {
+    const pad = o.padding, sign = o.sign || lessRadiationSign(a, w, h, pad);
+    const st = stats(a, pad), bgLevel = sign > 0 ? st.pct(0.1) : st.pct(99.9), base = st.pct(50);
+    const minLen = o.minLength ?? Math.round(0.5 * Math.max(w, h)), minCov = o.minCoverage ?? 0.6;
+    const maxK = Math.tan((o.maxTiltDeg ?? 2) * Math.PI / 180);
+    const found = [];
+    for (const vertical of [true, false]) {
+      const W = vertical ? w : h, H = vertical ? h : w; // scan lines run along H
+      const get = (x, y) => (vertical ? a[y * w + x] : a[x * w + y]);
+      // valley strength per pixel: how far below the lower of its two sides (in "less radiation" units)
+      const S = new Float32Array(W * H), cs = new Float64Array(W + 1), plateMin = sign * bgLevel + 0.5 * (sign * base - sign * bgLevel);
+      for (let y = 0; y < H; y++) {
+        cs[0] = 0; for (let x = 0; x < W; x++) cs[x + 1] = cs[x] + sign * get(x, y);
+        for (let x = 8; x < W - 8; x++) {
+          const v = sign * get(x, y), L = (cs[x - 2] - cs[x - 8]) / 6, R = (cs[x + 9] - cs[x + 3]) / 6;
+          // only on plate: both sides well above background (excludes plate edges and unexposed areas)
+          const pv = get(x, y); S[y * W + x] = (pad != null && pv === pad) || Math.min(L, R) < plateMin ? 0 : Math.min(L, R) - v;
+        }
+      }
+      const sample = []; for (let i = 0; i < S.length; i += 97) sample.push(Math.abs(S[i]));
+      sample.sort((p, q) => p - q);
+      // at least 4× the noise and 1.5% of the plate-to-background range (smooth CR data has very little noise)
+      const noise = Math.max(1, 1.4826 * sample[sample.length >> 1]), thr = Math.max(4 * noise, 0.015 * Math.abs(base - bgLevel));
+      const BL = 32, nb = Math.floor(H / BL);
+      if (nb < 2) continue;
+      // per block, per column: fraction of rows where the pixel (or a neighbour) is line-like
+      const C = new Float32Array(nb * W);
+      for (let b = 0; b < nb; b++) for (let y = b * BL; y < (b + 1) * BL; y++) for (let x = 9; x < W - 9; x++) {
+        const i = y * W + x; if (S[i] > thr || S[i - 1] > thr || S[i + 1] > thr) C[b * W + x] += 1 / BL;
+      }
+      const maxD = Math.round(maxK * H), cand = [];
+      for (let d = -maxD; d <= maxD; d += 2) {
+        for (let x0 = 9; x0 < W - 9; x0++) {
+          let hit = 0, first = -1, last = -1;
+          for (let b = 0; b < nb; b++) {
+            const x = Math.round(x0 + d * ((b + 0.5) * BL) / H);
+            if (x < 9 || x >= W - 9) continue;
+            if (C[b * W + x] >= 0.5) { hit++; if (first < 0) first = b; last = b; }
+          }
+          if (first < 0) continue;
+          const span = last - first + 1, cov = hit / span;
+          if (span * BL >= minLen && cov >= minCov) cand.push({ x0, d, first, last, cov, score: hit });
+        }
+      }
+      // keep the strongest of nearby candidates (same scratch seen at neighbouring columns or tilts)
+      cand.sort((p, q) => q.score - p.score || q.cov - p.cov);
+      const kept = [];
+      for (const c of cand) {
+        const xm = c.x0 + c.d / 2;
+        if (kept.some(k => Math.abs(k.x0 + k.d / 2 - xm) < 8)) continue;
+        // skip gaps between pieces: along most of its length the line drops below 60% of the way from background
+        // to the plate level (the thin gap between two strips does; a phosphor scratch does not)
+        let gapLike = 0, n = 0;
+        for (let y = c.first * BL; y < (c.last + 1) * BL; y += 7) {
+          const x = Math.round(c.x0 + c.d * y / H); if (x < 4 || x >= W - 4) continue;
+          let m = Infinity; for (let q = -4; q <= 4; q++) m = Math.min(m, sign * get(x + q, y));
+          if (m - sign * bgLevel < 0.6 * (sign * base - sign * bgLevel)) gapLike++;
+          n++;
+        }
+        if (!n || gapLike / n > 0.5) continue;
+        kept.push(c);
+      }
+      for (const c of kept) {
+        const y0 = c.first * BL, y1 = (c.last + 1) * BL - 1, xa = c.x0 + c.d * y0 / H, xb = c.x0 + c.d * y1 / H;
+        found.push(vertical ? { x0: xa, y0, x1: xb, y1, coverage: +c.cov.toFixed(2) } : { x0: y0, y0: xa, x1: y1, y1: xb, coverage: +c.cov.toFixed(2) });
+      }
+    }
+    return found;
+  }
+
   // Sets pixels of a cropped piece that lie across its dividing lines (in a neighbouring piece) to `fill`.
   // `rect` is the piece rectangle the frame was cropped to; returns the number of pixels filled.
   function fillOutsideCuts(frame, rect, fill) {
@@ -444,5 +592,5 @@
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
   }
 
-  return { findPieces, fillOutsideCuts, boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
+  return { noiseLevel, lessRadiationSign, repairScratch, findScratches, findPieces, fillOutsideCuts, boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
 });

@@ -77,7 +77,7 @@
     let file;
     try { file = await D.parse(bytes); } catch (e) { toast(`Could not open ${name}: ${e.message}`, true); return; }
     S.orig = file; S.file = D.clone(file); S.name = name;
-    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.frame = 0; S.comparing = false; savedState = '';
+    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.scratches = []; S.frame = 0; S.comparing = false; savedState = '';
     let img = D.getImage(S.file);
     S.decoded = false; S.edge.on = false; S.edgeCache = null; S.rawAutoWidth = null;
     if (img.compressed && window.Codec && Codec.canDecode(file.transferSyntax)) {
@@ -498,6 +498,13 @@
       box(S.crop, '#4cc3ff', `${Math.round(S.crop.w)}×${Math.round(S.crop.h)}`, true);
     }
     S.regions.forEach((r, i) => box(r, '#f5a623', String(i + 1)));
+    { // scratch candidates and the line being drawn
+      const v = S.view, sc = (x, y) => { const q = I.toView(x, y, S.img.cols, S.img.rows, S.viewRot); return [v.x + q.x * v.zoom, v.y + q.y * v.zoom]; };
+      const seg = (l, color, label) => { const p0 = sc(l.x0, l.y0), p1 = sc(l.x1, l.y1); ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.setLineDash([10, 6]); ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke(); ctx.setLineDash([]);
+        if (label) { ctx.font = 'bold 13px system-ui'; ctx.fillStyle = color; ctx.fillRect(p0[0] + 4, p0[1] + 4, ctx.measureText(label).width + 10, 20); ctx.fillStyle = '#000'; ctx.fillText(label, p0[0] + 9, p0[1] + 18); } ctx.restore(); };
+      (S.scratches || []).forEach((l, i) => seg(l, '#3df0ff', 'S' + (i + 1)));
+      if (S.drag && S.drag.mode === 'scratch' && S.drag.line) seg(S.drag.line, '#3df0ff');
+    }
     // Tilted dividing lines between pieces, drawn across each piece's rectangle.
     const toScreen = (x, y) => { const q = I.toView(x, y, S.img.cols, S.img.rows, S.viewRot), v = S.view; return [v.x + q.x * v.zoom, v.y + q.y * v.zoom]; };
     ctx.save(); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
@@ -574,10 +581,12 @@
       S.win.w = Math.max(1, d.win.w + dx * k); S.win.c = d.win.c - dy * k; S.dirtyImage = true; syncWindowInputs(); draw();
     } else if (d.mode === 'crop') { S.crop = clampRect(d.start, p); syncCropInputs(); draw(); }
     else if (d.mode === 'regions') { d.rect = clampRect(d.start, p); draw(); }
+    else if (d.mode === 'scratch') { d.line = { x0: d.start.x, y0: d.start.y, x1: p.x, y1: p.y }; draw(); }
   }
   function onUp(ev) {
     const d = S.drag; S.drag = null; if (!d) return;
     if (d.mode === 'crop' && S.crop && (S.crop.w < 2 || S.crop.h < 2)) S.crop = null;
+    if (d.mode === 'scratch' && d.line && Math.hypot(d.line.x1 - d.line.x0, d.line.y1 - d.line.y0) >= 8) repairScratches([d.line], 'drawn');
     if (d.mode === 'regions' && d.rect && d.rect.w >= 4 && d.rect.h >= 4) { S.regions.push({ ...d.rect, label: String(S.regions.length + 1) }); renderRegions(); }
     syncCropInputs(); draw();
   }
@@ -610,6 +619,7 @@
     setImg(next);
   }
   function setImg(next) {
+    if (next !== S.img) { S.scratches = []; if (typeof renderScratches === 'function') renderScratches(); }
     S.img = next; S.dirtyImage = true; S.rawAutoWidth = null;
     if (S.frame >= next.frames.length) S.frame = 0;
     refreshImageUi(); renderHistory(); syncCropInputs(); draw();
@@ -659,6 +669,49 @@
     $('btn-undo').disabled = !S.undo.length; $('btn-redo').disabled = !S.redo.length; $('btn-revert-img').disabled = !S.ops.length;
     $('btn-undo').textContent = S.undo.length ? `Undo: ${S.undo[S.undo.length - 1].text}` : 'Undo';
     if (S.img) syncWindowInputs();
+  }
+
+  // ---------- scratch repair ----------
+  function scratchOpts() {
+    const img = S.img, a = frameData();
+    if (S.noise == null || S.noiseFor !== img) { S.noise = I.noiseLevel(a, img.cols, img.rows, img.padding); S.noiseFor = img; }
+    const maxWidth = Math.max(1, Math.min(15, parseInt($('scr-w').value, 10) || 7));
+    const st = I.stats(a, img.padding), sign = I.lessRadiationSign(a, img.cols, img.rows, img.padding);
+    const range = Math.abs(st.pct(50) - (sign > 0 ? st.pct(0.1) : st.pct(99.9)));
+    // a repaired line must dip by at least 1% of the plate-to-background range, so plate texture is never smoothed
+    return { sign, noise: S.noise, minContrast: 0.01 * range, maxWidth, band: Math.max(8, maxWidth + 6), min: img.min, max: img.max, padding: img.padding };
+  }
+  // Repairs each segment on every frame as one undoable step.
+  function repairScratches(segs, kind) {
+    if (!S.img || !segs.length) return;
+    busy(() => {
+      const img = S.img, o = scratchOpts(); let count = 0;
+      const frames = img.frames.map(f => { let cur = f; for (const s of segs) { const r = I.repairScratch(cur, img.cols, img.rows, s, o); cur = r.frame; if (f === frameData()) count += r.count; } return cur; });
+      if (!count) {
+        toast(kind === 'drawn' ? 'No scratch found along that line. Only thin lines reading as less radiation than the plate on both sides are repaired; anything near a crack or void is left alone.' : 'Nothing was repaired.', !!0);
+        return;
+      }
+      const r = n => Math.round(n);
+      const text = kind === 'drawn' ? `Scratch repaired along (${r(segs[0].x0)}, ${r(segs[0].y0)})–(${r(segs[0].x1)}, ${r(segs[0].y1)}): ${count} pixels`
+        : `Repaired ${segs.length} long scratch${segs.length === 1 ? '' : 'es'}: ${count} pixels`;
+      S.scratches = []; renderScratches();
+      pushImage(Object.assign({}, img, { frames }), text);
+      toast(text + '. Undo is available.');
+    }, 'Repairing…');
+  }
+  function findScratches() {
+    if (!S.img) return;
+    busy(() => {
+      const img = S.img, o = scratchOpts();
+      S.scratches = I.findScratches(frameData(), img.cols, img.rows, { padding: img.padding, sign: o.sign });
+      renderScratches(); draw();
+      toast(S.scratches.length ? `Found ${S.scratches.length} long scratch${S.scratches.length === 1 ? '' : 'es'} (shown in cyan). Check them, then Repair found scratches.` : 'No long scratches found. Draw over short ones with the Scratch tool.');
+    }, 'Looking for scratches…');
+  }
+  function renderScratches() {
+    const n = (S.scratches || []).length;
+    $('scr-found').classList.toggle('hidden', !n); $('scr-repair').classList.toggle('hidden', !n); $('scr-clear').classList.toggle('hidden', !n);
+    $('scr-found').textContent = n ? S.scratches.map((l, i) => `S${i + 1}: ${Math.round(Math.hypot(l.x1 - l.x0, l.y1 - l.y0))} px long, on ${Math.round(l.coverage * 100)}% of its length`).join(' · ') : '';
   }
 
   // ---------- crop & regions ----------
@@ -966,6 +1019,11 @@
     document.querySelectorAll('[data-op]').forEach(b => b.onclick = () => runOp(b.dataset.op));
     $('btn-undo').onclick = undo; $('btn-redo').onclick = redo; $('btn-revert-img').onclick = revertImage;
 
+    $('scr-draw').onclick = () => { setTool('scratch'); toast('Drag along a scratch on the image. Right-drag still adjusts the window.'); };
+    $('scr-find').onclick = findScratches; $('scr-repair').onclick = () => repairScratches(S.scratches.slice(), 'found');
+    $('scr-clear').onclick = () => { S.scratches = []; renderScratches(); draw(); };
+    $('scr-w-r').addEventListener('input', () => { $('scr-w').value = $('scr-w-r').value; });
+    $('scr-w').addEventListener('change', () => { $('scr-w-r').value = $('scr-w').value; });
     $('crop-draw').onclick = () => setTool('crop'); $('crop-apply').onclick = applyCrop; $('crop-clear').onclick = () => { S.crop = null; syncCropInputs(); draw(); };
     ['cr-x', 'cr-y', 'cr-w', 'cr-h'].forEach(id => $(id).addEventListener('change', cropFromInputs));
     $('sp-make').onclick = makeEqualParts; $('sp-auto').onclick = autoSplit; $('sp-clear').onclick = () => { S.regions = []; renderRegions(); draw(); }; $('sp-export').onclick = exportSplit;

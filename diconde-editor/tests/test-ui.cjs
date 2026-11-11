@@ -370,6 +370,52 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     ok('find film pieces');
   }
 
+  // Scratch repair: find a long roller-type scratch, repair, undo; then draw over a short one; a crack stays.
+  {
+    const W = 300, H = 800, px = new Uint16Array(W * H);
+    let seed = 9; const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) px[y * W + x] = x < 15 ? 10 : 2800 + Math.round((rnd() - 0.5) * 80);
+    for (let y = 40; y < 760; y++) { px[y * W + 100] -= 400; px[y * W + 101] -= 250; }     // long scratch
+    for (let y = 300; y < 420; y++) px[y * W + 200] -= 400;                              // short scratch
+    for (let y = 100; y < 700; y++) px[y * W + 250] += 400;                              // crack (more radiation)
+    const f = makeSample({ rows: H, cols: W, bitsStored: 12 });
+    f.ds.el.set(D.PIXEL, { tag: D.PIXEL, vr: 'OW', value: new Uint8Array(px.buffer) });
+    const scrPath = path.join(tmp, 'scratched.dcm'); fs.writeFileSync(scrPath, D.write(f));
+    await page.setInputFiles('#file-input', scrPath);
+    await page.waitForFunction(() => /Opened scratched/.test(document.getElementById('toast').textContent));
+    await page.click('[data-tab=image]');
+    await page.click('#scr-find');
+    await page.waitForFunction(() => /long scratch/.test(document.getElementById('toast').textContent));
+    assert.match(await page.textContent('#toast'), /Found 1 long scratch/);
+    assert.match(await page.textContent('#scr-found'), /S1: \d+ px long/);
+    await page.click('#scr-repair');
+    await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+    assert.match(await page.textContent('#btn-undo'), /Repaired 1 long scratch: \d+ pixels/);
+    const at = (x, y) => page.evaluate(([x, y]) => { const S = window.__editor.S; return S.img.frames[0][y * S.img.cols + x]; }, [x, y]);
+    assert.ok(await at(100, 400) > 2650 && await at(250, 400) > 3100, 'scratch filled, crack unchanged');
+    await page.click('#btn-undo'); await page.waitForFunction(() => window.__editor.S.ops.length === 0);
+    assert.ok(await at(100, 400) < 2500, 'undo restores');
+    // Draw with the Scratch tool along the short scratch, then along the crack.
+    await page.click('#scr-draw');
+    const toScreen = (x, y) => page.evaluate(([x, y]) => {
+      const S = window.__editor.S, r = document.getElementById('view').getBoundingClientRect();
+      const q = window.Imaging.toView(x, y, S.img.cols, S.img.rows, S.viewRot);
+      return [r.left + S.view.x + q.x * S.view.zoom, r.top + S.view.y + q.y * S.view.zoom];
+    }, [x, y]);
+    const drag = async (x0, y0, x1, y1) => { const a = await toScreen(x0, y0), b = await toScreen(x1, y1); await page.mouse.move(a[0], a[1]); await page.mouse.down(); await page.mouse.move(b[0], b[1], { steps: 6 }); await page.mouse.up(); };
+    await drag(200.5, 290, 200.5, 430);
+    await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+    assert.match(await page.textContent('#btn-undo'), /Scratch repaired along \(\d+, \d+\)–\(\d+, \d+\): \d+ pixels/);
+    assert.ok(await at(200, 360) > 2650);
+    await drag(250.5, 120, 250.5, 680);
+    await page.waitForFunction(() => /No scratch found along that line/.test(document.getElementById('toast').textContent));
+    assert.strictEqual(await page.evaluate(() => window.__editor.S.ops.length), 1, 'crack left alone');
+    const saved = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+    assert.match(D.getString(saved.ds, 0x00082111), /Scratch repaired along/);
+    await page.click('[data-tool=pan]');
+    ok('scratch repair');
+  }
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');

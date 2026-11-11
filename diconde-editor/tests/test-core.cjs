@@ -507,6 +507,51 @@ test('film pieces: padding is background, a full-frame plate is one piece, empty
   assert.deepStrictEqual(I.findPieces(new Uint16Array(w * h).fill(20), w, h, { padding: 20 }), []);
 });
 
+// Plate ~2800 with noise and a weld band, a background strip, then optional damage.
+function plate(w, h) {
+  let seed = 3; const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const a = new Uint16Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) a[y * w + x] = x < 20 ? 10 : 2800 + Math.round((r() - 0.5) * 80) + (Math.abs(x - 200) < 40 ? -60 : 0);
+  return a;
+}
+const scratchAt = y => Math.round(120 + 0.01 * y);
+
+test('scratch repair: removes a phosphor scratch, never touches cracks, edges or plain plate', () => {
+  const w = 400, h = 1000, a = plate(w, h), clean = a.slice();
+  for (let y = 50; y < 950; y++) { a[y * w + scratchAt(y)] -= 400; a[y * w + scratchAt(y) + 1] -= 250; }  // less radiation: scratch
+  for (let y = 100; y < 900; y++) a[y * w + 300] += 400;                                               // more radiation: crack
+  for (let y = 300; y < 400; y++) { a[y * w + 340] -= 400; a[y * w + 343] += 400; }                    // scratch beside a crack
+  for (let y = 0; y < h; y++) for (let x = 360; x < 380; x++) a[y * w + x] -= 400;                      // 20 px band: too wide to be a scratch
+  const o = { sign: 1, noise: I.noiseLevel(a, w, h), min: 0, max: 4095 };
+  const r = I.repairScratch(a, w, h, { x0: 120.5, y0: 50, x1: 129.5, y1: 949 }, o);
+  let worst = 0; for (let y = 60; y < 940; y++) for (const x of [scratchAt(y), scratchAt(y) + 1]) worst = Math.max(worst, Math.abs(r.frame[y * w + x] - clean[y * w + x]));
+  assert.ok(r.count > 1700 && worst < 90, `repaired ${r.count}, worst ${worst}`);
+  const changed = (f, g) => { let n = 0; for (let i = 0; i < f.length; i++) if (f[i] !== g[i]) n++; return n; };
+  assert.strictEqual(changed(r.frame, a), r.count, 'only scratch pixels changed');
+  for (const seg of [{ x0: 300, y0: 100, x1: 300, y1: 899 }, { x0: 340, y0: 300, x1: 340, y1: 399 }, { x0: 370, y0: 0, x1: 370, y1: 999 }, { x0: 60, y0: 0, x1: 60, y1: 999 }, { x0: 20, y0: 0, x1: 20, y1: 999 }])
+    assert.strictEqual(I.repairScratch(a, w, h, seg, o).count, 0, `segment ${JSON.stringify(seg)} must not change`);
+  // when higher values mean less radiation, the same logic works the other way round
+  const inv = Uint16Array.from(a, v => 4095 - v), ri = I.repairScratch(inv, w, h, { x0: 120.5, y0: 50, x1: 129.5, y1: 949 }, Object.assign({}, o, { sign: -1 }));
+  assert.ok(ri.count > 1700);
+  assert.strictEqual(I.repairScratch(inv, w, h, { x0: 300, y0: 100, x1: 300, y1: 899 }, Object.assign({}, o, { sign: -1 })).count, 0);
+});
+
+test('find long scratches: only long thin less-radiation lines, not cracks, IQI wires, gaps or edges', () => {
+  const w = 400, h = 1000, a = plate(w, h);
+  for (let y = 50; y < 950; y++) { a[y * w + scratchAt(y)] -= 400; a[y * w + scratchAt(y) + 1] -= 250; }
+  for (let y = 100; y < 900; y++) a[y * w + 300] += 400;          // crack
+  for (let y = 400; y < 520; y++) a[y * w + 60] -= 300;           // IQI wire: short
+  for (let y = 0; y < h; y++) for (let x = 268; x <= 272; x++) a[y * w + x] = 1400; // gap between two strips
+  const found = I.findScratches(a, w, h, {});
+  assert.strictEqual(found.length, 1, JSON.stringify(found));
+  assert.ok(Math.abs(found[0].x0 - scratchAt(found[0].y0)) <= 3 && Math.abs(found[0].x1 - scratchAt(found[0].y1)) <= 3 && found[0].y1 - found[0].y0 > 800, JSON.stringify(found[0]));
+  assert.deepStrictEqual(I.findScratches(plate(w, h), w, h, {}), [], 'undamaged plate');
+  // horizontal scratch on a transposed plate
+  const t = new Uint16Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) t[x * h + y] = a[y * w + x];
+  const ft = I.findScratches(t, h, w, {});
+  assert.ok(ft.some(f => Math.abs(f.y0 - scratchAt(f.x0)) <= 3), JSON.stringify(ft));
+});
+
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);
 
 test('rotation, flips and crop move pixels correctly', () => {
