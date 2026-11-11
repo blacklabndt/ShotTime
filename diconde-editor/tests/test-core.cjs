@@ -6,6 +6,7 @@ const D = require('../dicom.js');
 const I = require('../imaging.js');
 const X = require('../export.js');
 const { makeSample } = require('../tools/make-sample.cjs');
+const { makeIndustrexLike, implicitBytes } = require('./industrex-fixture.cjs');
 
 let passed = 0;
 const tests = [];
@@ -165,6 +166,82 @@ test('metadata-only copy keeps image type and series', () => {
   assert.strictEqual(D.getString(copy.ds, 0x00080008), 'ORIGINAL\\PRIMARY');
   assert.strictEqual(D.getString(copy.ds, 0x0020000E), D.getString(src.ds, 0x0020000E));
   assert.notStrictEqual(D.getString(copy.ds, 0x00080018), D.getString(src.ds, 0x00080018));
+});
+
+test('INDUSTREX private block and DICONDE names are recognised', () => {
+  const f = makeIndustrexLike();
+  const ix = D.industrexInfo(f.ds);
+  assert.deepStrictEqual([ix.creator, ix.version, ix.staleTags], ['CSH_TEST', '5.2', [0x00331040, 0x00331071, 0x00331072]]);
+  assert.strictEqual(D.describeTag(f.ds, 0x00331071).name, 'INDUSTREX presentation image');
+  assert.strictEqual(D.describeTag(f.ds, 0x00330010).name, 'Private creator');
+  assert.strictEqual(D.tagInfo(0x00081048).name, 'Inspecting Company Name');
+  assert.strictEqual(D.tagInfo(0x00081048).dicomName, 'Physicians Of Record');
+  assert.strictEqual(D.tagInfo(0x00100030).name, 'Component Manufacturing Date');
+  assert.strictEqual(D.tagInfo(0x00180015).name, 'Part Examined');
+});
+
+test('another vendor block in group 0033 is left alone', () => {
+  const f = makeSample();
+  f.ds.el.set(0x00330010, { tag: 0x00330010, vr: 'LO', value: Uint8Array.from(Buffer.from('OTHER VENDOR')) });
+  f.ds.el.set(0x00331040, { tag: 0x00331040, vr: 'OB', value: new Uint8Array(2) });
+  assert.strictEqual(D.industrexInfo(f.ds), null);
+  assert.strictEqual(D.describeTag(f.ds, 0x00331040).name, 'Private data (OTHER VENDOR)');
+  const copy = D.derive(D.clone(f), f, { pixelsChanged: true, description: 'x' });
+  assert.ok(copy.ds.el.has(0x00331040));
+});
+
+test('metadata-only copy of an INDUSTREX file keeps private data and icon byte for byte', async () => {
+  const src = makeIndustrexLike();
+  const copy = D.clone(src);
+  D.setText(copy.ds, 0x00100020, 'NEW-ID');
+  const out = await D.parse(D.write(D.derive(copy, src, {})));
+  for (const t of [0x00330010, 0x00331010, 0x00331040, 0x00331071, 0x00331072]) assert.deepStrictEqual([...out.ds.el.get(t).value], [...src.ds.el.get(t).value].concat(src.ds.el.get(t).value.length % 2 ? [src.ds.el.get(t).vr === 'OB' ? 0 : 0x20] : []), D.tagHex(t));
+  assert.strictEqual(out.ds.el.get(0x00880200).items.length, 1);
+  assert.strictEqual(D.getString(out.ds, 0x00080016), '1.2.840.10008.5.1.4.1.1.1', 'CR SOP class kept');
+});
+
+test('processed copy drops stale INDUSTREX presentation data and icon, keeps version', async () => {
+  const src = makeIndustrexLike();
+  const copy = D.clone(src), removed = [];
+  D.setImage(copy, I.rotate(D.getImage(copy), 1), { swapSpacing: true });
+  D.derive(copy, src, { pixelsChanged: true, description: 'Rotated', removed });
+  assert.deepStrictEqual(removed, [0x00880200, 0x00331040, 0x00331071, 0x00331072]);
+  const out = await D.parse(D.write(copy));
+  for (const t of removed) assert.strictEqual(D.getElement(out.ds, t), null, D.tagHex(t));
+  assert.ok(out.ds.el.has(0x00330010) && out.ds.el.has(0x00331010));
+  assert.strictEqual(D.getString(out.ds, 0x00080008), 'DERIVED\\SECONDARY', 'matches what INDUSTREX itself writes after a pixel change');
+  assert.strictEqual(D.getString(out.ds, 0x00080016), '1.2.840.10008.5.1.4.1.1.1');
+  assert.strictEqual(D.getString(out.ds, 0x00281040), 'LIN');
+});
+
+test('implicit VR INDUSTREX-style file: private elements read as UN and survive', async () => {
+  const src = makeIndustrexLike();
+  const f = await D.parse(implicitBytes(src));
+  assert.strictEqual(f.transferSyntax, D.TS.IMPLICIT_LE);
+  assert.strictEqual(f.ds.el.get(0x00331071).vr, 'UN');
+  assert.strictEqual(D.industrexInfo(f.ds).version, '5.2');
+  assert.strictEqual(D.getString(f.ds, 0x00081048), 'Inspect Co');
+  const out = await D.parse(D.write(f));
+  assert.strictEqual(out.transferSyntax, D.TS.EXPLICIT_LE);
+  assert.deepStrictEqual([...out.ds.el.get(0x00331071).value], [9, 9, 9, 9]);
+  assert.deepStrictEqual([...D.getImage(out).frames[0]], [...D.getImage(src).frames[0]]);
+});
+
+test('character sets: editor text is folded, user text is checked', async () => {
+  assert.strictEqual(D.foldText('Flipped left–right, 90° 3×4', false), 'Flipped left-right, 90° 3×4');
+  assert.strictEqual(D.foldText('Flipped left–right, 90° 3×4', 'ascii'), 'Flipped left-right, 90 deg 3x4');
+  assert.strictEqual(D.foldText('Ω–', true), 'Ω–');
+  const latin = makeSample();
+  const a = D.derive(D.clone(latin), latin, { pixelsChanged: true, description: 'Flipped left–right; Rotated 90°' });
+  assert.strictEqual(D.getString((await D.parse(D.write(a))).ds, 0x00082111), 'Flipped left-right; Rotated 90°');
+  const plain = makeSample(); D.remove(plain.ds, 0x00080005);
+  assert.strictEqual(D.charsetMode(plain.ds), 'ascii');
+  const b = D.derive(D.clone(plain), plain, { pixelsChanged: true, description: 'Cropped to 5×6; Rotated 90°' });
+  assert.strictEqual(D.getString(b.ds, 0x00082111), 'Cropped to 5x6; Rotated 90 deg');
+  assert.throws(() => D.setText(plain.ds, 0x00104000, 'Weld n° 3'), /ISO_IR 100/);
+  D.setText(plain.ds, 0x00080005, 'ISO_IR 100');
+  D.setText(plain.ds, 0x00104000, 'Weld n° 3');
+  assert.strictEqual(D.getString(plain.ds, 0x00104000), 'Weld n° 3');
 });
 
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);

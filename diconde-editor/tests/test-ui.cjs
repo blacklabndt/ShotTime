@@ -7,6 +7,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 const D = require('../dicom.js');
 const { makeSample } = require('../sample.js');
+const { makeIndustrexLike } = require('./industrex-fixture.cjs');
 
 const PAGE = 'file://' + path.resolve(__dirname, '..', 'index.html');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'diconde-ui-'));
@@ -173,6 +174,35 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   // Template applies to another file.
   await page.selectOption('#tpl-select', 'Site A'); await page.click('#tpl-apply');
   assert.strictEqual(await field(page, '(0010,0020)').locator('input').inputValue(), 'WELD-0099'); ok('template applied');
+
+  // INDUSTREX-style CR file: summary, DICONDE names, compare, unsaved indicator, stale data left out.
+  const ixPath = path.join(tmp, 'industrex.dcm'); fs.writeFileSync(ixPath, D.write(makeIndustrexLike({ sopUID: '1.2.826.0.1.77' })));
+  await page.setInputFiles('#file-input', ixPath);
+  await page.waitForFunction(() => /Opened industrex/.test(document.getElementById('toast').textContent));
+  await page.click('[data-tab=meta]'); await page.click('[data-metaview="common"]');
+  const summary = await page.textContent('#summary');
+  assert.match(summary, /CR image/); assert.match(summary, /INDUSTREX 5\.2/);
+  assert.match(summary, /leave out .*presentation image.*display filter/);
+  assert.strictEqual(await field(page, '(0008,1048)').locator('input').inputValue(), 'Inspect Co');
+  assert.match(await field(page, '(0008,1048)').textContent(), /Inspecting Company Name.*DICOM: Physicians Of Record/);
+  assert.ok(await page.isHidden('#dirty'));
+  assert.ok(await page.isDisabled('#btn-compare'));
+  await page.click('[data-tab=image]'); await page.click('[data-op=flip-h]');
+  await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+  assert.ok(await page.isVisible('#dirty'));
+  const cmpBox = await page.locator('#btn-compare').boundingBox();
+  await page.mouse.move(cmpBox.x + 5, cmpBox.y + 5); await page.mouse.down();
+  assert.strictEqual(await page.getAttribute('#btn-compare', 'aria-pressed'), 'true');
+  await page.mouse.up();
+  assert.strictEqual(await page.getAttribute('#btn-compare', 'aria-pressed'), 'false');
+  const ixSaved = await grab(page, () => page.click('#btn-save'));
+  await page.waitForFunction(() => /Left out 4 element/.test(document.getElementById('toast').textContent));
+  assert.ok(await page.isHidden('#dirty'));
+  const ixOut = await D.parse(ixSaved.bytes);
+  for (const t of [0x00880200, 0x00331040, 0x00331071, 0x00331072]) assert.strictEqual(D.getElement(ixOut.ds, t), null);
+  assert.strictEqual(D.industrexInfo(ixOut.ds).version, '5.2');
+  assert.strictEqual(D.getString(ixOut.ds, 0x00080016), '1.2.840.10008.5.1.4.1.1.1');
+  ok('INDUSTREX-style file');
 
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });

@@ -33,13 +33,19 @@
 00180015 CS BodyPartExamined|00180060 DS KVP|00181000 LO DeviceSerialNumber|00181004 LO PlateID|00181020 LO SoftwareVersions|00181110 DS DistanceSourceToDetector|00181111 DS DistanceSourceToPatient|00181150 IS ExposureTime|00181151 IS XRayTubeCurrent|00181152 IS Exposure|00181164 DS ImagerPixelSpacing|00181400 LO AcquisitionDeviceProcessingDescription
 0020000D UI StudyInstanceUID|0020000E UI SeriesInstanceUID|00200010 SH StudyID|00200011 IS SeriesNumber|00200012 IS AcquisitionNumber|00200013 IS InstanceNumber|00200020 CS PatientOrientation|00204000 LT ImageComments
 00280002 US SamplesPerPixel|00280004 CS PhotometricInterpretation|00280006 US PlanarConfiguration|00280008 IS NumberOfFrames|00280010 US Rows|00280011 US Columns|00280030 DS PixelSpacing|00280034 IS PixelAspectRatio|00280100 US BitsAllocated|00280101 US BitsStored|00280102 US HighBit|00280103 US PixelRepresentation|00280106 US SmallestImagePixelValue|00280107 US LargestImagePixelValue|00281040 CS PixelIntensityRelationship|00281041 SS PixelIntensityRelationshipSign|00281050 DS WindowCenter|00281051 DS WindowWidth|00281052 DS RescaleIntercept|00281053 DS RescaleSlope|00281054 LO RescaleType|00282110 CS LossyImageCompression|00282112 DS LossyImageCompressionRatio|00282114 CS LossyImageCompressionMethod
-00321060 LO RequestedProcedureDescription|00400244 DA PerformedProcedureStepStartDate|00400254 LO PerformedProcedureStepDescription|7FE00010 OW PixelData`;
+00321060 LO RequestedProcedureDescription|00400244 DA PerformedProcedureStepStartDate|00400254 LO PerformedProcedureStepDescription|00080068 CS PresentationIntentType|00080081 ST InstitutionAddress|00080100 SH CodeValue|00080102 SH CodingSchemeDesignator|00080104 LO CodeMeaning|00081048 PN PhysiciansOfRecord|00081060 PN NameOfPhysiciansReadingStudy
+00141010 ST ActualEnvironmentalConditions|00141020 DA ExpiryDate|00141040 ST EnvironmentalConditions|001440A0 LO ImageQualityIndicatorType|001440A1 LO ImageQualityIndicatorMaterial|001440A2 LO ImageQualityIndicatorSize|00140101 CS SecondaryApprovalStatus|00140102 DA SecondaryReviewDate|00140103 TM SecondaryReviewTime|00143040 SQ DarkCurrentSequence|00143050 OB DarkCurrentCounts|00143060 SQ GainCorrectionReferenceSequence|00143070 OB AirCounts|00143080 OB BadPixelImage
+00180010 LO ContrastBolusAgent|00181153 IS ExposureInuAs|00181160 SH FilterType|00181180 SH CollimatorGridName|00181190 DS FocalSpots|00181260 SH PlateType|00181261 LO PhosphorType|00181402 CS CassetteOrientation|00181403 CS CassetteSize|00181404 US ExposuresOnPlate|00185101 CS ViewPosition|00186000 DS Sensitivity|00187004 CS DetectorType|00187005 CS DetectorConfiguration|00187006 LT DetectorDescription|00187008 LT DetectorMode|0018700A SH DetectorID|0018700C DA DateOfLastDetectorCalibration|0018702A LO DetectorManufacturerName|0018702B LO DetectorManufacturerModelName
+00200052 UI FrameOfReferenceUID|00280120 US PixelPaddingValue|00280301 CS BurnedInAnnotation|00324000 LT StudyComments|00380300 LO CurrentPatientLocation|00880200 SQ IconImageSequence|20500020 CS PresentationLUTShape|300E0002 CS ApprovalStatus|300E0004 DA ReviewDate|300E0005 TM ReviewTime|300E0008 PN ReviewerName|7FE00010 OW PixelData`;
   const DICT = new Map();
   DICT_SRC.split(/[|\n]/).forEach(s => { const [t, vr, kw] = s.trim().split(' '); DICT.set(parseInt(t, 16) >>> 0, { vr, keyword: kw }); });
-  // DICONDE (ASTM E2339) reuses some patient-module tags for the inspected component.
-  const NDE_NAMES = { 0x00100010: 'Component Name', 0x00100020: 'Component ID Number', 0x00100021: 'Component ID Issuer', 0x00100030: 'Date of Manufacture',
-    0x00101000: 'Other Component IDs', 0x00101001: 'Other Component Names', 0x00102160: 'Material Name', 0x00104000: 'Component Notes' };
-
+  // DICONDE (ASTM E2339) names for reused DICOM tags, as listed in Carestream's INDUSTREX
+  // DICOM/DICONDE Conformance Statement (rev. 10.0, 2017).
+  const NDE_NAMES = { 0x00100010: 'Component Name', 0x00100020: 'Component ID Number', 0x00100021: 'Component ID Issuer', 0x00100030: 'Component Manufacturing Date',
+    0x00101000: 'Other Component IDs', 0x00101001: 'Other Component Names', 0x00102160: 'Material Name', 0x00104000: 'Component Notes',
+    0x00380300: 'Volume Description', 0x00080090: 'Component Owner Name', 0x00081048: 'Inspecting Company Name', 0x00081060: 'Certifying Inspector Name',
+    0x00081050: 'Inspector Name', 0x00081070: 'Operator Name', 0x00180015: 'Part Examined', 0x00324000: 'Examination Notes',
+    0x00080080: 'Company Name', 0x00080081: 'Company Address', 0x00081040: 'Department', 0x00200020: 'Component Orientation' };
   const hex4 = n => n.toString(16).toUpperCase().padStart(4, '0');
   const tagHex = t => `(${hex4(t >>> 16)},${hex4(t & 0xFFFF)})`;
   const words = kw => kw.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/\bI Ds\b/g, 'IDs');
@@ -174,6 +180,17 @@
   }
 
   // ---- value conversion ----
+  // true = UTF-8, false = Latin-1 (or another declared set), 'ascii' = no Specific Character Set (default repertoire).
+  function charsetMode(ds) { return !ds || !ds.el.has(0x00080005) || !getStringRaw(ds.el.get(0x00080005)) ? 'ascii' : charsetIsUtf8(ds); }
+  function getStringRaw(el) { return el && el.value ? bytesToLatin1(el.value).replace(/[\0 ]+$/, '') : ''; }
+  // Replaces characters the file's character set cannot hold (used for text the editor writes itself).
+  function foldText(s, mode) {
+    if (mode === true) return s;
+    s = s.replace(/[\u2010-\u2015]/g, '-').replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+    if (mode === 'ascii') s = s.replace(/\u00B0/g, ' deg').replace(/\u00D7/g, 'x');
+    const max = mode === 'ascii' ? 127 : 255;
+    return s.replace(/[\s\S]/g, ch => (ch.charCodeAt(0) > max ? '?' : ch));
+  }
   function charsetIsUtf8(ds) { const cs = ds && ds.el.get(0x00080005); return !!cs && /ISO_IR 192/.test(bytesToLatin1(cs.value)); }
   function bytesToLatin1(b) { let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return s; }
   function decodeText(b, utf8) {
@@ -182,10 +199,11 @@
     return bytesToLatin1(b);
   }
   function encodeText(s, utf8) {
-    if (utf8) return new TextEncoder().encode(s);
+    if (utf8 === true) return new TextEncoder().encode(s);
     const out = new Uint8Array(s.length);
     for (let i = 0; i < s.length; i++) {
       const c = s.charCodeAt(i);
+      if (utf8 === 'ascii' && c > 127) throw new DicomError(`"${s[i]}" needs a character set: this file has no Specific Character Set (0008,0005), so only plain ASCII is allowed. Set it to ISO_IR 100 (Latin-1) or ISO_IR 192 (UTF-8) first.`);
       if (c > 255) throw new DicomError(`"${s[i]}" cannot be stored in this file's character set.`);
       out[i] = c;
     }
@@ -262,7 +280,7 @@
       vals.forEach((v, i) => { const t = parseTag(v); dv.setUint16(i * 4, t >>> 16, true); dv.setUint16(i * 4 + 2, t & 0xFFFF, true); });
       return b;
     }
-    return encodeText(text, utf8 && vr !== 'UI');
+    return encodeText(text, vr === 'UI' ? 'ascii' : utf8);
   }
 
   function getElement(ds, tag) { return ds.el.get(tag >>> 0) || null; }
@@ -274,7 +292,7 @@
     const el = ds.el.get(tag);
     vr = vr || (el && el.vr) || tagInfo(tag).vr;
     if (!vr) throw new DicomError(`Choose a VR for ${tagHex(tag)}.`);
-    const value = textToBytes(vr, String(text), charsetIsUtf8(rootDs || ds));
+    const value = textToBytes(vr, String(text), charsetMode(rootDs || ds));
     ds.el.set(tag, { tag, vr, value });
     return ds.el.get(tag);
   }
@@ -400,6 +418,38 @@
     ds.el.set(PIXEL, { tag: PIXEL, vr: img.bitsAllocated > 8 ? 'OW' : 'OB', value: bytes });
   }
 
+
+  // Carestream INDUSTREX private block in group 0033 (Conformance Statement 7.1.13.1): xx10 version (DS),
+  // xx40/xx50 internal data (OB), xx71 presentation image, xx72 display filter. The creator string is not
+  // published, so a block is recognised by a Carestream-like creator or by the presentation elements.
+  const INDUSTREX_CREATOR = /CSH|CARESTREAM|KODAK|INDUSTREX/i;
+  const INDUSTREX_NAMES = { 0x10: 'INDUSTREX version', 0x40: 'INDUSTREX internal data', 0x50: 'INDUSTREX internal data', 0x71: 'INDUSTREX presentation image', 0x72: 'INDUSTREX display filter' };
+  const INDUSTREX_STALE = [0x40, 0x50, 0x71, 0x72];
+  const latinTrim = el => (el && el.value ? bytesToLatin1(el.value).replace(/[\0 ]+$/, '').replace(/^ +/, '') : '');
+  function industrexInfo(ds) {
+    for (let b = 0x10; b <= 0xFF; b++) {
+      const cr = ds.el.get((0x00330000 | b) >>> 0);
+      if (!cr) continue;
+      const creator = latinTrim(cr), base = (0x00330000 | (b << 8)) >>> 0, has = x => ds.el.has((base | x) >>> 0);
+      if (!INDUSTREX_CREATOR.test(creator) && !has(0x71) && !has(0x72)) continue;
+      const version = latinTrim(ds.el.get((base | 0x10) >>> 0));
+      return { creator, block: b, version: /^[\x20-\x7E]*$/.test(version) ? version : '', staleTags: INDUSTREX_STALE.filter(has).map(x => (base | x) >>> 0) };
+    }
+    return null;
+  }
+  // Elements that describe the old pixels and must not travel with an edited image.
+  function stalePresentationTags(ds) { const ix = industrexInfo(ds); return (ds.el.has(0x00880200) ? [0x00880200] : []).concat(ix ? ix.staleTags : []); }
+  // Like tagInfo, but names private elements from the file's own private creators.
+  function describeTag(ds, tag) {
+    const info = tagInfo(tag), g = tag >>> 16, e = tag & 0xFFFF;
+    if (!(g & 1) || !ds) return info;
+    if (e >= 0x10 && e <= 0xFF) return Object.assign({}, info, { name: 'Private creator', dicomName: 'Private creator' });
+    const creator = latinTrim(ds.el.get(((g << 16) | (e >> 8)) >>> 0));
+    const ix = g === 0x0033 ? industrexInfo(ds) : null;
+    const name = ix && ix.block === e >> 8 && INDUSTREX_NAMES[e & 0xFF] ? INDUSTREX_NAMES[e & 0xFF] : `Private data${creator ? ' (' + creator + ')' : ''}`;
+    return Object.assign({}, info, { name, dicomName: name });
+  }
+
   function now() {
     const d = new Date(), p = (v, n = 2) => String(v).padStart(n, '0');
     return { date: `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`, time: `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` };
@@ -415,13 +465,16 @@
     if (opts.instanceNumber != null) setText(ds, 0x00200013, String(opts.instanceNumber), 'IS');
     if (opts.seriesUID) setText(ds, 0x0020000E, opts.seriesUID, 'UI');
     if (opts.pixelsChanged) {
+      const stale = stalePresentationTags(ds);
+      stale.forEach(t => ds.el.delete(t));
+      if (Array.isArray(opts.removed)) opts.removed.push(...stale);
       const it = (getString(ds, 0x00080008) || 'ORIGINAL\\PRIMARY').split('\\');
       it[0] = 'DERIVED'; it[1] = 'SECONDARY';
       setText(ds, 0x00080008, it.join('\\'), 'CS');
     }
     if (opts.description) {
       const prev = getString(ds, 0x00082111);
-      let d = (prev ? prev + '; ' : '') + opts.description;
+      let d = foldText((prev ? prev + '; ' : '') + opts.description, charsetMode(ds));
       if (d.length > 1024) d = d.slice(0, 1021) + '...';
       setText(ds, 0x00082111, d, 'ST');
     }
@@ -437,5 +490,5 @@
   }
 
   return { TS, TS_NAMES, PIXEL, DicomError, DICT, parse, write, clone, tagInfo, tagHex, parseTag, findTagsByText, validate, editable, valueToText,
-    textToBytes, getElement, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
+    textToBytes, getElement, charsetMode, foldText, industrexInfo, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
 });

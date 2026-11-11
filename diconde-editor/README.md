@@ -26,6 +26,39 @@ The original file is never changed. **Save copy** always writes a new file:
 
 Check your procedure or code before using an enhanced image for acceptance. This tool makes no claim that a processed image is suitable for interpretation.
 
+## INDUSTREX compatibility
+
+Checked against Carestream's published *INDUSTREX DICOM/DICONDE Conformance Statement* (rev. 10.0, October 2017, written for INDUSTREX 5.0). Newer INDUSTREX versions may differ, and the checks below use files built from that document, not real INDUSTREX exports.
+
+- **Transfer syntaxes**: INDUSTREX reads Implicit/Explicit VR Little Endian, Explicit VR Big Endian, JPEG Baseline, JPEG Extended, JPEG Lossless SV1 and JPEG 2000 (lossless and lossy). This editor writes Explicit VR Little Endian, which is on that list. Compressed files keep their original syntax when only metadata changes.
+- **SOP classes**: INDUSTREX handles CR Image Storage and DX Image Storage (for presentation and for processing). The editor keeps the file's SOP class.
+- **DICONDE names**: fields are labelled with the names INDUSTREX uses for the reused DICOM tags. Examples:
+  - Component Owner Name (0008,0090)
+  - Inspecting Company Name (0008,1048)
+  - Certifying Inspector Name (0008,1060)
+  - Inspector Name (0008,1050)
+  - Part Examined (0018,0015)
+  - Examination Notes (0032,4000)
+  - Component Manufacturing Date (0010,0030)
+  - Company Name (0008,0080)
+
+  The Common view groups them as Component, Inspection, Company & people, Equipment & technique, and Display.
+- **Derived images**: the document says INDUSTREX sets Image Type to Derived/Secondary when pixel data is modified. Processed copies from this editor do the same.
+- **INDUSTREX private data** (group 0033): the document lists a version element (xx10), internal data (xx40, xx50), a presentation image (xx71) and a display filter (xx72).
+  - The editor shows these by name, and the Metadata tab shows a summary card when a file has them.
+  - Metadata-only copies keep them byte for byte.
+  - Processed copies leave out the internal data, presentation image, display filter and the Icon Image Sequence, because they describe the original pixels. The version element is kept.
+  - The private-creator string is not published. The block is recognised by a Carestream-like creator (CSH, Carestream, Kodak or INDUSTREX) or by the presence of the xx71/xx72 elements. Another vendor's group 0033 data is left alone.
+- **Character sets**:
+  - Text the editor writes itself, such as Derivation Description, is folded to what the file's Specific Character Set allows, e.g. "–" becomes "-".
+  - Files with no character set accept only plain ASCII in edited fields, and the error says how to add one.
+- **Not confirmed**:
+  - How INDUSTREX displays a processed copy with its private presentation data removed.
+  - The real private-creator string.
+  - Whether INDUSTREX's own saved files are compressed. The image tools need uncompressed pixels.
+
+  Please test with real INDUSTREX exports, open the saved copies back in INDUSTREX, and report what you see.
+
 ## File support
 
 - **Reads**:
@@ -59,4 +92,4 @@ node diconde-editor/tests/test-ui.cjs     # browser workflow (needs Playwright +
 npm run test:diconde                      # both
 ```
 
-The sample file written by this tool was also read back successfully with pydicom during development. Files from real scanners (for example Carestream INDUSTREX DR/CR exports) have not been tested yet.
+The sample file written by this tool was also read back successfully with pydicom during development. Files from real scanners (for example Carestream INDUSTREX DR/CR exports) have not been tested yet. `tests/industrex-fixture.cjs` builds an INDUSTREX-style file from the conformance statement for the tests.

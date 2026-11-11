@@ -6,9 +6,11 @@
   const MAX_UNDO = 12;
   const READ_ONLY = new Set([0x00080016, 0x00080018, 0x00280002, 0x00280004, 0x00280006, 0x00280008, 0x00280010, 0x00280011, 0x00280100, 0x00280101, 0x00280102, 0x00280103, D.PIXEL]);
   const COMMON = [
-    ['Component', [0x00100010, 0x00100020, 0x00101000, 0x00102160, 0x00140042, 0x00140030, 0x00140054, 0x00104000]],
-    ['Inspection', [0x00080020, 0x00080030, 0x00080050, 0x00081030, 0x0008103E, 0x00204000, 0x00081070, 0x00080080]],
-    ['Equipment & technique', [0x00080060, 0x00080070, 0x00081090, 0x00181000, 0x00181004, 0x00180060, 0x00181150, 0x00181110, 0x00181164, 0x00280030]],
+    // Grouped and named as INDUSTREX presents them (Carestream DICONDE Conformance Statement, rev. 10.0).
+    ['Component', [0x00100010, 0x00100020, 0x00101000, 0x00101001, 0x00102160, 0x00140042, 0x00140030, 0x00140032, 0x00140054, 0x00100030, 0x00080090, 0x00104000]],
+    ['Inspection', [0x00080020, 0x00080030, 0x00080050, 0x00200010, 0x00081030, 0x00180015, 0x0008103E, 0x00204000, 0x00324000]],
+    ['Company & people', [0x00080080, 0x00081048, 0x00081050, 0x00081070, 0x00081060]],
+    ['Equipment & technique', [0x00080060, 0x00080070, 0x00081090, 0x00181000, 0x00181004, 0x00181260, 0x00180060, 0x00181150, 0x00181110, 0x00181164, 0x00280030, 0x001440A0, 0x001440A1, 0x001440A2]],
     ['Display', [0x00281050, 0x00281051]]
   ];
   const VRS = ['LO', 'SH', 'LT', 'ST', 'PN', 'CS', 'DA', 'TM', 'DT', 'DS', 'IS', 'UI', 'AE', 'US', 'SS', 'UL', 'SL', 'FL', 'FD', 'UT', 'UC'];
@@ -45,7 +47,7 @@
     let file;
     try { file = await D.parse(bytes); } catch (e) { toast(`Could not open ${name}: ${e.message}`, true); return; }
     S.orig = file; S.file = D.clone(file); S.name = name;
-    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.frame = 0;
+    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.frame = 0; S.comparing = false; savedState = '';
     const img = D.getImage(S.file);
     S.imgError = img.error || ''; S.img = img.error ? null : img; S.origImg = S.img;
     $('empty').classList.add('hidden');
@@ -105,7 +107,7 @@
   }
 
   function fieldRow(ds, tag, path, depth) {
-    const info = D.tagInfo(tag), e = ds.el.get(tag), key = keyOf(path, tag);
+    const info = D.describeTag(S.file.ds, tag), e = ds.el.get(tag), key = keyOf(path, tag);
     const vr = e ? e.vr : info.vr || 'LO';
     const changed = S.origEls.has(key);
     const ro = READ_ONLY.has(tag) && !path || (tag >>> 16) === 0x0002 || (e && !D.editable(e.vr));
@@ -152,6 +154,19 @@
     return row;
   }
 
+  const SOP_NAMES = { '1.2.840.10008.5.1.4.1.1.1': 'CR image', '1.2.840.10008.5.1.4.1.1.1.1': 'DX image (for presentation)', '1.2.840.10008.5.1.4.1.1.1.1.1': 'DX image (for processing)', '1.2.840.10008.5.1.4.1.1.7': 'Secondary capture' };
+  function summaryCard() {
+    const ds = S.orig.ds, ix = D.industrexInfo(ds), sop = D.getString(ds, 0x00080016);
+    const bits = S.img ? `${S.img.cols}×${S.img.rows}, ${S.img.bitsStored}-bit` : 'image not editable';
+    const card = el('div', { class: 'summary', id: 'summary' },
+      el('div', { class: 'chips' },
+        el('span', { class: 'chip' }, SOP_NAMES[sop] || D.getString(ds, 0x00080060) || 'DICOM image'),
+        ix ? el('span', { class: 'chip accent' }, `INDUSTREX${ix.version ? ' ' + ix.version : ''}`) : '',
+        el('span', { class: 'chip' }, bits)));
+    const stale = D.stalePresentationTags(ds);
+    if (stale.length) card.append(el('p', { class: 'note' }, `Processed copies leave out ${stale.map(t => t === 0x00880200 ? 'icon thumbnail' : D.describeTag(ds, t).name.replace(/^INDUSTREX /, '')).filter((v, i, a) => a.indexOf(v) === i).join(', ')}, because ${stale.length === 1 ? 'it describes' : 'they describe'} the original pixels. Metadata-only copies keep everything.`));
+    return card;
+  }
   function matches(ds, tag, q) {
     if (!q) return true;
     const info = D.tagInfo(tag), e = ds.el.get(tag);
@@ -161,6 +176,7 @@
     const list = $('meta-list'); list.innerHTML = '';
     if (!S.file) { list.append(el('p', { class: 'note' }, 'Open a file to see its tags.')); return; }
     const q = $('meta-search').value.trim().toLowerCase(), ds = S.file.ds;
+    if (!q) list.append(summaryCard());
     if (S.metaView === 'common') {
       for (const [title, tags] of COMMON) {
         const rows = tags.filter(t => matches(ds, t, q));
@@ -252,15 +268,29 @@
     S.bmp.getContext('2d').putImageData(S.bmpData, 0, 0);
     S.dirtyImage = false;
   }
+  // Hold-to-compare: the original pixels with the current window, in the same place when the size is unchanged.
+  function drawOriginal() {
+    const o = S.origImg, sameSize = o.rows === S.img.rows && o.cols === S.img.cols;
+    const c = document.createElement('canvas'); c.width = o.cols; c.height = o.rows;
+    const cx = c.getContext('2d'), id = cx.createImageData(o.cols, o.rows);
+    I.render(o.frames[Math.min(S.frame, o.frames.length - 1)], o, S.win.c, S.win.w, S.invertView, id.data); cx.putImageData(id, 0, 0);
+    let v = S.view;
+    if (!sameSize) { const r = canvas.getBoundingClientRect(), z = Math.min((r.width - 32) / o.cols, (r.height - 32) / o.rows); v = { zoom: z, x: (r.width - o.cols * z) / 2, y: (r.height - o.rows * z) / 2 }; }
+    ctx.imageSmoothingEnabled = v.zoom < 1;
+    ctx.drawImage(c, v.x, v.y, o.cols * v.zoom, o.rows * v.zoom);
+    ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#4cc3ff'; ctx.fillRect(8, 8, 84, 22); ctx.fillStyle = '#000'; ctx.fillText('ORIGINAL', 16, 24);
+  }
+  function setComparing(on) { if (S.comparing === on) return; S.comparing = on; $('btn-compare').setAttribute('aria-pressed', String(on)); draw(); }
   let raf = 0;
   function draw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawNow(); }); }
   function drawNow() {
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#0d0f12'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (!S.img) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (S.comparing && S.origImg && S.origImg !== S.img) { drawOriginal(); return; }
     if (S.dirtyImage) rebuildBitmap();
     const v = S.view;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = v.zoom < 1;
     ctx.drawImage(S.bmp, v.x, v.y, S.img.cols * v.zoom, S.img.rows * v.zoom);
     const box = (r, color, label, dash) => {
@@ -454,21 +484,22 @@
     const f = v => { let s = String(+v.toFixed(2)); if (s.length > 16) s = v.toExponential(6); return s; };
     D.setText(ds, 0x00281050, f(S.win.c), 'DS'); D.setText(ds, 0x00281051, f(S.win.w), 'DS');
   }
-  function buildCopy(region, partInfo) {
+  function buildCopy(region, partInfo, removed) {
     const pixelsChanged = S.ops.length > 0 || !!region;
     const copy = D.clone(S.file);
     if (S.img && pixelsChanged) D.setImage(copy, region ? I.crop(S.img, region) : S.img, { swapSpacing: S.turns % 2 === 1 });
     storeWindow(copy.ds);
     const steps = S.ops.slice(); if (partInfo) steps.push(partInfo.text);
-    D.derive(copy, S.orig, { pixelsChanged, description: steps.join('; '), seriesUID: partInfo ? partInfo.series : (pixelsChanged ? D.newUID() : null), instanceNumber: partInfo ? partInfo.index : null });
+    D.derive(copy, S.orig, { pixelsChanged, description: steps.join('; '), seriesUID: partInfo ? partInfo.series : (pixelsChanged ? D.newUID() : null), instanceNumber: partInfo ? partInfo.index : null, removed });
     return copy;
   }
   function saveCopy() {
     if (!S.file) return;
     busy(() => {
-      const bytes = D.write(buildCopy());
+      const removed = [], bytes = D.write(buildCopy(null, null, removed));
       download(bytes, `${baseName()}_edited.dcm`, 'application/dicom');
-      toast(`Saved ${baseName()}_edited.dcm (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.`);
+      const extra = removed.length ? ` Left out ${removed.length} element(s) that described the original pixels.` : '';
+      toast(`Saved ${baseName()}_edited.dcm (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
       markSaved();
     });
   }
@@ -497,7 +528,7 @@
   }
   let savedState = '';
   const stateKey = () => `${S.ops.length}:${S.ops.join('|')}:${[...S.origEls.keys()].join(',')}`;
-  function markSaved() { savedState = stateKey(); }
+  function markSaved() { savedState = stateKey(); updateDirty(); }
 
   // ---------- export ----------
   function renderedCanvas() { if (S.dirtyImage) rebuildBitmap(); return S.bmp; }
@@ -535,7 +566,7 @@
       const parts = key.split('/'), tag = parseInt(parts[parts.length - 1], 16) >>> 0;
       let ds = S.file.ds;
       for (let i = 0; i + 2 < parts.length; i += 2) { const sq = ds.el.get(parseInt(parts[i], 16) >>> 0); ds = sq && sq.items ? sq.items[+parts[i + 1]] : null; if (!ds) break; }
-      const cur = ds && ds.el.get(tag), name = D.tagInfo(tag).name + (parts.length > 1 ? ' (in sequence)' : '');
+      const cur = ds && ds.el.get(tag), name = D.describeTag(S.file.ds, tag).name + (parts.length > 1 ? ' (in sequence)' : '');
       const a = orig ? D.valueToText(orig, utf8) : '', b = cur ? D.valueToText(cur, utf8) : '';
       out.push(!orig ? `${name}: added “${b}”` : !cur ? `${name}: removed (was “${a}”)` : `${name}: “${a}” → “${b}”`);
     }
@@ -552,7 +583,12 @@
       fd.append(el('div', {}, `Original SOP Instance UID: ${D.getString(ds, 0x00080018) || '—'}`), el('div', {}, `Transfer syntax: ${D.TS_NAMES[S.orig.transferSyntax] || S.orig.transferSyntax}`),
         el('div', {}, S.img ? `Pixels: ${S.img.bitsStored}-bit ${S.img.signed ? 'signed' : 'unsigned'}, ${S.img.photometric}, ${S.img.frames.length} frame(s)` : S.imgError));
     }
-    updateTemplateButtons();
+    updateTemplateButtons(); updateDirty();
+  }
+  function updateDirty() {
+    const dirty = !!S.file && hasChanges() && stateKey() !== savedState;
+    $('dirty').classList.toggle('hidden', !dirty); $('btn-save').classList.toggle('primary', dirty);
+    $('btn-compare').disabled = !S.img || !S.ops.length;
   }
 
   // ---------- wiring ----------
@@ -591,6 +627,11 @@
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('wheel', e => { e.preventDefault(); const p = toImage(e); zoomAt(Math.exp(-e.deltaY * 0.0015), p.sx, p.sy); readout(p); }, { passive: false });
     canvas.addEventListener('pointerleave', () => { if (S.img) readout({ x: -1, y: -1 }); });
+    const cmp = $('btn-compare');
+    cmp.addEventListener('pointerdown', e => { e.preventDefault(); setComparing(true); });
+    ['pointerup', 'pointerleave', 'pointercancel', 'blur'].forEach(t => cmp.addEventListener(t, () => setComparing(false)));
+    cmp.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setComparing(true); } });
+    cmp.addEventListener('keyup', () => setComparing(false));
     $('zoom-in').onclick = () => zoomAt(1.25); $('zoom-out').onclick = () => zoomAt(0.8); $('zoom-fit').onclick = fit;
     $('zoom-1').onclick = () => { if (!S.img) return; zoomAt(1 / S.view.zoom); };
     $('frame').onchange = e => { S.frame = +e.target.value; S.dirtyImage = true; draw(); };
@@ -615,8 +656,10 @@
       if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
       else if (!mod && e.key.toLowerCase() === 'f') fit();
+      else if (!mod && e.key.toLowerCase() === 'c' && !e.repeat && !$('btn-compare').disabled) setComparing(true);
       else if (e.key === 'Escape') { S.crop = null; syncCropInputs(); draw(); }
     });
+    document.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'c') setComparing(false); });
     window.addEventListener('beforeunload', e => { if (hasChanges() && stateKey() !== savedState) { e.preventDefault(); e.returnValue = ''; } });
 
     fillAddForm(); renderTemplates(); renderMeta(); renderHistory(); resize();
