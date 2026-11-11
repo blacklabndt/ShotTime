@@ -3,7 +3,6 @@
 (function () {
   const D = window.Dicom, I = window.Imaging, X = window.Exporters, O = window.Overlay;
   const $ = id => document.getElementById(id);
-  const MAX_UNDO = 12;
   const READ_ONLY = new Set([0x00080016, 0x00080018, 0x00280002, 0x00280004, 0x00280006, 0x00280008, 0x00280010, 0x00280011, 0x00280100, 0x00280101, 0x00280102, 0x00280103, D.PIXEL]);
   const COMMON = [
     // Grouped and named as INDUSTREX presents them (Carestream DICONDE Conformance Statement, rev. 10.0).
@@ -132,21 +131,84 @@
   }
   function setField(ds, tag, text, path, vr) {
     const key = keyOf(path, tag);
-    const before = ds.el.get(tag);
+    const before = ds.el.get(tag), utf8 = D.charsetIsUtf8(S.file.ds), oldText = before ? D.valueToText(before, utf8) : '';
+    const snap = metaSnapshot();
     remember(key, ds, tag);
     try {
       if (text === '' && !before) { if (sameAsOrig(key, ds, tag)) S.origEls.delete(key); return ''; }
       D.setText(ds, tag, text, vr, S.file.ds);
     } catch (e) { if (sameAsOrig(key, ds, tag)) S.origEls.delete(key); return e.message; }
     if (sameAsOrig(key, ds, tag)) S.origEls.delete(key);
+    const now = ds.el.get(tag), newText = now ? D.valueToText(now, utf8) : '';
+    if (newText !== oldText || !before) pushMeta(snap, before ? `${D.describeTag(S.file.ds, tag).name}: “${oldText}” → “${newText}”` : `Added ${D.describeTag(S.file.ds, tag).name}`);
     afterMetaChange(tag);
     return '';
   }
-  function deleteField(ds, tag, path) { const key = keyOf(path, tag); remember(key, ds, tag); D.remove(ds, tag); if (sameAsOrig(key, ds, tag)) S.origEls.delete(key); afterMetaChange(tag); renderMeta(); }
+  function deleteField(ds, tag, path) {
+    const key = keyOf(path, tag), snap = metaSnapshot();
+    remember(key, ds, tag); D.remove(ds, tag); if (sameAsOrig(key, ds, tag)) S.origEls.delete(key);
+    pushMeta(snap, `Removed ${D.describeTag(S.file.ds, tag).name}`);
+    afterMetaChange(tag); renderMeta();
+  }
   function revertField(ds, tag, path) {
-    const key = keyOf(path, tag), o = S.origEls.get(key);
+    const key = keyOf(path, tag), o = S.origEls.get(key), snap = metaSnapshot();
     if (o) ds.el.set(tag, D.clone(o)); else ds.el.delete(tag);
-    S.origEls.delete(key); afterMetaChange(tag); renderMeta();
+    S.origEls.delete(key);
+    pushMeta(snap, `Reverted ${D.describeTag(S.file.ds, tag).name}`);
+    afterMetaChange(tag); renderMeta();
+  }
+
+  // ---------- undo / redo (metadata and image steps in one history) ----------
+  // Each entry holds the state from before a change: either the metadata (all elements except the pixels, plus
+  // the record of original values) or the image side (pixels, step list, rotation count, crop box, regions).
+  // Undo swaps that state back in and puts the current one on the redo stack.
+  const MAX_IMAGE_UNDO = 20;
+  function metaSnapshot() {
+    const el = new Map(); for (const [t, e] of S.file.ds.el) if (t !== D.PIXEL) el.set(t, D.clone(e));
+    return { el, origEls: new Map([...S.origEls].map(([k, v]) => [k, v ? D.clone(v) : null])) };
+  }
+  function pushMeta(snap, text) {
+    if (S.batch) { if (!S.batch.snap) S.batch.snap = snap; return; } // grouped (e.g. a template): one entry
+    S.undo.push({ kind: 'meta', snap, text }); S.redo = []; trimUndo(); refreshUndoUi();
+  }
+  function restoreMeta(snap) {
+    const px = S.file.ds.el.get(D.PIXEL);
+    S.file.ds.el = new Map(snap.el); if (px) S.file.ds.el.set(D.PIXEL, px);
+    S.origEls = snap.origEls;
+    renderMeta(); afterMetaChange(0x00281050);
+  }
+  const imageState = () => ({ img: S.img, ops: S.ops.slice(), turns: S.turns, crop: S.crop, regions: S.regions });
+  function restoreImage(st) {
+    const g = dimsDiffer(st.img);
+    S.ops = st.ops.slice(); S.turns = st.turns; S.crop = st.crop; S.regions = st.regions; renderRegions(); setImg(st.img); if (g) fit();
+  }
+  // Keeps memory bounded: at most MAX_IMAGE_UNDO image snapshots (each holds a full image).
+  function trimUndo() {
+    let images = S.undo.filter(u => u.kind === 'image').length, dropped = false;
+    while (images > MAX_IMAGE_UNDO) { const u = S.undo.shift(); if (u.kind === 'image') images--; dropped = true; }
+    if (dropped) toast(`Only the last ${MAX_IMAGE_UNDO} image steps can be undone.`);
+  }
+  function undo() {
+    const u = S.undo.pop(); if (!u) return;
+    if (u.kind === 'meta') { S.redo.push({ kind: 'meta', snap: metaSnapshot(), text: u.text }); restoreMeta(u.snap); }
+    else { S.redo.push({ kind: 'image', state: imageState(), text: u.text }); restoreImage(u.state); }
+    refreshUndoUi(); toast(`Undone: ${u.text}`);
+  }
+  function redo() {
+    const r = S.redo.pop(); if (!r) return;
+    if (r.kind === 'meta') { S.undo.push({ kind: 'meta', snap: metaSnapshot(), text: r.text }); restoreMeta(r.snap); }
+    else { S.undo.push({ kind: 'image', state: imageState(), text: r.text }); restoreImage(r.state); }
+    refreshUndoUi(); toast(`Redone: ${r.text}`);
+  }
+  function refreshUndoUi() {
+    const u = S.undo[S.undo.length - 1], r = S.redo[S.redo.length - 1];
+    for (const [id, e, verb] of [['tb-undo', u, 'Undo'], ['tb-redo', r, 'Redo']]) {
+      $(id).disabled = !e; $(id).title = e ? `${verb}: ${e.text} (${verb === 'Undo' ? 'Ctrl+Z' : 'Ctrl+Y'})` : `Nothing to ${verb.toLowerCase()}`;
+      $(id).setAttribute('aria-label', e ? `${verb}: ${e.text}` : `${verb} (nothing to ${verb.toLowerCase()})`);
+    }
+    $('btn-undo').disabled = !u; $('btn-redo').disabled = !r;
+    $('btn-undo').textContent = u ? `Undo: ${u.text}` : 'Undo';
+    renderHistory();
   }
   function afterMetaChange(tag) {
     if (S.img && [0x00281050, 0x00281051, 0x00281052, 0x00281053].includes(tag)) {
@@ -301,11 +363,14 @@
   function applyTemplate() {
     const name = $('tpl-select').value, f = loadTemplates()[name]; if (!f || !S.file) return;
     const problems = [];
+    S.batch = {};
     for (const [hex, v] of Object.entries(f)) {
       const tag = parseInt(hex, 16) >>> 0;
       if (v.remove) { if (S.file.ds.el.has(tag)) deleteField(S.file.ds, tag, ''); continue; }
       const msg = setField(S.file.ds, tag, v.text, '', v.vr); if (msg) problems.push(`${D.tagInfo(tag).name}: ${msg}`);
     }
+    const batch = S.batch; S.batch = null;
+    if (batch.snap) pushMeta(batch.snap, `Applied template “${name}”`);
     renderMeta();
     toast(problems.length ? `Applied with problems — ${problems.join('; ')}` : `Applied template “${name}”`, !!problems.length);
   }
@@ -613,9 +678,9 @@
 
   // ---------- pixel operations ----------
   function pushImage(next, text, turns = 0) {
-    S.undo.push({ img: S.img, text, turns, crop: S.crop, regions: S.regions });
-    if (S.undo.length > MAX_UNDO) { S.undo.shift(); toast(`Only the last ${MAX_UNDO} image steps can be undone.`); }
+    S.undo.push({ kind: 'image', state: imageState(), text });
     S.redo = []; S.ops.push(text); S.turns += turns;
+    trimUndo();
     setImg(next);
   }
   function setImg(next) {
@@ -624,20 +689,13 @@
     if (S.frame >= next.frames.length) S.frame = 0;
     refreshImageUi(); renderHistory(); syncCropInputs(); draw();
   }
-  function undo() {
-    const u = S.undo.pop(); if (!u) return;
-    S.redo.push({ img: S.img, text: u.text, turns: u.turns, crop: S.crop, regions: S.regions });
-    const g = dimsDiffer(u.img); S.ops.pop(); S.turns -= u.turns; S.crop = u.crop; S.regions = u.regions; renderRegions(); setImg(u.img); if (g) fit();
-  }
-  function redo() {
-    const r = S.redo.pop(); if (!r) return;
-    S.undo.push({ img: S.img, text: r.text, turns: r.turns, crop: S.crop, regions: S.regions });
-    const g = dimsDiffer(r.img); S.ops.push(r.text); S.turns += r.turns; S.crop = r.crop; S.regions = r.regions; renderRegions(); setImg(r.img); if (g) fit();
-  }
   const dimsDiffer = img => img.rows !== S.img.rows || img.cols !== S.img.cols;
+  // Back to the image as opened; metadata edits are kept, and this can itself be undone.
   function revertImage() {
-    if (!S.ops.length || !confirm('Revert all image changes? Metadata edits are kept.')) return;
-    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.crop = null; S.regions = []; renderRegions(); setImg(S.origImg); fit();
+    if (!S.ops.length) return;
+    S.undo.push({ kind: 'image', state: imageState(), text: 'Reverted all image changes' }); S.redo = []; trimUndo();
+    restoreImage({ img: S.origImg, ops: [], turns: 0, crop: null, regions: [] });
+    refreshUndoUi(); toast('All image changes reverted. Undo brings them back.');
   }
   function numIn(id, lo, hi) { const v = parseFloat($(id).value); if (!isFinite(v) || v < lo || v > hi) throw new Error(`Enter a value from ${lo} to ${hi}.`); return v; }
   function runOp(op) {
@@ -666,8 +724,8 @@
     });
   }
   function refreshImageUi() {
-    $('btn-undo').disabled = !S.undo.length; $('btn-redo').disabled = !S.redo.length; $('btn-revert-img').disabled = !S.ops.length;
-    $('btn-undo').textContent = S.undo.length ? `Undo: ${S.undo[S.undo.length - 1].text}` : 'Undo';
+    $('btn-revert-img').disabled = !S.ops.length;
+    refreshUndoUi();
     if (S.img) syncWindowInputs();
   }
 
@@ -1017,7 +1075,7 @@
     $('wl-auto').onclick = () => resetWindow('auto'); $('wl-full').onclick = () => resetWindow('full'); $('wl-file').onclick = () => resetWindow('file');
     $('view-invert').onchange = e => { S.invertView = e.target.checked; S.dirtyImage = true; draw(); };
     document.querySelectorAll('[data-op]').forEach(b => b.onclick = () => runOp(b.dataset.op));
-    $('btn-undo').onclick = undo; $('btn-redo').onclick = redo; $('btn-revert-img').onclick = revertImage;
+    $('btn-undo').onclick = undo; $('btn-redo').onclick = redo; $('tb-undo').onclick = undo; $('tb-redo').onclick = redo; $('btn-revert-img').onclick = revertImage;
 
     $('scr-draw').onclick = () => { setTool('scratch'); toast('Drag along a scratch on the image. Right-drag still adjusts the window.'); };
     $('scr-find').onclick = findScratches; $('scr-repair').onclick = () => repairScratches(S.scratches.slice(), 'found');

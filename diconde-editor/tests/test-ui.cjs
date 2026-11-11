@@ -416,6 +416,62 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     ok('scratch repair');
   }
 
+  // One undo history for metadata and image steps, always visible in the top bar.
+  {
+    const undoPath = path.join(tmp, 'undo.dcm'); fs.writeFileSync(undoPath, D.write(makeSample({ rows: 40, cols: 60 })));
+    await page.setInputFiles('#file-input', undoPath);
+    await page.waitForFunction(() => /Opened undo\.dcm/.test(document.getElementById('toast').textContent));
+    assert.ok(await page.isDisabled('#tb-undo') && await page.isDisabled('#tb-redo'));
+    await page.click('[data-tab=meta]'); await page.click('[data-metaview="common"]');
+    const val = tag => page.evaluate(t => { const D = window.Dicom; return D.getString(window.__editor.S.file.ds, t); }, tag);
+    const cidIn = field(page, '(0010,0020)').locator('input');
+    await cidIn.fill('UNDO-1'); await cidIn.press('Enter');                                      // 1 metadata
+    assert.match(await page.getAttribute('#tb-undo', 'title'), /Undo: Component ID Number: “WELD-0042” → “UNDO-1”/);
+    await page.click('[data-tab=image]'); await page.click('[data-op=flip-h]');                 // 2 image
+    await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+    const first = await page.evaluate(() => window.__editor.S.img.frames[0][0]);
+    await page.click('[data-tab=meta]');
+    await field(page, '(0020,4000)').getByRole('button', { name: 'Remove Image Comments' }).click(); // 3 metadata
+    assert.strictEqual(await val(0x00204000), '');
+    await page.click('#tb-undo');
+    assert.strictEqual(await val(0x00204000), 'Synthetic sample', 'removed tag is back');
+    assert.match(await page.textContent('#toast'), /Undone: Removed Image Comments/);
+    await page.click('#tb-undo');
+    await page.waitForFunction(() => window.__editor.S.ops.length === 0);
+    assert.notStrictEqual(await page.evaluate(() => window.__editor.S.img.frames[0][0]), first, 'flip undone');
+    await page.keyboard.press('Control+z');                                                     // keyboard undo
+    assert.strictEqual(await val(0x00100020), 'WELD-0042');
+    assert.ok(await page.isDisabled('#tb-undo'));
+    assert.ok(await page.isHidden('#dirty'), 'back to the file as opened');
+    await page.click('#tb-redo');
+    assert.strictEqual(await val(0x00100020), 'UNDO-1');
+    await page.keyboard.press('Control+y');
+    await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+    // a new change clears redo
+    await cidIn.fill('UNDO-2'); await cidIn.press('Enter');
+    assert.ok(await page.isDisabled('#tb-redo'));
+    // revert all image changes is itself undoable
+    await page.click('[data-tab=image]'); await page.click('#btn-revert-img');
+    await page.waitForFunction(() => window.__editor.S.ops.length === 0);
+    await page.click('#tb-undo');
+    await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+    assert.strictEqual(await page.evaluate(() => window.__editor.S.img.frames[0][0]), first);
+    // a template is one undo step however many fields it sets
+    await page.evaluate(() => localStorage.setItem('diconde-editor.templates.v1', JSON.stringify({ T: { '00100010': { vr: 'PN', text: 'Tpl^Name' }, '00181004': { vr: 'LO', text: 'PL-9' } } })));
+    await page.click('[data-tab=meta]');
+    await page.evaluate(() => { document.getElementById('tpl-select').dispatchEvent(new Event('focus')); });
+    await page.reload();
+    await page.setInputFiles('#file-input', undoPath);
+    await page.waitForFunction(() => /Opened undo\.dcm/.test(document.getElementById('toast').textContent));
+    await page.selectOption('#tpl-select', 'T'); await page.click('#tpl-apply');
+    assert.strictEqual(await val(0x00181004), 'PL-9');
+    assert.match(await page.getAttribute('#tb-undo', 'title'), /Undo: Applied template “T”/);
+    await page.click('#tb-undo');
+    assert.strictEqual(await val(0x00181004), ''); assert.strictEqual(await val(0x00100010), 'Pipe Spool 12');
+    assert.ok(await page.isDisabled('#tb-undo'), 'one step');
+    ok('undo history');
+  }
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');

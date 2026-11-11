@@ -141,6 +141,8 @@ h3:first-child { margin-top: 4px; }
   <button id="btn-open" class="primary">Open file…</button>
   <input id="file-input" type="file" accept=".dcm,.dicom,.dic,application/dicom,*/*" hidden>
   <span id="fileinfo" class="fileinfo">No file open. Files stay on this computer.</span>
+  <button id="tb-undo" class="icon" disabled aria-label="Undo (nothing to undo)" title="Nothing to undo">↶ Undo</button>
+  <button id="tb-redo" class="icon" disabled aria-label="Redo (nothing to redo)" title="Nothing to redo">↷ Redo</button>
   <span id="dirty" class="dirty hidden" role="status">● Unsaved changes</span>
   <button id="btn-save" disabled>Save copy (.dcm)</button>
   <div class="menu" id="export-menu">
@@ -284,6 +286,7 @@ h3:first-child { margin-top: 4px; }
         <p class="note" id="scr-note">Only thin lines that read as less radiation than the plate on both sides are repaired (damaged phosphor, dust): they are filled in from the plate either side. Lines reading as more radiation — cracks, lack of fusion, porosity, undercut — are never changed, and nothing next to them is touched. Find long scratches proposes only long straight lines, such as scanner roller scratches; IQI wires and markers are too short. Check before repairing; every repair can be undone and is recorded in the saved file.</p>
 
         <h3>Undo</h3>
+        <p class="note">Undo and Redo are also at the top of the window and cover metadata edits too.</p>
         <div class="btns"><button id="btn-undo" disabled>Undo</button><button id="btn-redo" disabled>Redo</button><button id="btn-revert-img" class="danger" disabled>Revert all image changes</button></div>
         <p class="note">Shortcuts: Ctrl+Z undo, Ctrl+Y redo, F fit, V rotate view, I info overlay, hold C to compare with the original, Esc clears the crop box, right-drag adjusts the window.</p>
         <p class="note">Processed copies are marked DERIVED and record each step in Derivation Description. Check your procedure or code before using enhanced images for acceptance.</p>

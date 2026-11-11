@@ -33,7 +33,14 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
   - **Use these** loads the EDGE settings INDUSTREX stored in the file (CSH_NDT xx72).
   - Display only: shown on screen and in PNG/PDF exports. **Apply to pixels** writes it into the image as an undoable step, recorded in Derivation Description, and the copy is marked DERIVED.
   - Takes about 1 second on a full 1353×4266 plate.
-- **Image clean-up**: window and level (display only; you can store it as the copy's default), invert view, rotate, flip, 3×3 median noise reduction, bad-pixel repair, Gaussian smoothing, unsharp-mask sharpening, invert pixel values, and up to 12 undo steps.
+- **Undo / Redo** (top bar, Ctrl+Z / Ctrl+Y):
+  - One history for everything, in the order it was done.
+  - Image steps: filters, scratch repairs, crops, rotations, EDGE applied, and Revert all image changes (itself undoable).
+  - Metadata changes: field edits, added or removed tags, per-field reverts, and a template applied as a single step.
+  - Hovering shows what will be undone. A new change clears Redo.
+  - The last 20 image steps are kept (each holds a full image); metadata steps are small.
+  - Opening another file starts a new history. The original file is never changed in any case.
+- **Image clean-up**: window and level (display only; you can store it as the copy's default), invert view, rotate, flip, 3×3 median noise reduction, bad-pixel repair, Gaussian smoothing, unsharp-mask sharpening and invert pixel values.
 - **Scratch repair** (Image tab, and the **Scratch** mouse tool) for damaged plates:
   - Only thin lines (up to a set width, default 7 px) that read as less radiation than the plate on both sides are repaired. That is the direction a damaged phosphor or dust shifts a CR image. Each is filled by straight interpolation between the plate either side.
   - Lines reading as more radiation (cracks, lack of fusion, porosity, undercut) are never changed, and a spot next to one is left alone. Steps such as plate edges or weld toes, plate texture (a line must dip at least 1% of the plate-to-background range) and wide bands are not changed either.
