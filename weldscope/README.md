@@ -1,0 +1,79 @@
+# WeldScope
+
+WeldScope is a native Windows DICONDE image editor written in Rust (egui). It replaces the browser prototype in
+`../diconde-editor/`, which stays in the repository, frozen, as the reference implementation. WeldScope shares no
+code, storage or version with RT Handbook and is not packaged into the APK.
+
+The opened files are never changed: every save writes a new file.
+
+## Layout
+
+- `core/` (`weldscope-core`) holds all file and image logic, with no interface code:
+  - `dicom.rs`: reading, writing, value checks, derived copies, INDUSTREX private block and XML mirror.
+  - `codec.rs`: JPEG 2000 through native OpenJPEG (`openjpeg-sys`, OpenJPEG 2.5).
+  - `imaging.rs`: window/level, EDGE-style filter, film pieces, straightening, scratch repair.
+  - `compat.rs`: INDUSTREX compatibility check.
+  - `shots.rs`: metadata edit record, batch edits, weld grouping.
+  - `copy.rs`: building saved copies.
+  - `overlay.rs`, `export.rs`, `sample.rs`.
+- `app/` (`WeldScope.exe`) is the interface:
+  - `app.rs`: state, background jobs, undo, saving.
+  - `viewer.rs`, `panels.rs`, `organize.rs`.
+  - `export_img.rs`: export rendering and thumbnails.
+  - `assets/`: logo, icon and `app.ico`, made from the owner's artwork.
+- `tools/`:
+  - `build-windows.sh`: tests, cross-build and `dist/WeldScope-Windows.zip`.
+  - `make-notices.py`: `THIRD-PARTY-NOTICES.txt`.
+  - `make-parity-fixtures.cjs`: records the prototype's answers for the parity tests.
+
+## Rules carried over from the prototype (owner-confirmed with INDUSTREX 7.2.1)
+
+- **Every copy:** gets a new SOP Instance UID.
+- **Pixel edits:**
+  - mark the copy DERIVED\SECONDARY;
+  - add a new series, a Derivation Description and a Source Image Sequence;
+  - drop CSH_NDT xx40/xx50/xx52/xx70 and the Icon Image Sequence;
+  - keep xx10/xx71/xx72;
+  - recalculate 0028,0106/0107.
+- **Metadata-only copies:** keep everything (compressed data byte for byte) and sync edited fields into the xx70 XML.
+- **Processed JPEG 2000 copies:** follow the source codestream's precision, progression and tiling, and get a Basic
+  Offset Table entry. Native OpenJPEG can tile, so INDUSTREX files are rewritten with their 512×512 tiles, which
+  the WebAssembly prototype could not do.
+- **INDUSTREX ANGLE:** applied counter-clockwise for the display-only view rotation.
+- **EDGE-style filter:** an approximation (defaults fitted to an INDUSTREX screenshot). Never describe it as
+  INDUSTREX's EDGE. It stays display-only until Apply to pixels.
+- **Overlay text:** display and export only; never written into DICONDE pixels.
+- **Scratch repair:** only thin lines reading as less radiation than the plate on both sides. Never cracks or voids,
+  never IQI wires, and never without the user drawing or confirming the line.
+- **Batch edits:** every shot is validated before any change.
+- **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
+
+## Tests
+
+```sh
+cargo test --release -p weldscope-core                      # 22 tests
+DICONDE_REAL_DIR=/path/to/dcm cargo test --release real_files -- --nocapture
+```
+
+- `core/tests/parity.rs` compares the core with the prototype: pieces, levels, windows, straightened pixels,
+  scratch repairs, EDGE output, file reading, J2K decode and XML sync. All match exactly, apart from float rounding
+  in the EDGE output.
+- `core/tests/core.rs` ports the prototype's core tests and adds tiled-encode and copy-building tests.
+- Never commit the owner's real files.
+
+The interface was checked by driving the Linux build on a virtual display and the Windows build under Wine, using
+`WELDSCOPE_TEST_DIR` (answers save and folder dialogs with a fixed folder; for automated checks only). Copies written
+both ways passed the prototype's own INDUSTREX checker. Real Windows behaviour, including the file dialogs and
+SmartScreen, still needs the owner's confirmation.
+
+## Building for Windows
+
+```sh
+rustup target add x86_64-pc-windows-gnu      # plus mingw-w64 (gcc, windres) and python3
+tools/build-windows.sh                       # → dist/WeldScope-Windows.zip
+```
+
+- The .exe needs only system DLLs and is unsigned.
+- It renders with OpenGL and falls back to Direct3D/Vulkan (wgpu) if OpenGL fails.
+- It is always dark-themed.
+- Settings (panes, overlay layout, templates) are kept per Windows user by eframe.
