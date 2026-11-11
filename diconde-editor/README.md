@@ -2,7 +2,15 @@
 
 An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. It is a separate tool from the RT Handbook Android app and shares no code or storage with it.
 
-Open `index.html` in Chrome, Edge or Firefox, or build a single shareable file with `node tools/build-single.cjs` (writes `dist/diconde-editor.html`, about 670 KB including the JPEG 2000 codec). Nothing is uploaded: files are read and written locally in the browser.
+**Windows program**: unzip `DICONDE-Editor-Windows.zip` and run `DiCondeEditor.exe`.
+- Needs Windows 10 or 11, which include .NET Framework 4.8 and the Edge WebView2 runtime; nothing else to install. About 665 KB zipped.
+- Open and Save use the normal Windows dialogs. Saves go to the original's folder by default, and the original itself cannot be chosen as the save target.
+- `.dcm` files can be opened by double-click or "Open with", and the program asks before closing with unsaved changes.
+- The program is not code-signed, so SmartScreen may warn on first run.
+- Build it with `bash tools/build-windows.sh` (any OS with the .NET 8 SDK). Source is in `windows/`: `Program.cs` hosts the unchanged editor files from `app\` in WebView2 and answers its open/save messages.
+- Built on Linux; the owner runs it on Windows. `tests/test-windows-host.cjs` checks the editor's side of the open/save/dirty/title messages against a stand-in host.
+
+**Browser**: open `index.html` in Chrome, Edge or Firefox, or build a single shareable file with `node tools/build-single.cjs` (writes `dist/diconde-editor.html`, about 670 KB including the JPEG 2000 codec). Nothing is uploaded: files are read and written locally in the browser.
 
 ## What it does
 
@@ -158,6 +166,8 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 | `imaging.js` | Rotate, flip, crop, median, smoothing, sharpening, bad pixels, windowing |
 | `export.js` | ZIP, TIFF and PDF builders |
 | `compat.js` | INDUSTREX compatibility check of a saved copy against the original |
+| `windows/` | Windows program: `DicondeEditor.csproj`, `Program.cs` (WebView2 host), icon, README |
+| `tools/build-windows.sh` | Builds `dist/DICONDE-Editor-Windows.zip` |
 | `tools/check-industrex.cjs` | Command-line compatibility check |
 | `overlay.js` | Overlay layout, value formatting and corner text drawing |
 | `codec.js` | JPEG 2000 decode/encode and frame splitting, using `vendor/openjpeg/` |
@@ -173,7 +183,8 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
 ```sh
 node diconde-editor/tests/test-core.cjs   # parser/writer, validation, derivation, image ops, exporters
 node diconde-editor/tests/test-ui.cjs     # browser workflow (needs Playwright + Chromium; CHROME_BINARY optional)
-npm run test:diconde                      # both
+node diconde-editor/tests/test-windows-host.cjs  # editor side of the Windows program's messages
+npm run test:diconde                      # all of the above
 ```
 
 The sample file written by this tool was also read back successfully with pydicom during development. Files from real scanners (for example Carestream INDUSTREX DR/CR exports) have not been tested yet. `tests/industrex-fixture.cjs` builds a synthetic file with the same layout as real INDUSTREX 7.2.1 exports for the tests; `tests/test-real-files.cjs` checks your own files when `DICONDE_REAL_DIR` is set.

@@ -28,11 +28,39 @@
   // ---------- utilities ----------
   let toastTimer;
   function toast(msg, isErr) { const t = $('toast'); t.textContent = msg; t.className = 'toast' + (isErr ? ' err' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.textContent = ''; }, isErr ? 7000 : 4500); }
-  function download(bytes, name, type) {
+  // ---------- Windows host (DiCondeEditor.exe, Edge WebView2) ----------
+  // In the Windows program, Open/Save use native dialogs through WebView2 messages; in a browser, nothing changes.
+  const HOST = window.chrome && window.chrome.webview ? (() => {
+    let next = 0; const pending = new Map();
+    window.chrome.webview.addEventListener('message', ev => {
+      const m = ev.data || {};
+      if (m.id != null && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+      else if (m.cmd === 'openFile' && m.ok) openFromHost(m);
+    });
+    return {
+      call: (cmd, args) => new Promise(res => { const id = ++next; pending.set(id, res); window.chrome.webview.postMessage(Object.assign({ id, cmd }, args)); }),
+      post: (cmd, args) => window.chrome.webview.postMessage(Object.assign({ cmd }, args))
+    };
+  })() : null;
+  function toB64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+  function fromB64(b64) { const s = atob(b64), o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) o[i] = s.charCodeAt(i); return o; }
+  async function openFromHost(m) {
+    if (hasChanges() && stateKey() !== savedState && !confirm('Discard unsaved changes to the current file?')) return;
+    await busy(async () => { await openBytes(fromB64(m.data), m.name); S.path = m.path || ''; }, 'Opening…');
+  }
+  // Saves through the native dialog (Windows program) or as a browser download. Resolves { saved, name, path }.
+  async function download(bytes, name, type) {
+    if (HOST) {
+      const r = await HOST.call('save', { name, data: toB64(bytes) });
+      if (!r.ok && !r.cancelled) toast(`Could not save: ${r.error || 'unknown error'}`, true);
+      return { saved: !!r.ok, name: r.name || name, path: r.path || '' };
+    }
     const url = URL.createObjectURL(new Blob([bytes], { type: type || 'application/octet-stream' }));
     const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return { saved: true, name, path: '' };
   }
+  const savedWhere = r => (r.path ? r.path : r.name);
   async function busy(fn, label) {
     $('busy').textContent = label || 'Working…';
     $('busy').classList.add('on');
@@ -89,6 +117,7 @@
     syncEdgeInputs(); showEdgeFileSettings(); $('btn-overlay').disabled = !S.img; renderOverlayTab();
     renderMeta(); refreshImageUi(); renderRegions(); renderHistory();
     toast(`Opened ${name}`);
+    if (HOST) HOST.post('title', { text: name });
   }
   async function openFile(f) { if (!f) return; if (hasChanges() && !confirm('Discard unsaved changes to the current file?')) return; await busy(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name), 'Opening…'); }
 
@@ -699,12 +728,13 @@
     busy(async () => {
       await prepareCodec();
       const removed = [], copy = buildCopy(null, null, removed), bytes = D.write(copy);
-      download(bytes, `${baseName()}_edited.dcm`, 'application/dicom');
+      const res = await download(bytes, `${baseName()}_edited.dcm`, 'application/dicom');
+      if (!res.saved) { toast('Not saved.'); return; }
       let extra = removed.length ? ` Left out ${removed.length} element(s) that described the original pixels.` : '';
       if (copy.synced && copy.synced.length) extra += ` Updated ${copy.synced.length} field(s) in INDUSTREX's XML copy.`;
-      toast(`Saved ${baseName()}_edited.dcm (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
+      toast(`Saved ${savedWhere(res)} (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
       markSaved();
-      runCompat(bytes, `${baseName()}_edited.dcm`, removed, S.ops.length > 0);
+      runCompat(bytes, res.name, removed, S.ops.length > 0);
     }, saveLabel());
   }
   function exportSplit() {
@@ -727,8 +757,8 @@
         files.push({ name: fname, data: D.write(copy) });
       });
       const z = X.zip(files);
-      download(z, `${baseName()}_split.zip`, 'application/zip');
-      toast(`Saved ${files.length} files in ${baseName()}_split.zip. The original file is unchanged.`);
+      const res = await download(z, `${baseName()}_split.zip`, 'application/zip');
+      toast(res.saved ? `Saved ${files.length} files in ${savedWhere(res)}. The original file is unchanged.` : 'Not saved.');
     }, $('save-format').value === 'j2k' ? 'Compressing JPEG 2000…' : 'Saving…');
   }
   // Re-reads the bytes just written and checks them against INDUSTREX's requirements and the original file.
@@ -771,9 +801,9 @@
     await busy(async () => {
       if (kind === 'png') {
         const blob = await new Promise(r => renderedCanvas().toBlob(r, 'image/png'));
-        download(new Uint8Array(await blob.arrayBuffer()), `${baseName()}.png`, 'image/png');
+        await download(new Uint8Array(await blob.arrayBuffer()), `${baseName()}.png`, 'image/png');
       } else if (kind === 'tiff') {
-        download(X.tiff(S.img, S.frame), `${baseName()}.tif`, 'image/tiff');
+        await download(X.tiff(S.img, S.frame), `${baseName()}.tif`, 'image/tiff');
       } else if (kind === 'pdf') {
         const src = renderedCanvas(), maxSide = 2400, s = Math.min(1, maxSide / Math.max(src.width, src.height));
         const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(src.width * s)); c.height = Math.max(1, Math.round(src.height * s));
@@ -787,7 +817,7 @@
         const now = new Date();
         const pdf = X.pdfReport({ title: 'Radiograph report', subtitle: `${S.name} · generated ${now.toLocaleString()} · DICONDE Editor (not an inspection record)`, fields,
           jpeg: new Uint8Array(await blob.arrayBuffer()), imageWidth: c.width, imageHeight: c.height, caption: `Window width ${fmt(S.win.w)}, level ${fmt(S.win.c)}${S.invertView ? ', inverted view' : ''}` });
-        download(pdf, `${baseName()}_report.pdf`, 'application/pdf');
+        await download(pdf, `${baseName()}_report.pdf`, 'application/pdf');
       }
     });
   }
@@ -821,6 +851,7 @@
   function updateDirty() {
     const dirty = !!S.file && hasChanges() && stateKey() !== savedState;
     $('dirty').classList.toggle('hidden', !dirty); $('btn-save').classList.toggle('primary', dirty);
+    if (HOST && dirty !== S.hostDirty) { S.hostDirty = dirty; HOST.post('dirty', { dirty }); }
     $('btn-compare').disabled = !S.img || !S.ops.length;
   }
 
@@ -828,7 +859,11 @@
   function syncSeg(sel, attr, value) { document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === value))); }
   function setTool(t) { S.tool = t; $('stage').dataset.tool = t; syncSeg('[data-tool]', 'tool', t); }
   function init() {
-    $('btn-open').onclick = $('btn-open-2').onclick = () => $('file-input').click();
+    $('btn-open').onclick = $('btn-open-2').onclick = async () => {
+      if (!HOST) { $('file-input').click(); return; }
+      const r = await HOST.call('open', {});
+      if (r.ok) openFromHost(r); else if (!r.cancelled) toast(`Could not open: ${r.error || 'unknown error'}`, true);
+    };
     $('file-input').onchange = e => { openFile(e.target.files[0]); e.target.value = ''; };
     $('btn-sample').onclick = () => busy(() => openBytes(D.write(window.Sample.makeSample({ rows: 600, cols: 1600 })), 'sample-weld.dcm'));
     const stage = $('stage');
@@ -914,6 +949,7 @@
     document.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'c') setComparing(false); });
     window.addEventListener('beforeunload', e => { if (hasChanges() && stateKey() !== savedState) { e.preventDefault(); e.returnValue = ''; } });
 
+    if (HOST) { document.documentElement.classList.add('in-windows-app'); HOST.post('ready', {}); }
     fillAddForm(); syncOverlayUi(); renderOverlayTab(); renderTemplates(); renderMeta(); renderHistory(); resize();
   }
   init();

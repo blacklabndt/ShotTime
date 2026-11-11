@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows host for the DICONDE Editor web app. Builds on Windows or Linux (EnableWindowsTargeting).
+       Targets .NET Framework 4.8 (part of Windows 10/11) and uses the Edge WebView2 runtime (also part of
+       Windows 10/11), so the download stays small and nothing else needs installing. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>DiCondeEditor</AssemblyName>
+    <RootNamespace>DicondeEditor</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Product>DICONDE Editor</Product>
+    <AssemblyTitle>DICONDE Editor</AssemblyTitle>
+    <Version>1.0.0</Version>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Referenced directly (instead of UseWindowsForms) so the project also builds with SDKs that lack the
+         Windows desktop component, such as Linux distribution packages. -->
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+  <!-- The editor itself, copied unchanged into app\ next to the exe. -->
+  <ItemGroup>
+    <None Include="..\index.html;..\*.js" Link="app\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\vendor\openjpeg\*" Link="app\vendor\openjpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="README.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Licence terms that must travel with the redistributed WebView2 SDK files. -->
+    <None Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.2903.40\LICENSE.txt" Link="licenses\WebView2-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(NuGetPackageRoot)microsoft.web.webview2\1.0.2903.40\NOTICE.txt" Link="licenses\WebView2-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
