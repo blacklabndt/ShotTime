@@ -14,16 +14,18 @@ An offline, browser-based editor for DICONDE (DICOM for NDE) radiograph files. I
 
 ## What it does
 
-- **Shots window** (top bar: Shots | Editor): organise many shots by weld and edit their metadata together.
-  - **Adding shots**: Add shots, Add folder, or drop files. In the Windows program these use native dialogs.
+- **Working folder**: **Open folder…** loads every .dcm file in the job's folder. In the Windows program it uses the folder dialog, and saved copies go to that folder by default; in a browser it uses the folder picker. Opening another folder replaces the list (with a warning if anything is unsaved). **+ Add** or dropping files adds individual files.
+- **Edit tab**: a file pane on the left lists the folder's files under their weld, with thumbnail, shot number and edited/saved marks; filter it, or use ↑/↓ to move through it. Click a file to edit it in the viewer and tool tabs.
+  - Each file keeps its unsaved work when you move to another: metadata edits, image steps and its undo history.
+  - **Save all edited** (bottom of the pane, or Organize shots) saves every changed file, with its image changes where it has any.
+- **Organize shots tab**: organise the folder's shots by weld and edit their metadata together.
   - **Grouping**: shots are grouped by a chosen field (default Series Description, where INDUSTREX keeps the weld/shot ID, e.g. X-81). Within a weld they are ordered by shot number, then acquisition time. Thumbnails are shown at INDUSTREX's viewing angle.
   - **Selecting**: click shots, or tick a whole weld.
   - **Batch edit**: the usual fields, with shared values filled in and differing ones marked "Multiple values". Only fields you change are applied; × removes a field from all selected shots. Every value is checked against every shot first, so a bad value changes nothing and the panel says why.
   - **Organising**: Set weld, drag shots onto another weld, number a weld's shots 1…n, apply a template to the selection.
-  - **Undo/Redo**: the top bar covers Shots changes while the Shots window is open.
-  - **Editing one shot**: double-click opens it in the editor on the same working copy, so changes made there show in Shots and the other way round.
-  - **Saving**: Save edited shots writes a new copy of every edited shot (name_edited.dcm) with INDUSTREX's XML copy updated, and runs the compatibility check on each. You get one ZIP in a browser; in the Windows program the files go to a folder you choose (default: the originals' folder), never overwriting an original or an existing file. Originals are never changed.
-  - Image processing stays a per-shot job in the editor (Save copy there).
+  - **Undo/Redo**: the top bar covers Organize changes while that tab is open.
+  - **Editing one shot**: double-click opens it on the Edit tab, on the same working copy.
+  - **Save all edited**: writes a new copy of every edited file (name_edited.dcm) with INDUSTREX's XML copy updated, runs the compatibility check on each, and lists the results. You get one ZIP in a browser; in the Windows program the files go to a folder you choose (default: the working folder), never overwriting an original or an existing file. Originals are never changed.
 - **Metadata**: a Common view of the usual NDE fields (component, inspection, equipment and technique, display), and an All tags view that includes nested sequences. DICONDE names are shown with the underlying DICOM name, for example *Component ID Number* (DICOM: Patient ID). Values are checked against their VR (dates as YYYYMMDD, length limits, numbers, UIDs) before they are accepted. You can add, remove and revert tags. Templates save the fields you changed so you can apply them to other files; they are stored only in this browser.
 - **Viewing**:
   - JPEG 2000 images (as INDUSTREX saves them) are decoded when they open.

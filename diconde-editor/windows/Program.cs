@@ -31,6 +31,7 @@ namespace DicondeEditor
         readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         string pendingFile;       // file given on the command line ("Open with", double-click)
         string openedPath;        // the file the editor is showing; never overwritten
+        string workFolder;        // the working folder, where saves go by default
         readonly HashSet<string> originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // every file opened; never overwritten
         bool dirty, allowClose;
 
@@ -134,7 +135,7 @@ namespace DicondeEditor
             using (var dlg = new OpenFileDialog { Title = "Add shots", Multiselect = true, Filter = "DICOM / DICONDE files (*.dcm;*.dicom;*.dic)|*.dcm;*.dicom;*.dic|All files (*.*)|*.*", CheckFileExists = true })
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "cancelled", true } }); return; }
-                SendShots(id, dlg.FileNames);
+                SendShots(id, dlg.FileNames, null);
             }
         }
 
@@ -147,16 +148,19 @@ namespace DicondeEditor
                 foreach (var pattern in new[] { "*.dcm", "*.dicom", "*.dic" }) files.AddRange(Directory.GetFiles(dlg.SelectedPath, pattern, SearchOption.TopDirectoryOnly));
                 files.Sort(StringComparer.OrdinalIgnoreCase);
                 if (files.Count == 0) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "error", "No .dcm files in that folder." } }); return; }
-                SendShots(id, files.ToArray());
+                SendShots(id, files.ToArray(), dlg.SelectedPath);
             }
         }
 
-        void SendShots(object id, string[] paths)
+        // folder: the working folder when one was opened (the page then replaces its list), else null.
+        void SendShots(object id, string[] paths, string folder)
         {
             int sent = 0;
             foreach (var p in paths) { try { SendFile("addShot", null, p); sent++; } catch (Exception ex) { MessageBox.Show(this, Path.GetFileName(p) + ": " + ex.Message, "DICONDE Editor"); } }
-            web.CoreWebView2.PostWebMessageAsJson(json.Serialize(new Dictionary<string, object> { { "cmd", "addShotsDone" }, { "count", sent } }));
-            Reply(id, new Dictionary<string, object> { { "ok", true }, { "count", sent } });
+            var done = new Dictionary<string, object> { { "cmd", "addShotsDone" }, { "count", sent } };
+            if (folder != null) { done["folder"] = folder; workFolder = folder; }
+            web.CoreWebView2.PostWebMessageAsJson(json.Serialize(done));
+            Reply(id, new Dictionary<string, object> { { "ok", true }, { "count", sent }, { "folder", folder ?? "" } });
         }
 
         void PickFolder(object id, string near)
@@ -190,13 +194,16 @@ namespace DicondeEditor
             string filter = ext == ".zip" ? "ZIP archive (*.zip)|*.zip" : ext == ".png" ? "PNG image (*.png)|*.png" : ext == ".tif" ? "TIFF image (*.tif)|*.tif" : ext == ".pdf" ? "PDF document (*.pdf)|*.pdf" : "DICONDE file (*.dcm)|*.dcm";
             using (var dlg = new SaveFileDialog { Title = "Save", FileName = name, Filter = filter + "|All files (*.*)|*.*", OverwritePrompt = true, AddExtension = true, DefaultExt = ext.TrimStart('.') })
             {
-                if (openedPath != null) dlg.InitialDirectory = Path.GetDirectoryName(openedPath);
+                string near = Get(m, "near");
+                if (!string.IsNullOrEmpty(near) && File.Exists(near)) dlg.InitialDirectory = Path.GetDirectoryName(near);
+                else if (workFolder != null) dlg.InitialDirectory = workFolder;
+                else if (openedPath != null) dlg.InitialDirectory = Path.GetDirectoryName(openedPath);
                 while (true)
                 {
                     if (dlg.ShowDialog(this) != DialogResult.OK) { Reply(id, new Dictionary<string, object> { { "ok", false }, { "cancelled", true } }); return; }
-                    if (openedPath != null && string.Equals(Path.GetFullPath(dlg.FileName), openedPath, StringComparison.OrdinalIgnoreCase))
+                    if (originals.Contains(Path.GetFullPath(dlg.FileName)))
                     {
-                        MessageBox.Show(this, "That is the original file, which DICONDE Editor never overwrites. Choose a different name.", "Save", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show(this, "That is one of the original files, which DICONDE Editor never overwrites. Choose a different name.", "Save", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         continue;
                     }
                     break;

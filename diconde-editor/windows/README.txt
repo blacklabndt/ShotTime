@@ -1,7 +1,8 @@
 DICONDE Editor for Windows
 ==========================
 
-Run DiCondeEditor.exe. To open .dcm files by double-clicking, right-click a .dcm file, choose
+Run DiCondeEditor.exe and choose Open folder... to work on a job's folder of .dcm files: the files are
+listed on the left of the Edit tab, and Organize shots groups them by weld. To open .dcm files by double-clicking, right-click a .dcm file, choose
 "Open with" > "Choose another app", browse to DiCondeEditor.exe and tick "Always use this app".
 
 Requirements: Windows 10 or 11 (these include .NET Framework 4.8 and the Microsoft Edge WebView2

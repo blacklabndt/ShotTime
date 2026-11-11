@@ -203,11 +203,11 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   assert.ok(ixMetaOut.ds.el.has(0x00331050) && ixMetaOut.ds.el.has(0x00880200));
   assert.strictEqual(await field(page, '(0008,1048)').locator('input').inputValue(), 'Inspect Co');
   assert.match(await field(page, '(0008,1048)').textContent(), /Inspecting Company Name.*DICOM: Physicians Of Record/);
-  assert.ok(await page.isHidden('#dirty'), 'saved state');
+  assert.ok(await page.evaluate(() => !window.__editor.S.entry.dirty), 'saved state');
   assert.ok(await page.isDisabled('#btn-compare'));
   await page.click('[data-tab=image]'); await page.click('[data-op=flip-h]');
   await page.waitForFunction(() => window.__editor.S.ops.length === 1);
-  assert.ok(await page.isVisible('#dirty'));
+  assert.ok(await page.evaluate(() => window.__editor.S.entry.dirty));
   const cmpBox = await page.locator('#btn-compare').boundingBox();
   await page.mouse.move(cmpBox.x + 5, cmpBox.y + 5); await page.mouse.down();
   assert.strictEqual(await page.getAttribute('#btn-compare', 'aria-pressed'), 'true');
@@ -215,7 +215,7 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   assert.strictEqual(await page.getAttribute('#btn-compare', 'aria-pressed'), 'false');
   const ixSaved = await grab(page, () => page.click('#btn-save'));
   await page.waitForFunction(() => /Left out 5 element/.test(document.getElementById('toast').textContent));
-  assert.ok(await page.isHidden('#dirty'));
+  assert.ok(await page.evaluate(() => !window.__editor.S.entry.dirty));
   const ixOut = await D.parse(ixSaved.bytes);
   for (const t of [0x00880200, 0x00331040, 0x00331050, 0x00331052, 0x00331070]) assert.strictEqual(D.getElement(ixOut.ds, t), null);
   assert.ok(ixOut.ds.el.has(0x00331072), 'display processing kept');
@@ -442,7 +442,7 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     await page.keyboard.press('Control+z');                                                     // keyboard undo
     assert.strictEqual(await val(0x00100020), 'WELD-0042');
     assert.ok(await page.isDisabled('#tb-undo'));
-    assert.ok(await page.isHidden('#dirty'), 'back to the file as opened');
+    assert.ok(await page.evaluate(() => !window.__editor.S.entry.dirty), 'back to the file as opened');
     await page.click('#tb-redo');
     assert.strictEqual(await val(0x00100020), 'UNDO-1');
     await page.keyboard.press('Control+y');
@@ -475,10 +475,29 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   // Shots window: group by weld, batch edit, move, renumber, open in the editor, save checked copies.
   {
     const mk = (name, weld, inst) => { const f = makeIndustrexLike({ rows: 40, cols: 60 }); if (weld) D.setText(f.ds, 0x0008103E, weld); else D.remove(f.ds, 0x0008103E); D.setText(f.ds, 0x00200013, String(inst), 'IS'); const pth = path.join(tmp, name); fs.writeFileSync(pth, D.write(f)); return pth; };
-    const files = [mk('w1a.dcm', 'X-1', 2), mk('w1b.dcm', 'X-1', 1), mk('w2a.dcm', 'X-2', 1), mk('none.dcm', '', 3)];
-    await page.click('[data-view=shots]');
-    await page.setInputFiles('#sh-input', files);
-    await page.waitForFunction(() => /Added 4 shots/.test(document.getElementById('toast').textContent));
+    const jobDir = path.join(tmp, 'job1'); fs.mkdirSync(jobDir, { recursive: true });
+    for (const f of [mk('w1a.dcm', 'X-1', 2), mk('w1b.dcm', 'X-1', 1), mk('w2a.dcm', 'X-2', 1), mk('none.dcm', '', 3)]) fs.renameSync(f, path.join(jobDir, path.basename(f)));
+    fs.writeFileSync(path.join(jobDir, 'notes.txt'), 'not a shot');
+    // Open the working folder: the list is replaced, files are listed under their welds, the first is opened.
+    await page.setInputFiles('#folder-input', jobDir);
+    await page.waitForFunction(() => /Opened w1b\.dcm|Opened folder/.test(document.getElementById('toast').textContent) && window.__editor.S.shots.length === 4);
+    assert.match(await page.textContent('#fileinfo'), /^job1 · /);
+    assert.deepStrictEqual(await page.evaluate(() => [...document.querySelectorAll('#fp-list .fp-weld, #fp-list .fp-item .nm')].map(n => n.textContent)),
+      ['X-1', 'w1b.dcm', 'w1a.dcm', 'X-2', 'w2a.dcm', 'No Series Description', 'none.dcm']);
+    assert.strictEqual(await page.evaluate(() => window.__editor.S.name), 'w1b.dcm');
+    // Image work is kept per file when switching in the pane.
+    await page.click('#fp-list .fp-item:has-text("w2a.dcm")');
+    await page.waitForFunction(() => window.__editor.S.name === 'w2a.dcm');
+    await page.click('[data-tab=image]'); await page.click('[data-op=flip-v]');
+    await page.waitForFunction(() => window.__editor.S.ops.length === 1);
+    await page.click('#fp-list .fp-item:has-text("w1b.dcm")');
+    await page.waitForFunction(() => window.__editor.S.name === 'w1b.dcm' && window.__editor.S.ops.length === 0);
+    assert.match(await page.textContent('#fp-list .fp-item:has-text("w2a.dcm")'), /edited \+ image/);
+    await page.click('#fp-list .fp-item:has-text("w2a.dcm")');
+    await page.waitForFunction(() => window.__editor.S.name === 'w2a.dcm' && window.__editor.S.ops.length === 1);
+    assert.match(await page.textContent('#btn-undo'), /Undo: Flipped top–bottom/);
+    await page.keyboard.press('ArrowDown'); // focus is in the page, not the pane: nothing happens
+    await page.click('[data-view=organize]');
     const keys = () => page.evaluate(() => [...document.querySelectorAll('.sh-group')].map(g => g.dataset.key + ':' + g.querySelectorAll('.sh-card').length));
     assert.deepStrictEqual(await keys(), ['X-1:2', 'X-2:1', ':1']);
     assert.deepStrictEqual(await page.evaluate(() => [...document.querySelectorAll('.sh-group[data-key="X-1"] .nm')].map(n => n.textContent)), ['w1b.dcm', 'w1a.dcm'], 'ordered by shot number');
@@ -515,7 +534,7 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     await page.click('[data-tab=meta]'); await page.click('[data-metaview="common"]');
     assert.strictEqual(await field(page, '(0008,1048)').locator('input').inputValue(), 'Batch NDE');
     const own = field(page, '(0018,1004)').locator('input'); await own.fill('PL-W1A'); await own.press('Enter');
-    await page.click('[data-view=shots]');
+    await page.click('[data-view=organize]');
     assert.strictEqual(await shotVal('w1a.dcm', 0x00181004), 'PL-W1A');
     // save every edited shot: one ZIP, XML synced, all pass the compatibility check
     const zipS = await grab(page, () => page.click('#sh-save'));
@@ -523,16 +542,22 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
     const outs = []; const zb = zipS.bytes; let zp = 0;
     while (zb.readUInt32LE(zp) === 0x04034b50) { const size = zb.readUInt32LE(zp + 18), nl = zb.readUInt16LE(zp + 26); outs.push({ name: zb.toString('utf8', zp + 30, zp + 30 + nl), data: zb.subarray(zp + 30 + nl, zp + 30 + nl + size) }); zp += 30 + nl + size; }
     assert.deepStrictEqual(outs.map(o => o.name).sort(), ['none_edited.dcm', 'w1a_edited.dcm', 'w1b_edited.dcm', 'w2a_edited.dcm']);
+    const w2aOut = await D.parse(outs.find(o => o.name === 'w2a_edited.dcm').data);
+    assert.strictEqual(D.getString(w2aOut.ds, 0x00080008), 'DERIVED\\SECONDARY', 'image change saved with Save all edited');
+    assert.match(D.getString(w2aOut.ds, 0x00082111), /Flipped top.bottom/);
     const w1a = await D.parse(outs.find(o => o.name === 'w1a_edited.dcm').data);
     assert.strictEqual(D.getString(w1a.ds, 0x00081048), 'Batch NDE'); assert.strictEqual(D.getString(w1a.ds, 0x00181004), 'PL-W1A');
     assert.deepStrictEqual(D.industrexXmlValues(w1a.ds, 0x00081048), ['Batch NDE']);
     assert.match(await page.textContent('#sh-result'), /Saved 4 copies in shots_edited\.zip\. INDUSTREX compatibility: all passed/);
-    assert.strictEqual(await page.locator('.badge.ok').count(), 4);
+    assert.match(await page.textContent('#sh-result'), /w2a_edited\.dcm \(with image changes\)/);
+    assert.ok(await page.isHidden('#dirty'), 'whole folder saved');
+    assert.strictEqual(await page.locator('#sh-groups .badge.ok').count(), 4);
+    assert.strictEqual(await page.locator('#fp-list .badge.ok').count(), 4, 'file pane shows them saved too');
     assert.ok(await page.isDisabled('#sh-save'));
     // remove from the list
     await page.click('#sh-select-all'); await page.click('#sh-remove');
     assert.deepStrictEqual(await keys(), []);
-    await page.click('[data-view=editor]');
+    await page.click('[data-view=edit]');
     ok('shots window');
   }
 

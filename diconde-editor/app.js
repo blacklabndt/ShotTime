@@ -36,7 +36,7 @@
       if (m.id != null && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
       else if (m.cmd === 'openFile' && m.ok) openFromHost(m);
       else if (m.cmd === 'addShot' && m.ok) hostShots.push({ bytes: fromB64(m.data), name: m.name, path: m.path });
-      else if (m.cmd === 'addShotsDone') { const list = hostShots.splice(0); if (list.length) addShots(list); }
+      else if (m.cmd === 'addShotsDone') { const list = hostShots.splice(0); if (m.folder) S.pendingFolder = m.folder; if (list.length) addShots(list, { replace: !!m.folder, folder: m.folder || '', open: true }); }
     });
     return {
       call: (cmd, args) => new Promise(res => { const id = ++next; pending.set(id, res); window.chrome.webview.postMessage(Object.assign({ id, cmd }, args)); }),
@@ -46,14 +46,12 @@
   const hostShots = [];
   function toB64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
   function fromB64(b64) { const s = atob(b64), o = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) o[i] = s.charCodeAt(i); return o; }
-  async function openFromHost(m) {
-    if (hasChanges() && stateKey() !== savedState && !confirm('Discard unsaved changes to the current file?')) return;
-    await busy(async () => { await openBytes(fromB64(m.data), m.name); S.path = m.path || ''; }, 'Opening…');
-  }
+  // A file given to the Windows program (double-click / Open with): added to the list and opened.
+  async function openFromHost(m) { await addShots([{ bytes: fromB64(m.data), name: m.name, path: m.path || '' }], { open: true, single: true }); }
   // Saves through the native dialog (Windows program) or as a browser download. Resolves { saved, name, path }.
-  async function download(bytes, name, type) {
+  async function download(bytes, name, type, near) {
     if (HOST) {
-      const r = await HOST.call('save', { name, data: toB64(bytes) });
+      const r = await HOST.call('save', { name, data: toB64(bytes), near: near || S.path || '' });
       if (!r.ok && !r.cancelled) toast(`Could not save: ${r.error || 'unknown error'}`, true);
       return { saved: !!r.ok, name: r.name || name, path: r.path || '' };
     }
@@ -82,13 +80,21 @@
   }
   // Opens a parsed file. With a Shots workspace entry, the editor works on that entry's own working copy and
   // edit record, so changes made here show in the Shots window and the other way round.
+  // When the editor moves to another file, the open file keeps its unsaved image steps and undo history.
+  function stashCurrent() {
+    const e = S.entry; if (!e) return;
+    e.stash = S.ops.length || S.undo.length || S.redo.length ? { img: S.img, origImg: S.origImg, ops: S.ops.slice(), turns: S.turns, undo: S.undo, redo: S.redo, crop: S.crop, regions: S.regions, win: { ...S.win }, decoded: S.decoded, imgError: S.imgError } : null;
+    if (e.stash && !e.stash.ops.length) { e.stash.img = null; e.stash.origImg = null; } // metadata history only: no image copies kept
+  }
   async function openParsed(file, name, entry) {
     S.entry = entry || null;
+    const stash = entry && entry.stash;
     S.orig = file; S.file = entry ? entry.file : D.clone(file); S.name = name;
-    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = entry ? entry.origEls : new Map(); S.crop = null; S.regions = []; S.scratches = []; S.frame = 0; S.comparing = false; savedState = '';
+    S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = entry ? entry.origEls : new Map(); S.crop = null; S.regions = []; S.scratches = []; S.frame = 0; S.comparing = false; savedState = (entry && entry.savedKey) || '';
     let img = D.getImage(S.file);
     S.decoded = false; S.edge.on = false; S.edgeCache = null; S.rawAutoWidth = null;
-    if (img.compressed && window.Codec && Codec.canDecode(file.transferSyntax)) {
+    if (stash && stash.origImg) { img = stash.origImg; S.decoded = stash.decoded; }
+    else if (img.compressed && window.Codec && Codec.canDecode(file.transferSyntax)) {
       try {
         $('busy').textContent = 'Decompressing JPEG 2000…';
         await Codec.load();
@@ -99,13 +105,17 @@
       } catch (e) { console.warn(e); img = { error: `The JPEG 2000 image could not be decoded (${e.message}). Metadata can still be edited.` }; }
     }
     S.imgError = img.error || ''; S.img = img.error ? null : img; S.origImg = S.img;
+    if (stash) {
+      if (stash.img) { S.img = stash.img; S.ops = stash.ops.slice(); S.turns = stash.turns; S.crop = stash.crop; S.regions = stash.regions; }
+      S.undo = stash.undo; S.redo = stash.redo;
+    }
     $('save-format').value = S.decoded ? 'j2k' : 'raw';
     $('save-format').disabled = !S.img || S.img.bitsAllocated > 16;
     $('empty').classList.add('hidden');
     ['btn-save', 'btn-export'].forEach(id => { $(id).disabled = false; });
     const rows = D.getNumber(S.file.ds, 0x00280010), cols = D.getNumber(S.file.ds, 0x00280011);
-    $('fileinfo').textContent = `${name} · ${cols || '?'}×${rows || '?'} · ${D.TS_NAMES[file.transferSyntax] || file.transferSyntax}`;
-    $('fileinfo').title = $('fileinfo').textContent;
+    $('fileinfo').dataset.file = `${name} · ${cols || '?'}×${rows || '?'} · ${D.TS_NAMES[file.transferSyntax] || file.transferSyntax}`;
+    updateFileInfo();
     const fs = $('frame'); fs.innerHTML = '';
     if (S.img && S.img.frames.length > 1) { S.img.frames.forEach((_, i) => fs.append(el('option', { value: i }, `${i + 1} of ${S.img.frames.length}`))); $('frame-wrap').classList.remove('hidden'); }
     else $('frame-wrap').classList.add('hidden');
@@ -120,14 +130,16 @@
     S.viewRot = [0, 90, 180, 270].includes(cw) ? cw : 0;
     S.viewRotFrom = angle ? 'INDUSTREX' : ''; S.viewRotStart = S.viewRot;
     updateViewRotLabel(); $('btn-viewrot').disabled = !S.img;
-    if (S.img) { resetWindow('file'); S.dirtyImage = true; fit(); }
+    if (S.img) { if (stash && stash.img) { S.win = { ...stash.win }; syncWindowInputs(); } else resetWindow('file'); S.dirtyImage = true; fit(); }
     else { S.bmp = null; draw(); }
     syncEdgeInputs(); showEdgeFileSettings(); $('btn-overlay').disabled = !S.img; renderOverlayTab();
     renderMeta(); refreshImageUi(); renderRegions(); renderHistory();
     toast(`Opened ${name}`);
     if (HOST) HOST.post('title', { text: name });
   }
-  async function openFile(f) { if (!f) return; if (hasChanges() && !confirm('Discard unsaved changes to the current file?')) return; await busy(async () => openBytes(new Uint8Array(await f.arrayBuffer()), f.name), 'Opening…'); }
+  // Files chosen or dropped: added to the list; the first is opened.
+  async function openFile(f) { if (!f) return; await addFiles([f]); }
+  async function addFiles(files) { const l = await filesToList(files); if (l.length) await addShots(l, { open: true, single: l.length === 1 }); }
 
   // ---------- metadata ----------
   const keyOf = (path, tag) => (path ? path + '/' : '') + tag.toString(16).padStart(8, '0');
@@ -178,8 +190,10 @@
   }
   function pushMeta(snap, text) {
     if (S.batch) { if (!S.batch.snap) S.batch.snap = snap; return; } // grouped (e.g. a template): one entry
-    S.undo.push({ kind: 'meta', snap, text }); S.redo = []; trimUndo(); refreshUndoUi();
+    S.undo.push({ kind: 'meta', snap, text }); S.redo = []; trimUndo(); markEntryDirty(); refreshUndoUi();
   }
+  // The open file's "edited" mark follows its real state (undoing back to the file as opened clears it).
+  function markEntryDirty() { if (S.entry) { S.entry.dirty = hasChanges() && stateKey() !== savedState; if (typeof renderFilePane === 'function') renderFilePane(); } }
   function restoreMeta(snap) {
     const px = S.file.ds.el.get(D.PIXEL);
     S.file.ds.el = new Map(snap.el); if (px) S.file.ds.el.set(D.PIXEL, px);
@@ -198,21 +212,21 @@
     if (dropped) toast(`Only the last ${MAX_IMAGE_UNDO} image steps can be undone.`);
   }
   function undo() {
-    if (S.mode === 'shots') return shotsUndo();
+    if (S.mode === 'organize') return shotsUndo();
     const u = S.undo.pop(); if (!u) return;
     if (u.kind === 'meta') { S.redo.push({ kind: 'meta', snap: metaSnapshot(), text: u.text }); restoreMeta(u.snap); }
     else { S.redo.push({ kind: 'image', state: imageState(), text: u.text }); restoreImage(u.state); }
-    refreshUndoUi(); toast(`Undone: ${u.text}`);
+    markEntryDirty(); refreshUndoUi(); toast(`Undone: ${u.text}`);
   }
   function redo() {
-    if (S.mode === 'shots') return shotsRedo();
+    if (S.mode === 'organize') return shotsRedo();
     const r = S.redo.pop(); if (!r) return;
     if (r.kind === 'meta') { S.undo.push({ kind: 'meta', snap: metaSnapshot(), text: r.text }); restoreMeta(r.snap); }
     else { S.undo.push({ kind: 'image', state: imageState(), text: r.text }); restoreImage(r.state); }
-    refreshUndoUi(); toast(`Redone: ${r.text}`);
+    markEntryDirty(); refreshUndoUi(); toast(`Redone: ${r.text}`);
   }
   function refreshUndoUi() {
-    const shots = S.mode === 'shots', U = shots ? S.shUndo : S.undo, R = shots ? S.shRedo : S.redo;
+    const shots = S.mode === 'organize', U = shots ? S.shUndo : S.undo, R = shots ? S.shRedo : S.redo;
     const u = U[U.length - 1], r = R[R.length - 1];
     for (const [id, e, verb] of [['tb-undo', u, 'Undo'], ['tb-redo', r, 'Redo']]) {
       $(id).disabled = !e; $(id).title = e ? `${verb}: ${e.text} (${verb === 'Undo' ? 'Ctrl+Z' : 'Ctrl+Y'})` : `Nothing to ${verb.toLowerCase()}`;
@@ -693,7 +707,7 @@
   function pushImage(next, text, turns = 0) {
     S.undo.push({ kind: 'image', state: imageState(), text });
     S.redo = []; S.ops.push(text); S.turns += turns;
-    trimUndo();
+    trimUndo(); markEntryDirty();
     setImg(next);
   }
   function setImg(next) {
@@ -849,34 +863,41 @@
   }
 
   // ---------- saving ----------
-  function storeWindow(ds) {
-    if (!$('store-window').checked || !S.img) return;
+  function storeWindow(ds, st) {
+    if (!st.storeWin || !st.img) return;
     const f = v => { let s = String(+v.toFixed(2)); if (s.length > 16) s = v.toExponential(6); return s; };
-    D.setText(ds, 0x00281050, f(S.win.c), 'DS'); D.setText(ds, 0x00281051, f(S.win.w), 'DS');
+    D.setText(ds, 0x00281050, f(st.win.c), 'DS'); D.setText(ds, 0x00281051, f(st.win.w), 'DS');
   }
-  function buildCopy(region, partInfo, removed) {
-    const pixelsChanged = S.ops.length > 0 || !!region;
-    const copy = D.clone(S.file);
-    if (S.img && pixelsChanged) {
-      let out = region ? I.crop(S.img, region) : S.img;
-      if (region && region.cuts && region.cuts.length && $('sp-fill').checked && S.img.padding != null) {
-        out = Object.assign({}, out, { frames: out.frames.map(f => { const c = f.slice(); I.fillOutsideCuts(c, region, S.img.padding); return c; }) });
+  // Everything a saved copy is built from. The open file uses the editor's state; another file in the folder
+  // uses what was kept for it when the editor moved on (its image steps), so it can be saved without opening.
+  const currentState = () => ({ file: S.file, orig: S.orig, img: S.img, ops: S.ops, turns: S.turns, origEls: S.origEls, win: S.win, storeWin: $('store-window').checked, j2k: wantJ2k() });
+  const stashState = e => ({ file: e.file, orig: e.orig, img: e.stash.img, ops: e.stash.ops, turns: e.stash.turns, origEls: e.origEls, win: e.stash.win, storeWin: false, j2k: !!(e.stash.decoded && window.Codec && Codec.isReady()) });
+  function buildCopy(region, partInfo, removed, st) {
+    st = st || currentState();
+    const pixelsChanged = st.ops.length > 0 || !!region;
+    const copy = D.clone(st.file);
+    if (st.img && pixelsChanged) {
+      let out = region ? I.crop(st.img, region) : st.img;
+      if (region && region.cuts && region.cuts.length && $('sp-fill').checked && st.img.padding != null) {
+        out = Object.assign({}, out, { frames: out.frames.map(f => { const c = f.slice(); I.fillOutsideCuts(c, region, st.img.padding); return c; }) });
         if (partInfo) partInfo.text += '; pixels across the dividing line set to the Pixel Padding Value';
       }
-      D.setImage(copy, out, { swapSpacing: S.turns % 2 === 1 });
+      D.setImage(copy, out, { swapSpacing: st.turns % 2 === 1 });
       copy.transferSyntax = D.TS.EXPLICIT_LE; copy.encapsulated = false;
-      if (wantJ2k()) {
+      if (st.j2k) {
         // Follow the source codestream (INDUSTREX: 16-bit precision, RLCP) so INDUSTREX gets what it writes itself.
-        const src = S.orig.encapsulated && Codec.codestreamInfo(Codec.frameStreams(S.orig.ds.el.get(D.PIXEL).fragments, 1)[0]) || {};
+        const src = st.orig.encapsulated && Codec.codestreamInfo(Codec.frameStreams(st.orig.ds.el.get(D.PIXEL).fragments, 1)[0]) || {};
         const bits = src.precision >= out.bitsStored && src.precision <= out.bitsAllocated ? src.precision : out.bitsStored;
         D.setEncapsulated(copy, out.frames.map(a => Codec.encodeFrameLossless(a, { width: out.cols, height: out.rows, bitsPerSample: bits, isSigned: out.signed, progression: src.progression })), Codec.J2K_LOSSLESS);
       }
     }
-    storeWindow(copy.ds);
+    storeWindow(copy.ds, st);
     // INDUSTREX mirrors the fields in its XML presentation state; keep that copy in step (processed copies drop the XML).
-    if (!pixelsChanged) copy.synced = D.syncIndustrexXml(copy.ds, changedTopLevel().concat($('store-window').checked ? [0x00281050, 0x00281051] : []));
-    const steps = S.ops.slice(); if (partInfo) steps.push(partInfo.text);
-    D.derive(copy, S.orig, { pixelsChanged, description: steps.join('; '), seriesUID: partInfo ? partInfo.series : (pixelsChanged ? D.newUID() : null), instanceNumber: partInfo ? partInfo.index : null, removed });
+    const edited = [...st.origEls.keys()].filter(k => !k.includes('/')).map(k => parseInt(k, 16) >>> 0);
+    if (!pixelsChanged) copy.synced = D.syncIndustrexXml(copy.ds, edited.concat(st.storeWin ? [0x00281050, 0x00281051] : []));
+    copy.edited = edited;
+    const steps = st.ops.slice(); if (partInfo) steps.push(partInfo.text);
+    D.derive(copy, st.orig, { pixelsChanged, description: steps.join('; '), seriesUID: partInfo ? partInfo.series : (pixelsChanged ? D.newUID() : null), instanceNumber: partInfo ? partInfo.index : null, removed });
     return copy;
   }
   const wantJ2k = () => $('save-format').value === 'j2k' && !$('save-format').disabled && window.Codec && Codec.isReady();
@@ -887,12 +908,13 @@
     busy(async () => {
       await prepareCodec();
       const removed = [], copy = buildCopy(null, null, removed), bytes = D.write(copy);
-      const res = await download(bytes, `${baseName()}_edited.dcm`, 'application/dicom');
+      const res = await download(bytes, `${baseName()}_edited.dcm`, 'application/dicom', S.path);
       if (!res.saved) { toast('Not saved.'); return; }
       let extra = removed.length ? ` Left out ${removed.length} element(s) that described the original pixels.` : '';
       if (copy.synced && copy.synced.length) extra += ` Updated ${copy.synced.length} field(s) in INDUSTREX's XML copy.`;
       toast(`Saved ${savedWhere(res)} (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
-      markSaved();
+      if (S.entry) { S.entry.dirty = false; S.entry.savedAs = res.path || res.name; }
+      markSaved(); renderFilePane();
       runCompat(bytes, res.name, removed, S.ops.length > 0);
     }, saveLabel());
   }
@@ -936,7 +958,7 @@
   }
   let savedState = '';
   const stateKey = () => `${S.ops.length}:${S.ops.join('|')}:${[...S.origEls.keys()].join(',')}`;
-  function markSaved() { savedState = stateKey(); updateDirty(); }
+  function markSaved() { savedState = stateKey(); if (S.entry) S.entry.savedKey = savedState; updateDirty(); }
 
   // ---------- export ----------
   // The image as displayed (window, invert and view rotation), at full resolution.
@@ -1008,44 +1030,107 @@
     updateTemplateButtons(); updateDirty();
   }
   function updateDirty() {
-    const dirty = (!!S.file && hasChanges() && stateKey() !== savedState) || S.shots.some(e => e.dirty);
+    // any file in the folder with unsaved changes (the open one included)
+    const dirty = (!S.entry && !!S.file && hasChanges() && stateKey() !== savedState) || S.shots.some(e => e.dirty);
     $('dirty').classList.toggle('hidden', !dirty); $('btn-save').classList.toggle('primary', dirty);
     if (HOST && dirty !== S.hostDirty) { S.hostDirty = dirty; HOST.post('dirty', { dirty }); }
     $('btn-compare').disabled = !S.img || !S.ops.length;
   }
 
   // ---------- Shots window: many files grouped by weld, batch metadata edits ----------
-  Object.assign(S, { mode: 'editor', shots: [], shSel: new Set(), shGroup: 0x0008103E, shPending: {}, shUndo: [], shRedo: [], shThumbQueue: [] });
+  Object.assign(S, { mode: 'edit', folder: '', shots: [], shSel: new Set(), shGroup: 0x0008103E, shPending: {}, shUndo: [], shRedo: [], shThumbQueue: [] });
   const BATCH_TAGS = COMMON.filter(([t]) => t !== 'Display').flatMap(([, tags]) => tags);
   const shById = id => S.shots.find(e => e.id === id);
   const selected = () => S.shots.filter(e => S.shSel.has(e.id));
   function setView(v) {
     S.mode = v; // which window is showing (S.view is the viewer's zoom and pan)
     document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
-    $('shots-view').classList.toggle('hidden', v !== 'shots');
-    document.querySelector('main.workspace').classList.toggle('hidden', v === 'shots');
-    ['btn-save', 'export-menu', 'btn-open'].forEach(id => $(id).classList.toggle('hidden', v === 'shots'));
-    $('fileinfo').textContent = v === 'shots' ? `${S.shots.length} shot${S.shots.length === 1 ? '' : 's'} in ${SH.groups(S.shots, S.shGroup).length} weld group(s)` : (S.name ? $('fileinfo').title : 'No file open. Files stay on this computer.');
-    if (v === 'shots') renderShots(); else { renderMeta(); resize(); }
+    document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+    $('shots-view').classList.toggle('hidden', v !== 'organize');
+    document.querySelector('main.workspace').classList.toggle('hidden', v === 'organize');
+    ['btn-save', 'export-menu'].forEach(id => $(id).classList.toggle('hidden', v === 'organize'));
+    updateFileInfo();
+    if (v === 'organize') renderShots(); else { renderFilePane(); renderMeta(); resize(); }
     refreshUndoUi();
   }
-  // list: [{ bytes, name, path }]
-  async function addShots(list) {
+  // list: [{ bytes, name, path }]. opts.replace: a new working folder (replaces the list); opts.folder: its name;
+  // opts.open: open the first file in the editor; opts.single: one file, so report problems as "could not open".
+  async function addShots(list, opts = {}) {
+    if (opts.replace && S.shots.some(e => e.dirty) && !confirm('Some files in the current folder have unsaved changes. Open the new folder anyway (their changes are lost)?')) return [];
+    let result = [];
     await busy(async () => {
+      if (opts.replace) {
+        S.shots = []; S.shSel.clear(); S.shUndo = []; S.shRedo = []; S.shThumbQueue = []; S.shPending = {};
+        S.entry = null; S.folder = opts.folder || '';
+      }
       let added = 0; const bad = [];
       for (const f of list) {
         try {
           const e = await SH.load(f.bytes, f.name, f.path);
-          const uid = D.getString(e.orig.ds, 0x00080018);
-          if (uid && S.shots.some(x => D.getString(x.orig.ds, 0x00080018) === uid)) continue; // already in the list
-          S.shots.push(e); S.shThumbQueue.push(e); added++;
+          // already listed: the same path, or the same name, SOP Instance UID and size (copies of one scan can share a UID)
+          const uid = D.getString(e.orig.ds, 0x00080018), size = f.bytes.length;
+          const dup = S.shots.find(x => (f.path && x.path === f.path) || (x.name === f.name && x.size === size && D.getString(x.orig.ds, 0x00080018) === uid));
+          e.size = size;
+          if (dup) { result.push(dup); continue; } // already in the list
+          S.shots.push(e); S.shThumbQueue.push(e); result.push(e); added++;
         } catch (err) { bad.push(`${f.name}: ${err.message}`); }
       }
-      setView('shots');
-      toast(`Added ${added} shot${added === 1 ? '' : 's'}${bad.length ? `; ${bad.length} could not be read (${bad.slice(0, 3).join('; ')})` : ''}.`, !!bad.length && !added);
+      if (opts.single && bad.length) toast(`Could not open ${bad[0]}`, true);
+      else if (!opts.open || result.length !== 1) toast(`${opts.replace ? 'Opened folder' + (S.folder ? ' ' + S.folder : '') + ': ' : 'Added '}${added} file${added === 1 ? '' : 's'}${bad.length ? `; ${bad.length} could not be read (${bad.slice(0, 3).join('; ')})` : ''}.`, !!bad.length && !added);
+      // open the first file as the pane lists it (by weld, then shot number)
+      if (opts.open && result.length) { stashCurrent(); const e = SH.groups(result, S.shGroup)[0].shots[0]; await openParsed(e.orig, e.name, e); S.path = e.path; }
+      renderFilePane(); if (S.mode === 'organize') renderShots(); updateFileInfo();
       pumpThumbs();
-    }, 'Reading shots…');
+    }, opts.replace ? 'Reading folder…' : 'Reading files…');
+    return result;
   }
+  function updateFileInfo() {
+    const n = S.shots.length, where = S.folder ? `${S.folder} · ` : '';
+    if (S.mode === 'organize') $('fileinfo').textContent = `${where}${n} file${n === 1 ? '' : 's'} in ${SH.groups(S.shots, S.shGroup).length} weld group(s)`;
+    else if (S.name) $('fileinfo').textContent = where + ($('fileinfo').dataset.file || S.name);
+    else $('fileinfo').textContent = n ? `${where}${n} file${n === 1 ? '' : 's'}: choose one on the left` : 'No folder open. Files stay on this computer.';
+    $('fileinfo').title = $('fileinfo').textContent;
+  }
+  // Choosing the working folder: native dialog in the Windows program, folder picker in a browser.
+  async function openFolder() {
+    if (!HOST) { $('folder-input').click(); return; }
+    const r = await HOST.call('openFolder', {}); if (!r.ok && !r.cancelled) toast(`Could not open: ${r.error || 'error'}`, true);
+  }
+  async function addMoreFiles() {
+    if (!HOST) { $('file-input').click(); return; }
+    const r = await HOST.call('openMany', {}); if (!r.ok && !r.cancelled) toast(`Could not open: ${r.error || 'error'}`, true);
+  }
+
+  // File pane (Edit tab): every file in the folder, under its weld; click to edit.
+  function renderFilePane() {
+    const box = $('fp-list'); if (!box) return; box.innerHTML = '';
+    const q = $('fp-search').value.trim().toLowerCase();
+    const list = S.shots.filter(e => !q || [e.name, ...SH.GROUP_FIELDS.map(t => D.getString(e.file.ds, t))].join(' ').toLowerCase().includes(q));
+    $('fp-title').textContent = S.shots.length ? `Files (${S.shots.length})` : 'Files';
+    if (!S.shots.length) box.append(el('div', { class: 'fp-empty' }, 'Open a folder to list its .dcm files here.'));
+    for (const g of SH.groups(list, S.shGroup)) {
+      box.append(el('div', { class: 'fp-weld' }, g.key || `No ${D.tagInfo(S.shGroup).name}`));
+      for (const e of g.shots) {
+        const n = D.getString(e.file.ds, 0x00200013), cur = S.entry === e;
+        const hasImg = cur ? S.ops.length > 0 : !!(e.stash && e.stash.ops && e.stash.ops.length);
+        const item = el('div', { class: 'fp-item', role: 'option', 'aria-selected': String(cur), tabindex: cur ? '0' : '-1', 'data-id': e.id, title: e.name },
+          e.thumb ? el('img', { src: e.thumb, alt: '' }) : el('div', { class: 'ph' }, '…'),
+          el('div', {}, el('div', { class: 'nm' }, e.name),
+            el('div', { class: 'meta' }, n ? `Shot ${n}` : 'No shot number',
+              e.dirty ? el('span', { class: 'badge' }, hasImg ? 'edited + image' : 'edited') : e.savedAs ? el('span', { class: 'badge ok' }, 'saved') : '')));
+        item.addEventListener('click', () => { if (S.entry !== e) openShot(e); });
+        item.addEventListener('keydown', ev => {
+          const items = [...box.querySelectorAll('.fp-item')], i = items.indexOf(item);
+          if (ev.key === 'ArrowDown' && items[i + 1]) { ev.preventDefault(); items[i + 1].click(); }
+          else if (ev.key === 'ArrowUp' && items[i - 1]) { ev.preventDefault(); items[i - 1].click(); }
+        });
+        box.append(item);
+      }
+    }
+    const edited = S.shots.filter(e => e.dirty).length;
+    $('fp-save-all').disabled = !edited; $('fp-save-all').textContent = edited ? `Save all edited (${edited})` : 'Save all edited';
+  }
+
   async function filesToList(files) { const out = []; for (const f of files) if (!/^\./.test(f.name)) out.push({ bytes: new Uint8Array(await f.arrayBuffer()), name: f.name, path: f.webkitRelativePath || '' }); return out; }
 
   // Thumbnails, one at a time in the background, from a reduced copy of the image. (INDUSTREX's stored icon is not
@@ -1070,8 +1155,7 @@
     while (S.shThumbQueue.length) {
       const e = S.shThumbQueue.shift();
       try { e.thumb = await makeThumb(e); } catch (err) { console.warn(err); e.thumb = null; }
-      const img = document.querySelector(`.sh-card[data-id="${e.id}"] .ph`);
-      if (img && e.thumb) { const im = el('img', { src: e.thumb, alt: '' }); img.replaceWith(im); }
+      if (e.thumb) document.querySelectorAll(`.sh-card[data-id="${e.id}"] .ph, .fp-item[data-id="${e.id}"] .ph`).forEach(ph => ph.replaceWith(el('img', { src: e.thumb, alt: '' })));
       await new Promise(r => setTimeout(r, 0));
     }
     pumping = false;
@@ -1086,7 +1170,7 @@
     $('sh-count').textContent = S.shots.length ? `${S.shots.length} shots · ${groups.length} group(s) · ${S.shSel.size} selected` : '';
     if (!S.shots.length) {
       box.append(el('div', { class: 'sh-empty' }, el('h2', {}, 'Organise shots by weld'), el('p', {}, 'Add shots or a whole folder, or drop .dcm files here. Shots are grouped by weld, and you can edit their metadata together. Nothing is uploaded and originals are never changed.'),
-        el('div', { class: 'btns', style: 'justify-content:center' }, el('button', { class: 'primary', onclick: () => $('sh-add').click() }, 'Add shots…'), el('button', { onclick: () => $('sh-add-folder').click() }, 'Add folder…'))));
+        el('div', { class: 'btns', style: 'justify-content:center' }, el('button', { class: 'primary', onclick: openFolder }, 'Open folder…'), el('button', { onclick: addMoreFiles }, 'Add files…'))));
     }
     for (const g of groups) {
       const all = g.shots.every(e => S.shSel.has(e.id)), edited = g.shots.filter(e => e.dirty).length;
@@ -1110,8 +1194,8 @@
         const toggle = () => { S.shSel.has(e.id) ? S.shSel.delete(e.id) : S.shSel.add(e.id); renderShots(); };
         card.addEventListener('click', ev => { if (ev.detail > 1) return; if (ev.target === cb) return; toggle(); });
         cb.addEventListener('change', toggle);
-        card.addEventListener('dblclick', () => openShot(e));
-        card.addEventListener('keydown', ev => { if (ev.key === 'Enter') openShot(e); else if (ev.key === ' ') { ev.preventDefault(); toggle(); } });
+        card.addEventListener('dblclick', async () => { await openShot(e); setView('edit'); });
+        card.addEventListener('keydown', async ev => { if (ev.key === 'Enter') { await openShot(e); setView('edit'); } else if (ev.key === ' ') { ev.preventDefault(); toggle(); } });
         card.addEventListener('dragstart', ev => { S.shDrag = S.shSel.has(e.id) ? [...S.shSel] : [e.id]; ev.dataTransfer.setData('text/plain', 'shots'); ev.dataTransfer.effectAllowed = 'move'; });
         cards.append(card);
       }
@@ -1120,7 +1204,7 @@
     // weld suggestions and the panel
     const dl = $('sh-weld-list'); dl.innerHTML = ''; SH.groups(S.shots, S.shGroup).forEach(g => g.key && dl.append(el('option', { value: g.key })));
     renderBatch(); updateDirty();
-    if (S.mode === 'shots') $('fileinfo').textContent = `${S.shots.length} shot${S.shots.length === 1 ? '' : 's'} in ${SH.groups(S.shots, S.shGroup).length} weld group(s)`;
+    updateFileInfo(); renderFilePane();
   }
 
   function renderBatch() {
@@ -1212,53 +1296,66 @@
     S.shUndo = S.shUndo.filter(u => u.snap.every(x => S.shots.includes(x.e))); S.shRedo = S.shRedo.filter(u => u.snap.every(x => S.shots.includes(x.e)));
     renderShots(); refreshUndoUi();
   }
+  // Opens a file from the list. The file being left keeps its unsaved work (metadata and image steps).
   async function openShot(e) {
-    if (S.entry !== e && S.ops.length && !confirm(`Discard the unsaved image changes to ${S.name}? (Its metadata edits are kept.)`)) return;
-    await busy(async () => { await openParsed(e.orig, e.name, e); S.path = e.path; }, 'Opening…');
-    setView('editor');
+    if (S.entry !== e) { stashCurrent(); await busy(async () => { await openParsed(e.orig, e.name, e); S.path = e.path; }, 'Opening…'); }
+    renderFilePane();
   }
-  // Saves a new copy of every edited shot: one ZIP in a browser, or files in a chosen folder in the Windows program.
+  // Saves a new copy of every edited file in the folder: one ZIP in a browser, or files in a chosen folder in the
+  // Windows program. A file with image steps (the open one, or one the editor moved away from) is saved with
+  // them, exactly as Save copy would; other files get a metadata-only copy.
   async function saveShots() {
     const list = S.shots.filter(e => e.dirty); if (!list.length) return;
     await busy(async () => {
+      if (window.Codec && list.some(e => (e === S.entry ? S.decoded : e.stash && e.stash.decoded))) await Codec.load();
       const names = SH.copyNames(list), results = [];
       let folder = null;
       if (HOST) { const r = await HOST.call('pickFolder', { near: (list[0].path || '') }); if (!r.ok) { toast('Not saved.'); return; } folder = r.folder; }
       const files = [];
       for (let i = 0; i < list.length; i++) {
-        const e = list[i], b = SH.buildCopy(e);
-        const chk = window.Compat ? await Compat.check(b.bytes, e.orig, { edited: b.edited, xmlTag: (D.industrexInfo(e.orig.ds) || {}).xmlTag }) : [];
+        const e = list[i], st = e === S.entry && S.ops.length ? currentState() : e !== S.entry && e.stash && e.stash.img && e.stash.ops.length ? stashState(e) : null;
+        let bytes, edited, removed = [];
+        if (st) { const copy = buildCopy(null, null, removed, st); bytes = D.write(copy); edited = copy.edited; }
+        else { const b = SH.buildCopy(e); bytes = b.bytes; edited = b.edited; }
+        const chk = window.Compat ? await Compat.check(bytes, e.orig, { edited, removed, pixelsChanged: !!st, xmlTag: (D.industrexInfo(e.orig.ds) || {}).xmlTag }) : [];
         const fails = chk.filter(c => c.level === 'fail');
         if (HOST) {
-          const r = await HOST.call('writeFile', { folder, name: names[i], data: toB64(b.bytes) });
+          const r = await HOST.call('writeFile', { folder, name: names[i], data: toB64(bytes) });
           if (!r.ok) { results.push(`${e.name}: not saved (${r.error || 'error'})`); continue; }
-          e.savedAs = r.path; results.push(`${r.name}${fails.length ? ` — ${fails.length} compatibility problem(s)` : ''}`);
-        } else { files.push({ name: names[i], data: b.bytes }); e.savedAs = names[i]; results.push(`${names[i]}${fails.length ? ` — ${fails.length} compatibility problem(s)` : ''}`); }
+          e.savedAs = r.path; results.push(`${r.name}${st ? ' (with image changes)' : ''}${fails.length ? ` — ${fails.length} compatibility problem(s)` : ''}`);
+        } else { files.push({ name: names[i], data: bytes }); e.savedAs = names[i]; results.push(`${names[i]}${st ? ' (with image changes)' : ''}${fails.length ? ` — ${fails.length} compatibility problem(s)` : ''}`); }
         e.dirty = false;
         if (fails.length) e.compatFails = fails.map(c => c.title); else delete e.compatFails;
       }
       if (!HOST) await download(X.zip(files), 'shots_edited.zip', 'application/zip');
+      if (S.entry && !S.entry.dirty) markSaved();
       const problems = list.filter(e => e.compatFails).length;
       $('sh-result').textContent = `Saved ${list.length} cop${list.length === 1 ? 'y' : 'ies'}${folder ? ' to ' + folder : ' in shots_edited.zip'}. INDUSTREX compatibility: ${problems ? problems + ' with problems' : 'all passed'}. ` + results.join(' · ');
-      renderShots(); toast(`Saved ${list.length} edited shot${list.length === 1 ? '' : 's'}. Originals unchanged.`, !!problems);
-    }, 'Saving shots…');
+      renderShots(); renderFilePane();
+      toast(`Saved ${list.length} edited file${list.length === 1 ? '' : 's'}${folder ? ' to ' + folder : ''}. Originals unchanged.${problems ? ` ${problems} with compatibility problems: see Organize shots.` : ''}`, !!problems);
+    }, 'Saving files…');
   }
 
   // ---------- wiring ----------
   function syncSeg(sel, attr, value) { document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === value))); }
   function setTool(t) { S.tool = t; $('stage').dataset.tool = t; syncSeg('[data-tool]', 'tool', t); }
   function init() {
-    $('btn-open').onclick = $('btn-open-2').onclick = async () => {
-      if (!HOST) { $('file-input').click(); return; }
-      const r = await HOST.call('open', {});
-      if (r.ok) openFromHost(r); else if (!r.cancelled) toast(`Could not open: ${r.error || 'unknown error'}`, true);
+    $('btn-folder').onclick = $('btn-open-2').onclick = openFolder;
+    $('btn-add-files').onclick = $('fp-add').onclick = addMoreFiles;
+    $('file-input').onchange = async e => { const files = [...e.target.files]; e.target.value = ''; await addFiles(files); };
+    $('folder-input').onchange = async e => {
+      const all = [...e.target.files], files = all.filter(f => /\.(dcm|dicom|dic)$/i.test(f.name)); e.target.value = '';
+      if (!files.length) { toast('No .dcm files in that folder.', true); return; }
+      const folder = (files[0].webkitRelativePath || '').split('/')[0];
+      await addShots(await filesToList(files), { replace: true, folder, open: true });
     };
-    $('file-input').onchange = e => { openFile(e.target.files[0]); e.target.value = ''; };
-    $('btn-sample').onclick = () => busy(() => openBytes(D.write(window.Sample.makeSample({ rows: 600, cols: 1600 })), 'sample-weld.dcm'));
+    $('btn-sample').onclick = () => addShots([{ bytes: D.write(window.Sample.makeSample({ rows: 600, cols: 1600 })), name: 'sample-weld.dcm', path: '' }], { open: true, single: true });
+    $('fp-search').oninput = renderFilePane;
+    $('fp-save-all').onclick = saveShots;
     const stage = $('stage');
     ['dragenter', 'dragover'].forEach(t => stage.addEventListener(t, e => { e.preventDefault(); stage.classList.add('drag'); }));
     ['dragleave', 'drop'].forEach(t => stage.addEventListener(t, e => { e.preventDefault(); stage.classList.remove('drag'); }));
-    stage.addEventListener('drop', e => openFile(e.dataTransfer.files[0]));
+    stage.addEventListener('drop', e => { if (e.dataTransfer.files.length) addFiles([...e.dataTransfer.files]); });
     document.addEventListener('dragover', e => e.preventDefault()); document.addEventListener('drop', e => e.preventDefault());
 
     $('btn-save').onclick = saveCopy;
@@ -1293,20 +1390,13 @@
     document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
     $('sh-group').innerHTML = ''; SH.GROUP_FIELDS.forEach(t => $('sh-group').append(el('option', { value: SH.hex(t) }, D.tagInfo(t).name + (D.tagInfo(t).ndeName ? '' : ''))));
     $('sh-group').value = SH.hex(S.shGroup); $('sh-group').onchange = () => { S.shGroup = parseInt($('sh-group').value, 16) >>> 0; renderShots(); };
-    $('sh-add').onclick = async () => {
-      if (!HOST) { $('sh-input').click(); return; }
-      const r = await HOST.call('openMany', {}); if (!r.ok && !r.cancelled) toast(`Could not open: ${r.error || 'error'}`, true);
-    };
-    $('sh-add-folder').onclick = async () => {
-      if (!HOST) { $('sh-folder-input').click(); return; }
-      const r = await HOST.call('openFolder', {}); if (!r.ok && !r.cancelled) toast(`Could not open: ${r.error || 'error'}`, true);
-    };
+    $('sh-add').onclick = () => { if (HOST) addMoreFiles(); else $('sh-input').click(); };
     $('sh-input').onchange = async e => { const l = await filesToList([...e.target.files]); e.target.value = ''; if (l.length) addShots(l); };
-    $('sh-folder-input').onchange = async e => { const l = await filesToList([...e.target.files].filter(f => /\.(dcm|dicom|dic)$/i.test(f.name))); e.target.value = ''; if (l.length) addShots(l); else toast('No .dcm files in that folder.', true); };
     const sm = document.querySelector('.shots-main');
     sm.addEventListener('dragover', e => { if (!S.shDrag && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); sm.classList.add('drag'); } });
     sm.addEventListener('dragleave', () => sm.classList.remove('drag'));
     sm.addEventListener('drop', async e => { sm.classList.remove('drag'); if (S.shDrag || !e.dataTransfer.files.length) return; e.preventDefault(); addShots(await filesToList([...e.dataTransfer.files])); });
+    renderFilePane();
     $('sh-search').oninput = renderShots;
     $('sh-select-all').onclick = () => { S.shots.forEach(e => S.shSel.add(e.id)); renderShots(); };
     $('sh-select-none').onclick = () => { S.shSel.clear(); renderShots(); };

@@ -25,7 +25,11 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
       postMessage: m => {
         window.__host.posted.push({ cmd: m.cmd, dirty: m.dirty, text: m.text, name: m.name });
         if (m.cmd === 'ready' && window.__host.startFile) send({ cmd: 'openFile', ok: true, name: 'start.dcm', path: 'C:\\jobs\\start.dcm', data: window.__host.startFile });
-        if (m.cmd === 'open') send({ id: m.id, ok: true, name: 'picked.dcm', path: 'C:\\jobs\\picked.dcm', data: window.__host.startFile });
+        if (m.cmd === 'openFolder') {
+          send({ cmd: 'addShot', ok: true, name: 'picked.dcm', path: 'C:\\jobs\\picked.dcm', data: window.__host.startFile });
+          send({ cmd: 'addShotsDone', count: 1, folder: 'C:\\jobs' }); send({ id: m.id, ok: true, count: 1, folder: 'C:\\jobs' });
+        }
+        if (m.cmd === 'save') window.__host.saveNear = m.near;
         if (m.cmd === 'openMany') {
           ['shot1.dcm', 'shot2.dcm'].forEach((n, i) => send({ cmd: 'addShot', ok: true, name: n, path: 'C:\\jobs\\' + n, data: window.__host.shotFiles[i] }));
           send({ cmd: 'addShotsDone', count: 2 }); send({ id: m.id, ok: true, count: 2 });
@@ -50,10 +54,12 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
   assert.strictEqual(posted[0].cmd, 'ready');
   assert.ok(posted.some(p => p.cmd === 'title' && p.text === 'start.dcm')); ok();
 
-  // Open button uses the host dialog, not the browser file picker.
-  await page.click('#btn-open');
+  // Open folder uses the host's folder dialog; the folder's files replace the list and the first is opened.
+  await page.click('#btn-folder');
   await page.waitForFunction(() => /Opened picked\.dcm/.test(document.getElementById('toast').textContent));
-  assert.strictEqual(await page.evaluate(() => window.__editor.S.path), 'C:\\jobs\\picked.dcm'); ok();
+  assert.strictEqual(await page.evaluate(() => window.__editor.S.path), 'C:\\jobs\\picked.dcm');
+  assert.match(await page.textContent('#fileinfo'), /^C:\\jobs · picked\.dcm/);
+  assert.deepStrictEqual(await page.evaluate(() => window.__editor.S.shots.map(e => e.name)), ['picked.dcm'], 'new folder replaces the list'); ok();
 
   // An edit makes the host's close prompt active; saving clears it.
   const cid = page.locator('.field[data-tag="(0010,0020)"] input'); await cid.fill('HOST-1'); await cid.press('Enter');
@@ -67,6 +73,7 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
   await page.click('#btn-save');
   await page.waitForFunction(() => /Saved C:\\jobs\\picked_edited\.dcm/.test(document.getElementById('toast').textContent));
   const saved = await page.evaluate(() => window.__host.saved[0]);
+  assert.strictEqual(await page.evaluate(() => window.__host.saveNear), 'C:\\jobs\\picked.dcm', 'save dialog starts in the working folder');
   assert.strictEqual(saved.name, 'picked_edited.dcm');
   const out = await D.parse(Buffer.from(saved.data, 'base64'));
   assert.strictEqual(D.getString(out.ds, 0x00100020), 'HOST-1');
@@ -82,10 +89,11 @@ const { makeIndustrexJ2K } = require('./industrex-fixture.cjs');
   assert.strictEqual(tif.toString('latin1', 0, 2), 'II'); ok();
 
   // Shots window: files arrive one message each; edited copies are written one by one into a chosen folder.
-  await page.click('[data-view=shots]');
+  await page.click('[data-view=organize]');
   await page.click('#sh-add');
-  await page.waitForFunction(() => /Added 2 shots/.test(document.getElementById('toast').textContent));
-  await page.click('#sh-select-all');
+  await page.waitForFunction(() => window.__editor.S.shots.length === 3);
+  await page.click('[data-view=organize]');
+  await page.click('.sh-card:has-text("shot1.dcm")'); await page.click('.sh-card:has-text("shot2.dcm")');
   await page.fill('#sb-00181004', 'PL-HOST'); await page.click('#sh-apply');
   await page.waitForFunction(() => /Batch edit/.test(document.getElementById('toast').textContent));
   await page.click('#sh-save');
