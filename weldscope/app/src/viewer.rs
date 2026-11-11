@@ -55,6 +55,7 @@ pub fn fit(app: &mut App) {
     app.view.off = Vec2::new((c.width() - vw as f32 * z) / 2.0, (c.height() - vh as f32 * z) / 2.0);
     app.view.fit_pending = false;
 }
+pub fn actual_size(app: &mut App) { let c = app.view.canvas.center(); let f = 1.0 / app.view.zoom.max(1e-6); zoom_at(app, f, c); }
 fn zoom_at(app: &mut App, factor: f32, at: Pos2) {
     let z = (app.view.zoom * factor).clamp(0.01, 40.0);
     let f = z / app.view.zoom;
@@ -88,7 +89,7 @@ fn toolbar(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         let has = app.img().is_some();
         ui.add_enabled_ui(has && !app.busy(), |ui| {
-            for (t, label, tip) in [(Tool::Pan, "Pan", "Drag to move; wheel zooms (right or middle drag always pans)"), (Tool::Window, "W/L", "Drag sideways for contrast (width), up/down for brightness (level)"),
+            for (t, label, tip) in [(Tool::Pan, "Pan", "Drag to move the image; the wheel zooms. Right-drag changes brightness and contrast with any tool; middle-drag moves."), (Tool::Window, "W/L", "Drag sideways for contrast, up/down for brightness. Right-drag does the same with any tool."),
                 (Tool::Crop, "Crop", "Drag a crop box"), (Tool::Region, "Region", "Drag a region to save as a split file"), (Tool::Scratch, "Scratch", "Drag along a thin scratch to repair it")] {
                 if ui.selectable_label(app.tool == t, label).on_hover_text(tip).clicked() { app.tool = t; }
             }
@@ -150,6 +151,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     };
     if app.view.fit_pending || (size_changed && app.view.zoom == 0.0) || app.view.zoom == 0.0 { fit(app); }
     ensure_texture(app, ui);
+    if app.flash.as_ref().map_or(false, |(_, t)| t.elapsed().as_secs_f32() >= 2.5) { app.flash = None; }
     let xf = Xf { min: rect.min, off: app.view.off, zoom: app.view.zoom, cols: img.cols as f64, rows: img.rows as f64, rot: app.view_rot };
     // the image as a textured quad (view rotation through the texture coordinates)
     if let Some(tex) = &app.texture {
@@ -178,6 +180,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let (a, b) = (xf.to_screen(s.x0, s.y0), xf.to_screen(s.x1, s.y1));
         painter.line_segment([a, b], Stroke::new(2.0_f32, Color32::from_rgb(0, 220, 255)));
         painter.text(a + Vec2::new(4.0, 2.0), egui::Align2::LEFT_TOP, format!("S{}", i + 1), egui::FontId::proportional(13.0), Color32::from_rgb(0, 220, 255));
+    }
+    // a repaired scratch flashes green for a moment, so it is clear where pixels changed
+    if let Some((segs, t)) = &app.flash {
+        let age = t.elapsed().as_secs_f32();
+        if age < 2.5 {
+            let a = ((1.0 - age / 2.5) * 255.0) as u8;
+            for sgm in segs { painter.line_segment([xf.to_screen(sgm.x0, sgm.y0), xf.to_screen(sgm.x1, sgm.y1)], Stroke::new(4.0_f32, Color32::from_rgba_unmultiplied(80, 255, 120, a))); }
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(40));
+        }
     }
     if let Some(dr) = app.drag {
         match dr.kind {
@@ -255,8 +266,8 @@ fn interact(app: &mut App, ui: &egui::Ui, resp: &egui::Response, xf: &Xf, img: &
     if resp.drag_started() {
         let p = resp.interact_pointer_pos().unwrap_or_default();
         let im_p = xf.to_image(p);
-        let secondary = pointer.button_down(egui::PointerButton::Secondary) || pointer.button_down(egui::PointerButton::Middle);
-        let kind = if secondary { DragKind::Pan } else { match app.tool { Tool::Pan => DragKind::Pan, Tool::Window => DragKind::Window(app.win()), Tool::Crop => DragKind::Crop, Tool::Region => DragKind::Region, Tool::Scratch => DragKind::Scratch } };
+        // Right-drag is always window/level (as in INDUSTREX and most viewers); middle-drag always pans.
+        let kind = if pointer.button_down(egui::PointerButton::Secondary) { DragKind::Window(app.win()) } else if pointer.button_down(egui::PointerButton::Middle) { DragKind::Pan } else { match app.tool { Tool::Pan => DragKind::Pan, Tool::Window => DragKind::Window(app.win()), Tool::Crop => DragKind::Crop, Tool::Region => DragKind::Region, Tool::Scratch => DragKind::Scratch } };
         app.drag = Some(Drag { kind, start_img: im_p, cur_img: im_p });
     }
     if let Some(mut dr) = app.drag {

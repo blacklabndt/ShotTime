@@ -6,25 +6,39 @@ Start WeldScope.exe. No installation is needed; settings are kept for your Windo
 Your files are never changed: every save writes a new file (a "copy").
 
 Getting started
-- Open folder: choose the folder with your .dcm files. They are listed on the left, grouped by weld.
-- Click a file to edit it. Drag files or a folder onto the window to add them.
-- Save copy (Ctrl+S) writes a new file next to the original by default. Every saved copy is read back and
-  checked for INDUSTREX compatibility; the result is in the Changes tab.
+- Open folder: choose the folder with your .dcm files. They are listed on the left, grouped by weld, as
+  "weld · shot number" with the file name underneath.
+- Click a file to edit it (Page Down / Page Up for the next / previous file). Drag files or a folder onto the
+  window to add them.
+- Save as new file (Ctrl+S) writes a new file without asking, into an "Edited" folder next to your originals.
+  The folder is shown at the bottom of the window; Change picks another one, which is remembered.
+  Export > Save as... lets you choose the name and folder for one file.
+- Every saved file is read back and checked for INDUSTREX compatibility. A green or red mark appears next to
+  the Save button and in the file list; click it for the details.
+
+Process this plate (Crop & split tab)
+- One button finds every piece of film, straightens and crops each, and shows a preview of each piece as it is
+  now and as it will be saved. Untick a piece to skip it, fix its label, then Save. Nothing is written before
+  you confirm. The saved files can be added to the list straight away to edit their details.
+- Straighten & crop to film and "Preview and save files" use the same preview.
 
 Editing
-- Metadata tab: edit fields as INDUSTREX names them. Values are checked before anything changes.
+- Metadata tab: edit fields as INDUSTREX names them. Values are checked before anything changes. The small
+  arrow next to a field offers values you used before (and values other files in the folder have).
   The pin button shows a field on the image overlay. Templates store changed fields to reuse on other files.
 - Image tab: window/level, EDGE-style enhancement (an approximation for viewing; not INDUSTREX's EDGE),
-  rotate/flip, noise reduction, bad pixels, and scratch repair.
-- Crop & split tab: Straighten & crop to film (with two or more pieces of film in a file, each piece is
-  straightened, cropped and saved as its own file); Find film pieces; save each piece as its own file.
-- Overlay tab: choose what text appears in each corner of the image (display and exports only).
+  rotate/flip, noise reduction, bad pixels, and scratch repair (the repaired line flashes green and the number
+  of changed pixels is shown).
+- Mouse: wheel zooms; right-drag changes brightness and contrast with any tool; middle-drag moves the image.
+- The ? button (top right) lists all shortcuts.
 - Undo / Redo (Ctrl+Z / Ctrl+Y) covers metadata and image changes.
 
 Organize shots
-- Shots are grouped by weld (Series Description by default). Select several and edit their metadata together;
-  every shot is checked before any change is made. Renumber shots, apply templates, then Save all edited.
-  Copies go into a folder you choose; originals and existing files are never overwritten.
+- Shots are grouped by weld (Series Description by default), each showing its weld, shot number and date.
+- Drag a shot (or the selected shots) onto another weld to move it there. Rename weld changes the weld on every
+  shot in a group. Both are one undo step.
+- Select several shots and edit their metadata together; every shot is checked before any change is made.
+  Renumber shots, apply templates, then Save all edited. Originals and existing files are never overwritten.
 
 Notes
 - Scratch repair only changes thin lines that read as less radiation than the plate on both sides. Cracks,

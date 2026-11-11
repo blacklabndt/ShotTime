@@ -49,6 +49,18 @@ The opened files are never changed: every save writes a new file.
   saves each piece straightened and cropped as its own file, through the same path as Save split files with
   "Straighten each piece" on (new series, numbered in screen order); the open file is not changed. This was
   added after the prototype was frozen, so the prototype still straightens only the largest piece.
+- **Preview before pieces are written:** Process this plate, Straighten & crop (two or more pieces) and
+  Preview and save files all open the same dialog (`App::prepare_parts` → `pieces_dialog` → `save_parts_to`).
+  Nothing is written until the user confirms; unticked pieces are skipped.
+- **Output folder:** new files go to `<originals>/Edited` without a dialog, or to the folder in
+  `prefs.output_dir` (status bar: Change / Reset). Names never collide (`unique_path`).
+- **Check badge:** each file keeps the INDUSTREX check of its last saved copy (`FileEntry.compat`), shown next to
+  Save as new file, in the file list and on the Organize cards.
+- **Mouse:** right-drag is always window/level, middle-drag always pans.
+- **Pick-lists:** `prefs.history` keeps the last 12 values typed per field; `App::suggestions` adds values other
+  files in the folder have.
+- **Organize:** dragging shots onto a weld and Rename weld both go through `shots::apply_batch` (validated, one
+  undo step).
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

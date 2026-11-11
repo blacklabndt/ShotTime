@@ -65,7 +65,7 @@ fn field(app: &mut App, ui: &mut egui::Ui, path: &[(u32, usize)], tag: u32, name
         if editable {
             let mut buf = app.meta.edits.get(&key).cloned().unwrap_or_else(|| cur.clone());
             let multi = ["LT", "ST", "UT"].contains(&vr.as_str());
-            let w = (ui.available_width() - 56.0).max(80.0);
+            let w = (ui.available_width() - 84.0).max(80.0);
             let resp = if multi { ui.add(egui::TextEdit::multiline(&mut buf).desired_width(w).desired_rows(1)) } else { ui.add(egui::TextEdit::singleline(&mut buf).desired_width(w)) };
             if resp.changed() { app.meta.edits.insert(key.clone(), buf.clone()); app.meta.errors.remove(&key); }
             if resp.lost_focus() {
@@ -79,6 +79,17 @@ fn field(app: &mut App, ui: &mut egui::Ui, path: &[(u32, usize)], tag: u32, name
         } else {
             let shown = match el.map(|x| &x.value) { Some(Value::Bytes(_)) | None => cur.clone(), Some(_) => cur.clone() };
             ui.label(RichText::new(if shown.is_empty() { "—".into() } else { shown }).weak());
+        }
+        if editable && path.is_empty() && !["DA", "TM", "DT", "UI"].contains(&vr.as_str()) {
+            let sug = app.suggestions(tag, &cur);
+            if !sug.is_empty() {
+                let mut pick = None;
+                ui.menu_button("▾", |ui| {
+                    ui.label(RichText::new("Used before").weak().small());
+                    for v in &sug { if ui.button(crate::app::elide(v, 48)).clicked() { pick = Some(v.clone()); ui.close_menu(); } }
+                }).response.on_hover_text("Pick a value used before");
+                if let Some(v) = pick { match app.set_field(path, tag, &v, None) { Ok(()) => { app.meta.edits.remove(&key); app.meta.errors.remove(&key); } Err(m) => { app.meta.errors.insert(key.clone(), m); } } }
+            }
         }
         if changed && ui.small_button("↺").on_hover_text("Back to the original value").clicked() { app.revert_field(path, tag); app.meta.edits.remove(&key); }
         if path.is_empty() && (tag >> 16) & 1 == 0 {
@@ -309,10 +320,12 @@ impl From<crate::app::EdgeSettings> for EdgeKey { fn from(e: crate::app::EdgeSet
 fn crop_tab(app: &mut App, ui: &mut egui::Ui) {
     let Some(img) = app.img() else { ui.label(RichText::new(app.cur().unwrap().work.img_error.clone()).color(BAD)); return; };
     section(ui, "Automatic");
+    if ui.add(egui::Button::new(RichText::new("Process this plate…").strong().color(Color32::BLACK)).fill(ACCENT)).on_hover_text("Finds every piece of film, straightens and crops each one, shows you the result, then saves one new file per piece").clicked() { app.process_plate(); }
+    note(ui, "One step: find the film pieces, straighten and crop each, preview, then save a new file per piece. Nothing is written until you confirm.");
     ui.horizontal_wrapped(|ui| {
         if ui.button(RichText::new("Straighten & crop to film").color(ACCENT)).on_hover_text("Measures the film's tilt from its edges, rotates it straight (0.05–5°) and crops away the area with no film. With two or more pieces of film, each is saved as its own straightened file.").clicked() { app.auto_straighten(); }
     });
-    note(ui, "With two or more pieces of film, each is straightened, cropped and saved as its own file; the open file is not changed.");
+    note(ui, "One piece: straightened and cropped here, as a step you can undo. Two or more: a preview opens, then each is saved as its own file.");
     ui.horizontal(|ui| {
         egui::ComboBox::from_id_salt("sens").selected_text(match app.ts.sens { s if s < 0.5 => "Low", s if s > 0.7 => "High", _ => "Normal" }).width(80.0).show_ui(ui, |ui| {
             ui.selectable_value(&mut app.ts.sens, 0.35, "Low"); ui.selectable_value(&mut app.ts.sens, 0.6, "Normal"); ui.selectable_value(&mut app.ts.sens, 0.85, "High");
@@ -378,7 +391,7 @@ fn crop_tab(app: &mut App, ui: &mut egui::Ui) {
             });
         });
         ui.horizontal(|ui| {
-            if ui.button(RichText::new(format!("Save {n} split files…")).color(ACCENT)).clicked() { app.save_split(); }
+            if ui.button(RichText::new(format!("Preview and save {n} files…")).color(ACCENT)).clicked() { app.save_split(); }
             if ui.button("Clear regions").clicked() { app.cur_mut().unwrap().work.regions.clear(); }
         });
         note(ui, "Each part is a new file in a new series, numbered in screen order, with a Derivation Description and a reference to the original.");
@@ -433,9 +446,9 @@ fn changes_tab(app: &mut App, ui: &mut egui::Ui) {
     section(ui, "Metadata changes");
     let m = shots::meta_change_list(&e.shot.file, &e.shot.orig_els);
     if m.is_empty() { note(ui, "No metadata changes."); } else { for o in m { ui.label(format!("• {o}")); } }
-    section(ui, "INDUSTREX compatibility of the last saved copy");
-    match &app.compat {
-        None => note(ui, "Save a copy to check it. Every saved copy is read back and checked against Carestream's INDUSTREX DICOM/DICONDE Conformance Statement and real INDUSTREX files."),
+    section(ui, "INDUSTREX check of the last saved file");
+    match &e.compat {
+        None => note(ui, "Save as new file to check it. Every saved file is read back and checked against Carestream's INDUSTREX DICOM/DICONDE Conformance Statement and real INDUSTREX files."),
         Some(c) => {
             let s = compat::summary(&c.checks);
             ui.label(RichText::new(if s.fail > 0 { format!("{} problem(s) found", s.fail) } else if s.warn > 0 { format!("Passed with {} warning(s)", s.warn) } else { "All checks passed".to_string() }).strong()

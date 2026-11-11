@@ -53,7 +53,7 @@ impl Default for Work {
     fn default() -> Self { Work { img: None, orig_img: None, img_error: String::new(), decoded: false, loaded: false, ops: vec![], turns: 0, undo: vec![], redo: vec![], crop: None, regions: vec![], win: Win { c: 0.0, w: 1.0 }, frame: 0 } }
 }
 
-pub struct FileEntry { pub shot: Shot, pub work: Work, pub dirty: bool, pub saved_key: String, pub thumb: Option<egui::TextureHandle>, pub thumb_queued: bool, pub view_rot: u32 }
+pub struct FileEntry { pub shot: Shot, pub work: Work, pub dirty: bool, pub saved_key: String, pub compat: Option<CompatResult>, pub thumb: Option<egui::TextureHandle>, pub thumb_queued: bool, pub view_rot: u32 }
 impl FileEntry {
     pub fn state_key(&self) -> String { format!("{}:{}:{}", self.work.ops.len(), self.work.ops.join("|"), self.shot.orig_els.keys().cloned().collect::<Vec<_>>().join(",")) }
     pub fn has_changes(&self) -> bool { !self.work.ops.is_empty() || !self.shot.orig_els.is_empty() }
@@ -82,9 +82,13 @@ impl OverlaySettings { pub fn layout(&self) -> Layout { weldscope_core::overlay:
 pub struct Prefs {
     pub show_files: bool, pub show_tools: bool, pub tab: Tab, pub overlay: OverlaySettings,
     pub templates: BTreeMap<String, Vec<(String, Option<String>)>>, pub group_tag: u32, pub last_folder: String,
+    /// Folder for new files; empty = an "Edited" folder next to the originals.
+    pub output_dir: String,
+    /// Values typed before, per field, offered as a pick-list.
+    pub history: BTreeMap<String, Vec<String>>,
 }
 impl Default for Prefs {
-    fn default() -> Self { Prefs { show_files: true, show_tools: true, tab: Tab::Metadata, overlay: OverlaySettings::default(), templates: BTreeMap::new(), group_tag: 0x0008103E, last_folder: String::new() } }
+    fn default() -> Self { Prefs { show_files: true, show_tools: true, tab: Tab::Metadata, overlay: OverlaySettings::default(), templates: BTreeMap::new(), group_tag: 0x0008103E, last_folder: String::new(), output_dir: String::new(), history: BTreeMap::new() } }
 }
 
 /// Settings of the tool panels (this session).
@@ -101,6 +105,9 @@ pub struct View { pub zoom: f32, pub off: egui::Vec2, pub fit_pending: bool, pub
 impl Default for View { fn default() -> Self { View { zoom: 0.0, off: egui::Vec2::ZERO, fit_pending: true, canvas: egui::Rect::NOTHING } } }
 
 pub struct CompatResult { pub name: String, pub checks: Vec<Check> }
+/// One film piece in the preview shown before files are written.
+pub struct PiecePreview { pub item: RegionItem, pub include: bool, pub before: egui::TextureHandle, pub after: egui::TextureHandle, pub info: String, pub warn: bool }
+pub struct PiecesDialog { pub title: &'static str, pub items: Vec<PiecePreview>, pub split: SplitOptions, pub add_to_list: bool, pub dir: Option<PathBuf> }
 
 pub type Apply = Box<dyn FnOnce(&mut App, &egui::Context) + Send>;
 pub struct Job { pub label: String, pub rx: Receiver<Apply>, pub started: Instant }
@@ -132,7 +139,11 @@ pub struct App {
     pub raw_auto_width: Option<f64>,
     pub scratches: Vec<Scratch>,
     pub compare: bool,
-    pub compat: Option<CompatResult>,
+    pub pieces: Option<PiecesDialog>,
+    pub last_saved: Option<PathBuf>,
+    pub flash: Option<(Vec<im::Segment>, Instant)>,
+    pub show_keys: bool,
+    pub rename_weld: Option<(String, String)>,
     pub texture: Option<egui::TextureHandle>,
     pub tex_key: String,
     pub logo: Option<egui::TextureHandle>,
@@ -189,7 +200,7 @@ impl App {
         let mut app = App {
             entries: vec![], folder: String::new(), cur: None, next_id: 1, mode: Mode::Edit, prefs, tool: Tool::Pan, ts: ToolSettings::default(), view: View::default(),
             view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![],
-            compare: false, compat: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0,
+            compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0,
             meta: MetaUi::default(), org: OrgState::default(), dialog: None, allow_close: false, drag: None, probe: String::new(), edge_pending: false,
         };
         if !args.is_empty() {
@@ -278,7 +289,8 @@ impl App {
         if let Some(files) = dlg.pick_files() { let single = files.len() == 1; self.add_paths(files, true, false); let _ = single; }
     }
     /// Reads and parses files in the background, then adds them to the list. `replace`: a new working folder.
-    pub fn add_paths(&mut self, paths: Vec<PathBuf>, open_first: bool, replace: bool) {
+    pub fn add_paths(&mut self, paths: Vec<PathBuf>, open_first: bool, replace: bool) { self.add_paths_opt(paths, open_first, replace, false) }
+    pub fn add_paths_opt(&mut self, paths: Vec<PathBuf>, open_first: bool, replace: bool, quiet: bool) {
         let n = paths.len();
         self.run(format!("Reading {n} file{}…", if n == 1 { "" } else { "s" }), move || {
             let mut ok = Vec::new();
@@ -291,20 +303,20 @@ impl App {
                 }
             }
             Box::new(move |app: &mut App, _ctx: &egui::Context| {
-                if replace { app.leave_current(); app.entries.clear(); app.cur = None; app.org = OrgState::default(); app.compat = None; }
+                if replace { app.leave_current(); app.entries.clear(); app.cur = None; app.org = OrgState::default(); }
                 let mut first = None;
                 let mut added = 0;
                 for mut s in ok {
                     if app.entries.iter().any(|e| (!s.path.is_empty() && e.shot.path == s.path) || (e.shot.name == s.name && d::get_string(&e.shot.orig.ds, 0x00080018) == d::get_string(&s.orig.ds, 0x00080018))) { continue; }
                     s.id = app.next_id; app.next_id += 1;
                     if first.is_none() { first = Some(s.id); }
-                    app.entries.push(FileEntry { shot: s, work: Work::default(), dirty: false, saved_key: String::new(), thumb: None, thumb_queued: false, view_rot: 0 });
+                    app.entries.push(FileEntry { shot: s, work: Work::default(), dirty: false, saved_key: String::new(), compat: None, thumb: None, thumb_queued: false, view_rot: 0 });
                     added += 1;
                 }
                 if !bad.is_empty() {
                     let msg = if bad.len() == 1 && added == 0 { format!("Could not open {}", bad[0]) } else { format!("{} file(s) could not be read: {}", bad.len(), bad.iter().take(3).cloned().collect::<Vec<_>>().join("; ")) };
                     app.error(msg);
-                } else if added > 1 { app.toast(format!("Added {added} files.")); }
+                } else if added > 1 && !quiet { app.toast(format!("Added {added} files.")); }
                 if open_first { if let Some(id) = first { app.open_entry(id); } }
             })
         });
@@ -324,7 +336,6 @@ impl App {
         self.leave_current();
         self.cur = Some(id);
         self.mode = Mode::Edit;
-        self.compat = None;
         let Some(i) = self.idx(id) else { return };
         let e = &self.entries[i];
         let loaded = e.work.loaded;
@@ -595,8 +606,23 @@ impl App {
         let e = self.cur_mut().unwrap();
         let r = shots::set_field(&mut e.shot.file, &mut e.shot.orig_els, path, tag, text, vr)?;
         e.refresh_dirty();
+        if path.is_empty() { self.remember_value(tag, text); }
         if let Some(t) = r { self.push_meta(snap, t); }
         Ok(())
+    }
+    /// Keeps values typed before (newest first, 12 per field) for the pick-lists.
+    pub fn remember_value(&mut self, tag: u32, text: &str) {
+        let t = text.trim();
+        if t.is_empty() || t.len() > 64 || t.contains('\n') || READ_ONLY.contains(&tag) { return; }
+        let v = self.prefs.history.entry(d::hex8(tag)).or_default();
+        v.retain(|x| x != t); v.insert(0, t.to_string()); v.truncate(12);
+    }
+    /// Pick-list for a field: values typed before, then values other files in the folder already have.
+    pub fn suggestions(&self, tag: u32, current: &str) -> Vec<String> {
+        let mut out: Vec<String> = self.prefs.history.get(&d::hex8(tag)).cloned().unwrap_or_default();
+        for e in &self.entries { let v = e.shot.text(tag); if !v.trim().is_empty() && v.len() <= 64 && !out.contains(&v) { out.push(v); } if out.len() >= 16 { break; } }
+        out.retain(|v| v != current);
+        out
     }
     pub fn delete_field(&mut self, path: &[(u32, usize)], tag: u32) {
         let Some(snap) = self.meta_snapshot() else { return };
@@ -687,7 +713,8 @@ impl App {
                     else { format!("Repaired {} long scratch{}: {count} pixels", segs.len(), if segs.len() == 1 { "" } else { "es" }) };
                 app.scratches.clear();
                 app.push_image(img.with_frames(img.rows, img.cols, frames), text.clone(), 0);
-                app.toast(format!("{text}. Undo is available."));
+                app.flash = Some((segs.clone(), Instant::now()));
+                app.toast(format!("{text}. Hold to compare shows the difference; Undo is available."));
             })
         });
     }
@@ -762,8 +789,8 @@ impl App {
                     let n = items.len();
                     if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions = items; }
                     app.sync_crop_inputs();
-                    app.toast(format!("Found {n} pieces of film: choose a folder, and each is straightened, cropped and saved as its own file."));
-                    app.save_parts(SplitOptions { straighten: true, fill_slivers: false });
+                    let _ = n;
+                    app.prepare_parts(SplitOptions { straighten: true, fill_slivers: false }, "Straighten & crop to film");
                     return;
                 }
                 match one.unwrap() {
@@ -803,8 +830,29 @@ impl App {
     fn save_dialog(&self, name: &str, filter: (&str, &[&str]), near: &str) -> Option<PathBuf> {
         if let Some(d) = Self::test_dir() { return Some(Self::unique_path(&d, name)); }
         let mut dlg = rfd::FileDialog::new().set_file_name(name).add_filter(filter.0, filter.1);
-        if let Some(dir) = self.dir_of(near) { dlg = dlg.set_directory(dir); }
+        if let Some(dir) = self.output_dir(near).filter(|d| d.is_dir()).or_else(|| self.dir_of(near)) { dlg = dlg.set_directory(dir); }
         dlg.save_file()
+    }
+    /// Where new files go without asking: the folder the user chose, or an "Edited" folder next to the originals.
+    pub fn output_dir(&self, near: &str) -> Option<PathBuf> {
+        if let Some(d) = Self::test_dir() { return Some(d); }
+        if !self.prefs.output_dir.is_empty() { return Some(PathBuf::from(&self.prefs.output_dir)); }
+        self.dir_of(near).map(|d| d.join("Edited"))
+    }
+    pub fn near(&self) -> String { self.cur().map(|e| e.shot.path.clone()).filter(|p| !p.is_empty()).or_else(|| self.entries.first().map(|e| e.shot.path.clone())).unwrap_or_default() }
+    pub fn change_output_dir(&mut self) {
+        let near = self.near();
+        if let Some(d) = self.pick_folder("Choose the folder for new files", &near) {
+            if self.entries.iter().any(|e| Path::new(&e.shot.path).parent() == Some(d.as_path())) { self.toast("New files will go into the same folder as the originals. Originals are still never overwritten."); }
+            self.prefs.output_dir = d.to_string_lossy().into();
+        }
+    }
+    /// Opens the folder in Explorer (with the file selected when it is a file).
+    pub fn show_in_folder(path: &Path) {
+        #[cfg(target_os = "windows")]
+        { let mut c = std::process::Command::new("explorer"); if path.is_file() { c.arg(format!("/select,{}", path.display())); } else { c.arg(path); } let _ = c.spawn(); }
+        #[cfg(not(target_os = "windows"))]
+        { let dir = if path.is_file() { path.parent().unwrap_or(path) } else { path }; let _ = std::process::Command::new("xdg-open").arg(dir).spawn(); }
     }
 
     pub fn copy_state<'a>(&'a self, e: &'a FileEntry, store_window: bool, j2k: bool) -> CopyState<'a> {
@@ -814,11 +862,16 @@ impl App {
     }
     pub fn want_j2k(&self) -> bool { self.ts.save_j2k && self.img().map_or(false, |i| i.bits_allocated <= 16) }
 
-    pub fn save_copy(&mut self) {
+    /// Save as new file. Without `ask` it goes straight into the output folder under a name that is not taken.
+    pub fn save_copy(&mut self, ask: bool) {
         let Some(i) = self.cur_idx() else { return };
         let e = &self.entries[i];
         let name = format!("{}_edited.dcm", base_name(&e.shot.name));
-        let Some(path) = self.save_dialog(&name, ("DICONDE", &["dcm"]), &e.shot.path.clone()) else { self.toast("Not saved."); return };
+        let near = e.shot.path.clone();
+        let path = match self.output_dir(&near) {
+            Some(dir) if !ask => Self::unique_path(&dir, &name),
+            _ => match self.save_dialog(&name, ("DICONDE", &["dcm"]), &near) { Some(p) => p, None => { self.toast("Not saved."); return } },
+        };
         if self.is_original(&path) { self.error("That is an original file. WeldScope never overwrites originals; choose another name."); return; }
         let store = self.ts.store_window && !self.edge.on;
         let j2k = self.want_j2k();
@@ -830,7 +883,10 @@ impl App {
         match built {
             Err(m) => self.error(format!("Not saved: {m}")),
             Ok(b) => self.run(if pixels && j2k { "Compressing JPEG 2000 and saving…" } else { "Saving…" }, move || {
-                let res = d::write(&b.file).map_err(|e| e.0).and_then(|bytes| std::fs::write(&path, &bytes).map(|_| bytes).map_err(|e| e.to_string()));
+                let res = d::write(&b.file).map_err(|e| e.0).and_then(|bytes| {
+                    if let Some(p) = path.parent() { std::fs::create_dir_all(p).map_err(|e| format!("{}: {e}", p.display()))?; }
+                    std::fs::write(&path, &bytes).map(|_| bytes).map_err(|e| e.to_string())
+                });
                 let checks = res.as_ref().ok().map(|bytes| compat::check(bytes, Some(&orig), &CheckOptions { removed: b.removed.clone(), edited: b.edited.clone(), pixels_changed: b.pixels_changed, xml_tag: d::industrex_info(&orig.ds).and_then(|x| x.xml_tag) }));
                 Box::new(move |app: &mut App, _: &egui::Context| match res {
                     Err(m) => app.error(format!("Not saved: {m}")),
@@ -839,44 +895,108 @@ impl App {
                         if !b.removed.is_empty() { extra += &format!(" Left out {} element(s) that described the original pixels.", b.removed.len()); }
                         if !b.synced.is_empty() { extra += &format!(" Updated {} field(s) in INDUSTREX's XML copy.", b.synced.len()); }
                         if let Some(i) = app.idx(id) { let e = &mut app.entries[i]; e.saved_key = key; e.shot.saved_as = path.to_string_lossy().into(); e.refresh_dirty(); }
-                        app.toast(format!("Saved {} ({}). The original file is unchanged.{extra}", path.display(), fmt_mb(bytes.len())));
-                        app.show_compat(path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), checks.unwrap_or_default());
+                        app.toast(format!("Saved as a new file: {} ({}). The original file is unchanged.{extra}", path.display(), fmt_mb(bytes.len())));
+                        app.last_saved = Some(path.clone());
+                        app.show_compat(id, path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), checks.unwrap_or_default());
                     }
                 })
             }),
         }
     }
-    pub fn show_compat(&mut self, name: String, checks: Vec<Check>) {
+    pub fn show_compat(&mut self, id: u64, name: String, checks: Vec<Check>) {
         let s = compat::summary(&checks);
-        if s.fail > 0 { self.error(format!("INDUSTREX compatibility check found {} problem(s) in the saved copy. See the Changes tab.", s.fail)); }
-        self.compat = Some(CompatResult { name, checks });
+        if s.fail > 0 { self.error(format!("INDUSTREX compatibility check found {} problem(s) in the saved file. See the Changes tab.", s.fail)); }
+        if let Some(i) = self.idx(id) { self.entries[i].compat = Some(CompatResult { name, checks }); }
     }
 
-    pub fn save_split(&mut self) { let o = SplitOptions { straighten: self.ts.straighten, fill_slivers: self.ts.fill }; self.save_parts(o); }
-    /// Saves every region of the open file as its own file in a folder the user chooses.
-    pub fn save_parts(&mut self, split: SplitOptions) {
+    // ---- pieces: preview, then one file each
+    pub fn save_split(&mut self) { let o = SplitOptions { straighten: self.ts.straighten, fill_slivers: self.ts.fill }; self.prepare_parts(o, "Save split files"); }
+    /// One button for the usual job: find the film pieces, straighten and crop each, preview, save one file each.
+    pub fn process_plate(&mut self) {
+        let Some((img, f)) = self.frame_data() else { return };
+        let rot = self.view_rot;
+        self.run("Finding film pieces…", move || {
+            let items = App::pieces_in_screen_order(&img, f, 0.6, 0, rot);
+            Box::new(move |app: &mut App, _: &egui::Context| {
+                if items.is_empty() { app.error("No film found on this plate. Try Find film pieces with High sensitivity, or draw regions by hand."); return; }
+                if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions = items; }
+                app.sync_crop_inputs();
+                app.prepare_parts(SplitOptions { straighten: true, fill_slivers: false }, "Process this plate");
+            })
+        });
+    }
+    /// Works out every piece as it would be saved and opens the preview. Nothing is written until the user confirms.
+    pub fn prepare_parts(&mut self, split: SplitOptions, title: &'static str) {
         let Some(i) = self.cur_idx() else { return };
-        if self.entries[i].work.regions.is_empty() || self.entries[i].work.img.is_none() { return; }
-        let Some(dir) = self.pick_folder("Choose a folder for the separate files", &self.entries[i].shot.path.clone()) else { self.toast("Not saved. The pieces are still marked; use Save split files on the Crop & split tab."); return };
+        let Some((img, f)) = self.frame_data() else { return };
+        let regions = self.entries[i].work.regions.clone();
+        if regions.is_empty() { return; }
+        let (win, inv, rot) = (self.win(), self.invert_view, self.view_rot);
+        let dir = self.output_dir(&self.entries[i].shot.path);
+        self.run("Preparing the preview…", move || {
+            let thumb = |frame: &[i32], w: usize, h: usize| {
+                let g = im::render(frame, &img, win.c, win.w, inv);
+                let (g, w, h) = crate::export_img::fit_gray(&g, w, h, 420);
+                let (g, w, h) = im::rotate_view_u8(&g, w, h, rot);
+                egui::ColorImage::from_gray([w, h], &g)
+            };
+            let mut out = Vec::new();
+            for r in regions {
+                let Ok(before) = im::crop(&img, r.region.rect) else { continue };
+                let b = thumb(&before.frames[f.min(before.frames.len() - 1)], before.cols, before.rows);
+                let (after, info, warn) = if split.straighten {
+                    match im::straighten_piece(&img, &r.region, None, 5.0, 0.02, 0) {
+                        Ok(s) => {
+                            let info = if s.rotated { format!("{}×{} · straightened {:.2}°", s.img.cols, s.img.rows, s.angle) }
+                                else if s.too_steep { format!("{}×{} · tilt {:.1}° is over 5°: not rotated", s.img.cols, s.img.rows, s.measured) }
+                                else if s.no_background { format!("{}×{} · kept as drawn (no background to measure)", s.img.cols, s.img.rows) }
+                                else { format!("{}×{} · already straight, cropped to the film", s.img.cols, s.img.rows) };
+                            (s.img, info, s.too_steep)
+                        }
+                        Err(m) => (before.clone(), m, true),
+                    }
+                } else {
+                    let mut a = before.clone();
+                    let filled = split.fill_slivers && !r.region.cuts.is_empty() && img.padding.is_some();
+                    if filled { for fr in a.frames.iter_mut() { im::fill_outside_cuts(fr, &r.region, img.padding.unwrap()); } }
+                    let info = format!("{}×{}{}", a.cols, a.rows, if filled { " · neighbour's sliver filled" } else { "" });
+                    (a, info, false)
+                };
+                let a = thumb(&after.frames[f.min(after.frames.len() - 1)], after.cols, after.rows);
+                out.push((r, b, a, info, warn));
+            }
+            Box::new(move |app: &mut App, ctx: &egui::Context| {
+                let items = out.into_iter().enumerate().map(|(k, (item, b, a, info, warn))| PiecePreview {
+                    item, include: true, info, warn,
+                    before: ctx.load_texture(format!("pb{k}"), b, egui::TextureOptions::LINEAR), after: ctx.load_texture(format!("pa{k}"), a, egui::TextureOptions::LINEAR),
+                }).collect();
+                app.pieces = Some(PiecesDialog { title, items, split, add_to_list: true, dir });
+            })
+        });
+    }
+    /// Saves the given pieces of the open file, one new file each, into `dir`.
+    pub fn save_parts_to(&mut self, dir: PathBuf, split: SplitOptions, regions: Vec<RegionItem>, add_to_list: bool) {
+        let Some(i) = self.cur_idx() else { return };
+        if regions.is_empty() || self.entries[i].work.img.is_none() { return; }
         let j2k = self.want_j2k();
         let target = self.ts.label_target;
         let series = d::new_uid();
         let e = &self.entries[i];
         let base = base_name(&e.shot.name);
-        let n = e.work.regions.len();
+        let n = regions.len();
         let orig = e.shot.orig.clone();
         let file = e.shot.file.clone();
         let img = e.work.img.clone();
         let ops = e.work.ops.clone();
         let turns = e.work.turns;
         let orig_els = e.shot.orig_els.clone();
-        let regions = e.work.regions.clone();
         let originals = self.originals();
-        self.run(if j2k { "Compressing JPEG 2000 and saving parts…" } else { "Saving parts…" }, move || {
+        self.run(if j2k { "Compressing JPEG 2000 and saving the pieces…" } else { "Saving the pieces…" }, move || {
             let mut written = Vec::new();
             let mut problems = 0;
-            let mut err = None;
+            let mut err = std::fs::create_dir_all(&dir).err().map(|e| format!("{}: {e}", dir.display()));
             for (k, r) in regions.iter().enumerate() {
+                if err.is_some() { break; }
                 let label = { let l = r.label.trim(); if l.is_empty() { (k + 1).to_string() } else { l.to_string() } };
                 let part = PartInfo { series: series.clone(), index: k + 1, text: format!("Split part {} of {n} ({}×{} at {},{})", k + 1, r.region.rect.w, r.region.rect.h, r.region.rect.x, r.region.rect.y) };
                 let st = CopyState { file: &file, orig: &orig, img: img.as_deref(), ops: &ops, turns, orig_els: &orig_els, store_window: None, j2k };
@@ -897,23 +1017,28 @@ impl App {
                     if compat::summary(&checks).fail > 0 { problems += 1; }
                     Ok(path)
                 });
-                match res { Ok(p) => written.push(p), Err(m) => { err = Some(m); break; } }
+                match res { Ok(p) => written.push(p), Err(m) => err = Some(m) }
             }
             Box::new(move |app: &mut App, _: &egui::Context| {
-                if let Some(m) = err { app.error(format!("Stopped after {} part(s): {m}", written.len())); return; }
-                if problems > 0 { app.error(format!("Saved {} files in {}, but the INDUSTREX check found problems in {problems}.", written.len(), dir.display())); }
-                else { app.toast(format!("Saved {} files in {} (all passed the INDUSTREX check). The original file is unchanged.", written.len(), dir.display())); }
+                if !written.is_empty() { app.last_saved = Some(written[0].clone()); }
+                let n = written.len();
+                if add_to_list && n > 0 { app.add_paths_opt(written, false, false, true); }
+                if let Some(m) = err { app.error(format!("Stopped after {n} file(s): {m}")); return; }
+                if let Some(e) = app.cur_mut() { e.work.regions.clear(); e.work.crop = None; }
+                app.sync_crop_inputs();
+                if problems > 0 { app.error(format!("Saved {n} files in {}, but the INDUSTREX check found problems in {problems}.", dir.display())); }
+                else { app.toast(format!("Saved {n} new file{} in {} — passed the INDUSTREX check. The original file is unchanged.", if n == 1 { "" } else { "s" }, dir.display())); }
             })
         });
     }
 
-    /// Saves a new copy of every edited file: files with image steps are saved with them (as Save copy would),
-    /// the rest as metadata-only copies. Never overwrites originals or existing files.
+    /// Saves a new file for every edited file: files with image steps are saved with them (as Save as new file
+    /// would), the rest as metadata-only copies. Never overwrites originals or existing files.
     pub fn save_all_edited(&mut self) {
         let edited: Vec<usize> = (0..self.entries.len()).filter(|&i| self.entries[i].dirty).collect();
         if edited.is_empty() { self.toast("No files with unsaved changes."); return; }
         let near = self.entries[edited[0]].shot.path.clone();
-        let Some(dir) = self.pick_folder("Choose a folder for the edited copies", &near) else { self.toast("Not saved."); return };
+        let Some(dir) = self.output_dir(&near).or_else(|| self.pick_folder("Choose a folder for the new files", &near)) else { self.toast("Not saved."); return };
         let names = shots::copy_names(&edited.iter().map(|&i| self.entries[i].shot.name.as_str()).collect::<Vec<_>>());
         struct Item { id: u64, name: String, key: String, orig: Arc<DicomFile>, built: Result<copy::BuiltCopy, String> }
         let mut items = Vec::new();
@@ -924,11 +1049,12 @@ impl App {
             items.push(Item { id: e.shot.id, name: names[k].clone(), key: e.state_key(), orig: e.shot.orig.clone(), built });
         }
         let originals = self.originals();
-        self.run(format!("Saving {} copies…", items.len()), move || {
-            let mut done: Vec<(u64, String, PathBuf)> = Vec::new();
+        self.run(format!("Saving {} new files…", items.len()), move || {
+            let mut done: Vec<(u64, String, PathBuf, Vec<Check>)> = Vec::new();
             let mut failed = Vec::new();
             let mut problems = 0;
-            for it in items {
+            if let Err(e) = std::fs::create_dir_all(&dir) { failed.push(format!("{}: {e}", dir.display())); }
+            else { for it in items {
                 let r = it.built.and_then(|b| {
                     let bytes = d::write(&b.file).map_err(|e| e.0)?;
                     let path = App::unique_path(&dir, &it.name);
@@ -936,13 +1062,21 @@ impl App {
                     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
                     let checks = compat::check(&bytes, Some(&it.orig), &CheckOptions { removed: b.removed.clone(), edited: b.edited.clone(), pixels_changed: b.pixels_changed, xml_tag: d::industrex_info(&it.orig.ds).and_then(|x| x.xml_tag) });
                     if compat::summary(&checks).fail > 0 { problems += 1; }
-                    Ok(path)
+                    Ok((path, checks))
                 });
-                match r { Ok(p) => done.push((it.id, it.key, p)), Err(m) => failed.push(format!("{}: {m}", it.name)) }
-            }
+                match r { Ok((p, c)) => done.push((it.id, it.key, p, c)), Err(m) => failed.push(format!("{}: {m}", it.name)) }
+            } }
             Box::new(move |app: &mut App, _: &egui::Context| {
-                for (id, key, p) in &done { if let Some(i) = app.idx(*id) { let e = &mut app.entries[i]; e.saved_key = key.clone(); e.shot.saved_as = p.to_string_lossy().into(); e.refresh_dirty(); } }
-                let msg = format!("Saved {} cop{} to {}{}{}", done.len(), if done.len() == 1 { "y" } else { "ies" }, dir.display(),
+                let n = done.len();
+                if let Some(d0) = done.first() { app.last_saved = Some(d0.2.clone()); }
+                for (id, key, p, checks) in done {
+                    if let Some(i) = app.idx(id) {
+                        let e = &mut app.entries[i];
+                        e.saved_key = key; e.shot.saved_as = p.to_string_lossy().into(); e.refresh_dirty();
+                        e.compat = Some(CompatResult { name: p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), checks });
+                    }
+                }
+                let msg = format!("Saved {n} new file{} to {}{}{}", if n == 1 { "" } else { "s" }, dir.display(),
                     if problems == 0 { " — INDUSTREX check: all passed".to_string() } else { format!(" — INDUSTREX check: problems in {problems}") },
                     if failed.is_empty() { String::new() } else { format!(". Not saved: {}", failed.join("; ")) });
                 app.org.result = msg.clone();
@@ -1044,12 +1178,25 @@ impl eframe::App for App {
             let (z, y, s) = ctx.input_mut(|i| (i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z), i.consume_key(egui::Modifiers::COMMAND, egui::Key::Y), i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)));
             if z { self.undo(); }
             if y { self.redo(); }
-            if s && self.cur.is_some() && self.mode == Mode::Edit { self.save_copy(); }
+            if s && self.cur.is_some() && self.mode == Mode::Edit { self.save_copy(false); }
         }
 
         self.top_bar(ctx);
         self.status_bar(ctx);
-        let busy = self.busy();
+        let busy = self.busy() || self.pieces.is_some();
+        // single keys (only when not typing)
+        if !busy && self.mode == Mode::Edit && ctx.memory(|m| m.focused().is_none()) && self.dialog.is_none() {
+            let key = |k: egui::Key| ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k));
+            if key(egui::Key::PageDown) { self.step_file(1); }
+            if key(egui::Key::PageUp) { self.step_file(-1); }
+            if self.img().is_some() {
+                if key(egui::Key::F) { crate::viewer::fit(self); }
+                if key(egui::Key::Num1) { crate::viewer::actual_size(self); }
+                if key(egui::Key::R) { self.view_rot = (self.view_rot + 90) % 360; self.view.fit_pending = true; }
+                if key(egui::Key::I) { self.invert_view = !self.invert_view; self.invalidate(); }
+                if key(egui::Key::O) { self.prefs.overlay.enabled = !self.prefs.overlay.enabled; }
+            }
+        }
         match self.mode {
             Mode::Edit => {
                 if self.prefs.show_files {
@@ -1081,7 +1228,7 @@ impl eframe::App for App {
 impl App {
     fn top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top").frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(8.0, 6.0))).show(ctx, |ui| {
-            ui.add_enabled_ui(!self.busy(), |ui| {
+            ui.add_enabled_ui(!self.busy() && self.pieces.is_none(), |ui| {
                 ui.horizontal(|ui| {
                     if let Some(l) = &self.logo { ui.add(egui::Image::new(l).fit_to_exact_size(egui::vec2(28.0 * 875.0 / 243.0, 28.0))); }
                     ui.separator();
@@ -1097,10 +1244,21 @@ impl App {
                     ui.separator();
                     let has = self.cur.is_some() && self.mode == Mode::Edit;
                     let dirty = self.cur().map_or(false, |e| e.dirty);
-                    let save = egui::Button::new(RichText::new("Save copy").strong().color(if dirty { Color32::BLACK } else { ui.visuals().text_color() })).fill(if dirty { ACCENT } else { ui.visuals().widgets.inactive.weak_bg_fill });
-                    if ui.add_enabled(has, save).on_hover_text("Write a new file; the original is never changed (Ctrl+S)").clicked() { self.save_copy(); }
-                    ui.add_enabled_ui(has && self.img().is_some(), |ui| {
+                    let save = egui::Button::new(RichText::new("Save as new file").strong().color(if dirty { Color32::BLACK } else { ui.visuals().text_color() })).fill(if dirty { ACCENT } else { ui.visuals().widgets.inactive.weak_bg_fill });
+                    let where_ = self.output_dir(&self.near()).map(|d| d.display().to_string()).unwrap_or_else(|| "a folder you choose".into());
+                    if ui.add_enabled(has, save).on_hover_text(format!("Writes a new file into {where_}. Your original file is never changed. (Ctrl+S)")).clicked() { self.save_copy(false); }
+                    // result of the INDUSTREX check of this file's last saved copy
+                    if has {
+                        if let Some(sm) = self.cur().and_then(|e| e.compat.as_ref()).map(|c| compat::summary(&c.checks)) {
+                            let (t, c) = if sm.fail > 0 { (format!("✖ INDUSTREX check: {} problem{}", sm.fail, if sm.fail == 1 { "" } else { "s" }), BAD) } else if sm.warn > 0 { ("✔ INDUSTREX check passed (warnings)".to_string(), WARN) } else { ("✔ INDUSTREX check passed".to_string(), OK) };
+                            if ui.add(egui::Label::new(RichText::new(t).color(c)).sense(egui::Sense::click())).on_hover_text("The last saved file was read back and checked. Click for the details.").clicked() { self.prefs.tab = Tab::Changes; self.prefs.show_tools = true; }
+                        }
+                    }
+                    ui.add_enabled_ui(has, |ui| {
                         ui.menu_button("Export", |ui| {
+                            if ui.button("Save as… (choose name and folder)").clicked() { ui.close_menu(); self.save_copy(true); }
+                            ui.separator();
+                            if self.img().is_none() { ui.disable(); }
                             if ui.button("PNG image (as displayed)").clicked() { ui.close_menu(); self.export("png"); }
                             if ui.button("TIFF (raw pixel values)").clicked() { ui.close_menu(); self.export("tiff"); }
                             if ui.button("PDF report").clicked() { ui.close_menu(); self.export("pdf"); }
@@ -1108,9 +1266,10 @@ impl App {
                     });
                     if self.any_dirty() {
                         let n = self.entries.iter().filter(|e| e.dirty).count();
-                        ui.label(RichText::new(format!("● {n} unsaved")).color(ACCENT)).on_hover_text("Files with changes not saved as a copy yet");
+                        ui.label(RichText::new(format!("● {n} unsaved")).color(ACCENT)).on_hover_text("Files with changes not saved as a new file yet");
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("?").on_hover_text("Keyboard and mouse shortcuts").clicked() { self.show_keys = !self.show_keys; }
                         if self.mode == Mode::Edit {
                             ui.toggle_value(&mut self.prefs.show_tools, "Tools pane").on_hover_text("Show or hide the tool panel");
                             ui.toggle_value(&mut self.prefs.show_files, "Files pane").on_hover_text("Show or hide the file pane");
@@ -1128,6 +1287,17 @@ impl App {
                     let ds = &e.shot.file.ds;
                     ui.label(RichText::new(format!("{}×{} · {}", ds.string(0x00280011), ds.string(0x00280010), d::ts_name(&e.shot.orig.transfer_syntax))).weak());
                     if !self.probe.is_empty() { ui.label(RichText::new(&self.probe).monospace()); }
+                }
+                if !self.entries.is_empty() {
+                    ui.separator();
+                    if let Some(p) = self.last_saved.clone() { if ui.small_button("Show last saved").on_hover_text(p.display().to_string()).clicked() { Self::show_in_folder(&p); } }
+                    if ui.small_button("Change").on_hover_text("Choose another folder for new files").clicked() { self.change_output_dir(); }
+                    if !self.prefs.output_dir.is_empty() && ui.small_button("Reset").on_hover_text("Back to an \"Edited\" folder next to the originals").clicked() { self.prefs.output_dir.clear(); }
+                    match self.output_dir(&self.near()) {
+                        Some(d) => { let full = d.display().to_string(); ui.label(RichText::new(format!("New files go to: {}", elide(&full, 46))).weak()).on_hover_text(full); }
+                        None => { ui.label(RichText::new("New files: you are asked where").weak()); }
+                    }
+                    ui.separator();
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if let Some((m, err, _)) = &self.toast {
@@ -1155,6 +1325,81 @@ impl App {
             None => {}
         }
         if close { self.dialog = None; }
+        self.pieces_dialog(ctx);
+        if self.show_keys {
+            let mut open = true;
+            egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
+                egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
+                    for (k, t) in [("Mouse wheel", "Zoom"), ("Right-drag", "Brightness and contrast (window/level), with any tool"), ("Middle-drag", "Move the image, with any tool"), ("Double-click", "Fit the image"),
+                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"),
+                        ("Ctrl+S", "Save as new file"), ("Ctrl+Z / Ctrl+Y", "Undo / redo"), ("Ctrl+O", "Add files")] {
+                        ui.label(RichText::new(k).strong()); ui.label(t); ui.end_row();
+                    }
+                });
+                ui.label(RichText::new("Letter keys work when you are not typing in a field.").weak().small());
+            });
+            self.show_keys = open;
+        }
+    }
+
+    /// Preview of the pieces before any file is written: untick a piece to skip it, fix labels, check the folder.
+    fn pieces_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut dlg) = self.pieces.take() else { return };
+        if self.busy() { self.pieces = Some(dlg); return; }
+        let (mut save, mut cancel, mut change) = (false, false, false);
+        let n = dlg.items.iter().filter(|p| p.include).count();
+        egui::Window::new(dlg.title).collapsible(false).resizable(true).default_width(860.0).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.label(format!("{} piece{} of film found. Each ticked piece is saved as its own new file; the original file is not changed.", dlg.items.len(), if dlg.items.len() == 1 { "" } else { "s" }));
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical().max_height((ctx.screen_rect().height() - 300.0).max(160.0)).show(ui, |ui| {
+                let fit = |t: &egui::TextureHandle| { let s = t.size_vec2(); let k = (340.0 / s.x).min(150.0 / s.y).min(1.5); s * k };
+                for (k, p) in dlg.items.iter_mut().enumerate() {
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut p.include, "");
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| { ui.label(RichText::new(format!("Piece {}", k + 1)).strong()); ui.label("label"); ui.add(egui::TextEdit::singleline(&mut p.item.label).desired_width(90.0)); });
+                                ui.label(RichText::new(&p.info).color(if p.warn { WARN } else { ui.visuals().text_color() }));
+                                ui.add_enabled_ui(p.include, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.vertical(|ui| { ui.label(RichText::new("Now").weak().small()); ui.add(egui::Image::new(&p.before).fit_to_exact_size(fit(&p.before))); });
+                                        ui.label(RichText::new("→").size(20.0));
+                                        ui.vertical(|ui| { ui.label(RichText::new("Saved file").weak().small()); ui.add(egui::Image::new(&p.after).fit_to_exact_size(fit(&p.after))); });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                }
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                match &dlg.dir { Some(d) => { let full = d.display().to_string(); ui.label(format!("Save to: {}", elide(&full, 80))).on_hover_text(full); } None => { ui.label("Save to: choose a folder"); } }
+                if ui.button("Change…").clicked() { change = true; }
+            });
+            ui.checkbox(&mut dlg.add_to_list, "Add the saved files to the file list, ready for editing their details");
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(n > 0, egui::Button::new(RichText::new(format!("Save {n} file{}", if n == 1 { "" } else { "s" })).strong().color(Color32::BLACK)).fill(ACCENT)).clicked() { save = true; }
+                if ui.button("Cancel").clicked() { cancel = true; }
+            });
+        });
+        if change { let near = self.near(); if let Some(d) = self.pick_folder("Choose the folder for the new files", &near) { if Self::test_dir().is_none() { self.prefs.output_dir = d.to_string_lossy().into(); } dlg.dir = Some(d); } }
+        if save && dlg.dir.is_none() { let near = self.near(); dlg.dir = self.pick_folder("Choose the folder for the new files", &near); save = dlg.dir.is_some(); }
+        if save {
+            let items: Vec<RegionItem> = dlg.items.iter().filter(|p| p.include).map(|p| p.item.clone()).collect();
+            self.save_parts_to(dlg.dir.clone().unwrap(), dlg.split, items, dlg.add_to_list);
+        } else if cancel { self.toast("Nothing was saved. The pieces are still marked on the image."); }
+        else { self.pieces = Some(dlg); }
+    }
+
+    /// Next (+1) or previous (−1) file in the list order.
+    pub fn step_file(&mut self, delta: i64) {
+        let order: Vec<u64> = crate::organize::grouped(self).into_iter().flat_map(|(_, v)| v).collect();
+        if order.is_empty() { return; }
+        let pos = self.cur.and_then(|c| order.iter().position(|x| *x == c)).map(|p| p as i64 + delta).unwrap_or(0);
+        if pos < 0 || pos >= order.len() as i64 { self.toast(if delta > 0 { "That is the last file." } else { "That is the first file." }); return; }
+        self.open_entry(order[pos as usize]);
     }
 
     // ------------------------------------------------------------ organize: undo
