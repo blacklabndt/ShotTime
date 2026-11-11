@@ -128,13 +128,13 @@ Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR p
   - DCMTK's strict parser and GDCM accepted every copy;
   - GDCM decoded pixel-for-pixel the same image as the editor.
 
-  Opening the copies in INDUSTREX itself is still needed for final confirmation.
+  - **Confirmed in INDUSTREX (owner, 2026-11-11):** a test pack of five edited copies of one plate opened properly in INDUSTREX 7.2.1. The pack held a metadata-only copy, rotated, cropped and EDGE-applied JPEG 2000 copies, and an uncompressed processed copy. Whether INDUSTREX shows edited values from the tags or from its XML was not reported separately; both are kept in step.
 
 **Open items**
 
-- **Not yet confirmed in INDUSTREX**:
-  - Whether INDUSTREX reads fields from its XML copy or from the DICOM tags.
-  - How INDUSTREX displays a processed copy without its XML.
+- **Not yet reported from INDUSTREX**:
+  - Whether INDUSTREX reads fields from its XML copy or from the DICOM tags. Both are updated.
+  - Whether a processed copy without its XML opens with INDUSTREX's default view.
 
 ## File support
 
