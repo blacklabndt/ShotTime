@@ -219,9 +219,20 @@ fn image_tab(app: &mut App, ui: &mut egui::Ui) {
     let (a, b) = (img.min as f64 * img.slope + img.intercept, img.max as f64 * img.slope + img.intercept);
     let (lo, hi) = (a.min(b), a.max(b));
     let mut w = app.win();
-    let r1 = ui.add(egui::Slider::new(&mut w.c, lo..=hi).text("Level").clamping(egui::SliderClamping::Never));
-    let r2 = ui.add(egui::Slider::new(&mut w.w, 1.0..=(hi - lo).max(2.0)).text("Width").logarithmic(true).clamping(egui::SliderClamping::Never));
-    if r1.changed() || r2.changed() { app.set_win(w); }
+    let step = (w.w / 100.0).max(0.1); // fine steps: 1% of the current window width
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        if ui.small_button("−").on_hover_text("Level down a small step").clicked() { w.c -= step; changed = true; }
+        if ui.small_button("+").on_hover_text("Level up a small step").clicked() { w.c += step; changed = true; }
+        changed |= ui.add(egui::Slider::new(&mut w.c, lo..=hi).text("Level").drag_value_speed(step / 2.0).clamping(egui::SliderClamping::Never)).changed();
+    });
+    ui.horizontal(|ui| {
+        if ui.small_button("−").on_hover_text("Narrower window (more contrast), small step").clicked() { w.w = (w.w * 0.98).max(1.0); changed = true; }
+        if ui.small_button("+").on_hover_text("Wider window (less contrast), small step").clicked() { w.w *= 1.02; changed = true; }
+        changed |= ui.add(egui::Slider::new(&mut w.w, 1.0..=(hi - lo).max(2.0)).text("Width").logarithmic(true).drag_value_speed(step / 2.0).clamping(egui::SliderClamping::Never)).changed();
+    });
+    if changed { app.set_win(w); }
+    note(ui, "For fine changes use − and +, drag the number, or right-drag on the image (hold Shift for finer steps).");
     ui.horizontal(|ui| {
         if ui.button("Auto").on_hover_text("Window on the main exposure, leaving out unexposed areas and markers").clicked() { app.reset_window("auto"); }
         if ui.add_enabled(img.window_width.map_or(false, |w| w > 0.0) && !app.edge.on, egui::Button::new("File")).on_hover_text("The window stored in the file").clicked() { app.reset_window("file"); }

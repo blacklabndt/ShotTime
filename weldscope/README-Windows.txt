@@ -29,7 +29,8 @@ Editing
 - Image tab: window/level, EDGE-style enhancement (an approximation for viewing; not INDUSTREX's EDGE),
   rotate/flip, noise reduction, bad pixels, and scratch repair (the repaired line flashes green and the number
   of changed pixels is shown).
-- Mouse: wheel zooms; right-drag changes brightness and contrast with any tool; middle-drag moves the image.
+- Mouse: wheel zooms; right-drag changes brightness and contrast with any tool (hold Shift for finer steps);
+  middle-drag moves the image. The − and + buttons beside Level and Width make small steps.
 - The ? button (top right) lists all shortcuts.
 - Undo / Redo (Ctrl+Z / Ctrl+Y) covers metadata and image changes.
 

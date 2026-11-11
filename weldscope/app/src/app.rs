@@ -1330,7 +1330,7 @@ impl App {
             let mut open = true;
             egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
                 egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
-                    for (k, t) in [("Mouse wheel", "Zoom"), ("Right-drag", "Brightness and contrast (window/level), with any tool"), ("Middle-drag", "Move the image, with any tool"), ("Double-click", "Fit the image"),
+                    for (k, t) in [("Mouse wheel", "Zoom"), ("Right-drag", "Brightness and contrast (window/level), with any tool; hold Shift for finer steps"), ("Middle-drag", "Move the image, with any tool"), ("Double-click", "Fit the image"),
                         ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"),
                         ("Ctrl+S", "Save as new file"), ("Ctrl+Z / Ctrl+Y", "Undo / redo"), ("Ctrl+O", "Add files")] {
                         ui.label(RichText::new(k).strong()); ui.label(t); ui.end_row();

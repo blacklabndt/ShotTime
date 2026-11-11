@@ -89,7 +89,7 @@ fn toolbar(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         let has = app.img().is_some();
         ui.add_enabled_ui(has && !app.busy(), |ui| {
-            for (t, label, tip) in [(Tool::Pan, "Pan", "Drag to move the image; the wheel zooms. Right-drag changes brightness and contrast with any tool; middle-drag moves."), (Tool::Window, "W/L", "Drag sideways for contrast, up/down for brightness. Right-drag does the same with any tool."),
+            for (t, label, tip) in [(Tool::Pan, "Pan", "Drag to move the image; the wheel zooms. Right-drag changes brightness and contrast with any tool; middle-drag moves."), (Tool::Window, "W/L", "Drag sideways for contrast, up/down for brightness; hold Shift for finer steps. Right-drag does the same with any tool."),
                 (Tool::Crop, "Crop", "Drag a crop box"), (Tool::Region, "Region", "Drag a region to save as a split file"), (Tool::Scratch, "Scratch", "Drag along a thin scratch to repair it")] {
                 if ui.selectable_label(app.tool == t, label).on_hover_text(tip).clicked() { app.tool = t; }
             }
@@ -277,10 +277,11 @@ fn interact(app: &mut App, ui: &egui::Ui, resp: &egui::Response, xf: &Xf, img: &
                 DragKind::Pan => app.view.off += delta,
                 DragKind::Window(_) => {
                     let w = app.win();
-                    let span = ((img.max - img.min) as f64 * img.slope.abs()).max(1.0);
-                    let k = span / 1500.0;
+                    // Steps follow the current window, so a narrow window gets fine steps: dragging 500 px up or down
+                    // moves the level by one window width. Hold Shift for steps five times finer.
+                    let fine = if ui.input(|i| i.modifiers.shift) { 0.2 } else { 1.0 };
                     let sign = if img.monochrome1() != app.invert_view { 1.0 } else { -1.0 };
-                    app.set_win(Win { c: w.c + sign * delta.y as f64 * k, w: (w.w + delta.x as f64 * k * 2.0).max(1.0) });
+                    app.set_win(Win { c: w.c + sign * delta.y as f64 * w.w / 500.0 * fine, w: (w.w * (delta.x as f64 * 0.003 * fine).exp()).max(1.0) });
                 }
                 _ => { if let Some(p) = resp.interact_pointer_pos() { dr.cur_img = xf.to_image(p); app.drag = Some(dr); } }
             }
