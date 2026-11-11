@@ -162,9 +162,11 @@
       el('div', { class: 'chips' },
         el('span', { class: 'chip' }, SOP_NAMES[sop] || D.getString(ds, 0x00080060) || 'DICOM image'),
         ix ? el('span', { class: 'chip accent' }, `INDUSTREX${ix.version ? ' ' + ix.version : ''}`) : '',
+        D.getString(ds, 0x00081090) ? el('span', { class: 'chip' }, D.getString(ds, 0x00081090)) : '',
         el('span', { class: 'chip' }, bits)));
     const stale = D.stalePresentationTags(ds);
-    if (stale.length) card.append(el('p', { class: 'note' }, `Processed copies leave out ${stale.map(t => t === 0x00880200 ? 'icon thumbnail' : D.describeTag(ds, t).name.replace(/^INDUSTREX /, '')).filter((v, i, a) => a.indexOf(v) === i).join(', ')}, because ${stale.length === 1 ? 'it describes' : 'they describe'} the original pixels. Metadata-only copies keep everything.`));
+    if (D.industrexXmlValues(ds, 0x00080060) || D.industrexXmlValues(ds, 0x00100010)) card.append(el('p', { class: 'note' }, 'INDUSTREX keeps a second copy of these fields in its XML presentation state. Your edits are copied into it when you save.'));
+    if (stale.length) card.append(el('p', { class: 'note' }, `Processed copies (rotated, cropped, filtered) leave out ${stale.map(t => t === 0x00880200 ? 'icon thumbnail' : D.describeTag(ds, t).name.replace(/^INDUSTREX /, '')).filter((v, i, a) => a.indexOf(v) === i).join(', ')}, because ${stale.length === 1 ? 'it describes' : 'they describe'} the original pixels. Metadata-only copies keep everything.`));
     return card;
   }
   function matches(ds, tag, q) {
@@ -489,6 +491,8 @@
     const copy = D.clone(S.file);
     if (S.img && pixelsChanged) D.setImage(copy, region ? I.crop(S.img, region) : S.img, { swapSpacing: S.turns % 2 === 1 });
     storeWindow(copy.ds);
+    // INDUSTREX mirrors the fields in its XML presentation state; keep that copy in step (processed copies drop the XML).
+    if (!pixelsChanged) copy.synced = D.syncIndustrexXml(copy.ds, changedTopLevel().concat($('store-window').checked ? [0x00281050, 0x00281051] : []));
     const steps = S.ops.slice(); if (partInfo) steps.push(partInfo.text);
     D.derive(copy, S.orig, { pixelsChanged, description: steps.join('; '), seriesUID: partInfo ? partInfo.series : (pixelsChanged ? D.newUID() : null), instanceNumber: partInfo ? partInfo.index : null, removed });
     return copy;
@@ -496,9 +500,10 @@
   function saveCopy() {
     if (!S.file) return;
     busy(() => {
-      const removed = [], bytes = D.write(buildCopy(null, null, removed));
+      const removed = [], copy = buildCopy(null, null, removed), bytes = D.write(copy);
       download(bytes, `${baseName()}_edited.dcm`, 'application/dicom');
-      const extra = removed.length ? ` Left out ${removed.length} element(s) that described the original pixels.` : '';
+      let extra = removed.length ? ` Left out ${removed.length} element(s) that described the original pixels.` : '';
+      if (copy.synced && copy.synced.length) extra += ` Updated ${copy.synced.length} field(s) in INDUSTREX's XML copy.`;
       toast(`Saved ${baseName()}_edited.dcm (${(bytes.length / 1048576).toFixed(1)} MB). The original file is unchanged.${extra}`);
       markSaved();
     });

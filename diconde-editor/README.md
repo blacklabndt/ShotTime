@@ -28,11 +28,34 @@ Check your procedure or code before using an enhanced image for acceptance. This
 
 ## INDUSTREX compatibility
 
-Checked against Carestream's published *INDUSTREX DICOM/DICONDE Conformance Statement* (rev. 10.0, October 2017, written for INDUSTREX 5.0). Newer INDUSTREX versions may differ, and the checks below use files built from that document, not real INDUSTREX exports.
+Based on the owner's real INDUSTREX 7.2.1 exports (HPX-PRO scanner, Flex HR CR plates; checked November 2026) and Carestream's *INDUSTREX DICOM/DICONDE Conformance Statement* (rev. 10.0, 2017, INDUSTREX 5.0). Real files are not stored in this repository; run `DICONDE_REAL_DIR=/folder node tests/test-real-files.cjs` to check your own.
 
-- **Transfer syntaxes**: INDUSTREX reads Implicit/Explicit VR Little Endian, Explicit VR Big Endian, JPEG Baseline, JPEG Extended, JPEG Lossless SV1 and JPEG 2000 (lossless and lossy). This editor writes Explicit VR Little Endian, which is on that list. Compressed files keep their original syntax when only metadata changes.
-- **SOP classes**: INDUSTREX handles CR Image Storage and DX Image Storage (for presentation and for processing). The editor keeps the file's SOP class.
-- **DICONDE names**: fields are labelled with the names INDUSTREX uses for the reused DICOM tags. Examples:
+**What the real files look like**
+
+- CR Image Storage, MONOCHROME1, 12 bits stored in 16, **JPEG 2000 Lossless** (1.2.840.10008.1.2.4.90), ISO_IR 100.
+- **Three private creators in group 0033**: `CSH_NDT`, `E2737` and `Diconde Private Tags 0033 Group`. The `CSH_NDT` elements are:
+
+  | Element | Contents |
+  | --- | --- |
+  | xx10 | INDUSTREX version (`7.2.1`) |
+  | xx40 | Internal data (compressed binary) |
+  | xx50 | JPEG preview |
+  | xx52 | Internal data |
+  | xx70 | XML presentation state (see below) |
+  | xx71 | Presentation flag |
+  | xx72 | Display processing settings (`EDGE`, image class, brightness, contrast, sharpness, …) |
+
+- **The xx70 XML** holds INDUSTREX's display settings and a mirror of about 200 DICONDE fields:
+  - **Display settings**: a 90° viewing angle, the default window, zoom and viewport.
+  - **Also included**: the original filename, scanner details and PMT gain.
+- **When INDUSTREX crops an image itself**:
+  - It assigns a new SOP Instance UID, but keeps the series and instance number.
+  - It sets `DERIVED\SECONDARY`.
+  - It rewrites xx40/xx50/xx52/xx70 and keeps xx71/xx72.
+
+**What the editor does**
+
+- **DICONDE names**: fields use INDUSTREX's names. Examples:
   - Component Owner Name (0008,0090)
   - Inspecting Company Name (0008,1048)
   - Certifying Inspector Name (0008,1060)
@@ -41,23 +64,25 @@ Checked against Carestream's published *INDUSTREX DICOM/DICONDE Conformance Stat
   - Examination Notes (0032,4000)
   - Component Manufacturing Date (0010,0030)
   - Company Name (0008,0080)
+- **Private elements** are shown by name, including the E2737 and Diconde blocks.
+- **Summary card**: shows the SOP class, INDUSTREX version and scanner model.
+- **Metadata-only copies**:
+  - Every element is kept. The JPEG 2000 image data is kept byte for byte, with the same transfer syntax.
+  - Edited fields are also written into the matching entries of INDUSTREX's XML copy. The rest of the XML is unchanged, and fields without an XML entry are not added.
+  - Tested on the five supplied files: all 163 elements were preserved, the output read cleanly in pydicom, and the XML stayed valid.
+- **Processed copies** (rotate, crop, filters, split):
+  - They leave out xx40, xx50, xx52, xx70 and the Icon Image Sequence, which INDUSTREX regenerates and which describe the old pixels.
+  - They keep the version, xx71 and the display processing settings (xx72), as INDUSTREX does.
+  - Because the XML is dropped, INDUSTREX should open these copies with its default view, so you may need to rotate the view there.
+- **Compatible output format**: copies are written as Explicit VR Little Endian, which INDUSTREX's conformance statement lists as readable.
 
-  The Common view groups them as Component, Inspection, Company & people, Equipment & technique, and Display.
-- **Derived images**: the document says INDUSTREX sets Image Type to Derived/Secondary when pixel data is modified. Processed copies from this editor do the same.
-- **INDUSTREX private data** (group 0033): the document lists a version element (xx10), internal data (xx40, xx50), a presentation image (xx71) and a display filter (xx72).
-  - The editor shows these by name, and the Metadata tab shows a summary card when a file has them.
-  - Metadata-only copies keep them byte for byte.
-  - Processed copies leave out the internal data, presentation image, display filter and the Icon Image Sequence, because they describe the original pixels. The version element is kept.
-  - The private-creator string is not published. The block is recognised by a Carestream-like creator (CSH, Carestream, Kodak or INDUSTREX) or by the presence of the xx71/xx72 elements. Another vendor's group 0033 data is left alone.
-- **Character sets**:
-  - Text the editor writes itself, such as Derivation Description, is folded to what the file's Specific Character Set allows, e.g. "–" becomes "-".
-  - Files with no character set accept only plain ASCII in edited fields, and the error says how to add one.
-- **Not confirmed**:
-  - How INDUSTREX displays a processed copy with its private presentation data removed.
-  - The real private-creator string.
-  - Whether INDUSTREX's own saved files are compressed. The image tools need uncompressed pixels.
+**Open items**
 
-  Please test with real INDUSTREX exports, open the saved copies back in INDUSTREX, and report what you see.
+- **No JPEG 2000 decoder yet**: the image tools (clean-up, crop, split, PNG/TIFF/PDF export) cannot run on these files. The planned route is to bundle the OpenJPEG WebAssembly codec. That needs the owner's go-ahead because it adds third-party code. With it, processed copies could also be saved as JPEG 2000 Lossless instead of uncompressed (about 11.5 MB instead of about 2.5 MB per image).
+- **Not yet confirmed in INDUSTREX**:
+  - Whether INDUSTREX reads fields from its XML copy or from the DICOM tags.
+  - How INDUSTREX displays a processed copy without its XML.
+- **Viewer orientation**: the editor's viewer does not yet apply INDUSTREX's stored 90° viewing angle.
 
 ## File support
 
@@ -92,4 +117,4 @@ node diconde-editor/tests/test-ui.cjs     # browser workflow (needs Playwright +
 npm run test:diconde                      # both
 ```
 
-The sample file written by this tool was also read back successfully with pydicom during development. Files from real scanners (for example Carestream INDUSTREX DR/CR exports) have not been tested yet. `tests/industrex-fixture.cjs` builds an INDUSTREX-style file from the conformance statement for the tests.
+The sample file written by this tool was also read back successfully with pydicom during development. Files from real scanners (for example Carestream INDUSTREX DR/CR exports) have not been tested yet. `tests/industrex-fixture.cjs` builds a synthetic file with the same layout as real INDUSTREX 7.2.1 exports for the tests; `tests/test-real-files.cjs` checks your own files when `DICONDE_REAL_DIR` is set.

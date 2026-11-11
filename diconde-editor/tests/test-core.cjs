@@ -168,12 +168,15 @@ test('metadata-only copy keeps image type and series', () => {
   assert.notStrictEqual(D.getString(copy.ds, 0x00080018), D.getString(src.ds, 0x00080018));
 });
 
-test('INDUSTREX private block and DICONDE names are recognised', () => {
+test('INDUSTREX 7.2.1 private block and DICONDE names are recognised', () => {
   const f = makeIndustrexLike();
   const ix = D.industrexInfo(f.ds);
-  assert.deepStrictEqual([ix.creator, ix.version, ix.staleTags], ['CSH_TEST', '5.2', [0x00331040, 0x00331071, 0x00331072]]);
-  assert.strictEqual(D.describeTag(f.ds, 0x00331071).name, 'INDUSTREX presentation image');
-  assert.strictEqual(D.describeTag(f.ds, 0x00330010).name, 'Private creator');
+  assert.deepStrictEqual([ix.creator, ix.version, ix.xmlTag, ix.staleTags], ['CSH_NDT', '7.2.1', 0x00331070, [0x00331040, 0x00331050, 0x00331052, 0x00331070]]);
+  assert.strictEqual(D.describeTag(f.ds, 0x00331070).name, 'INDUSTREX presentation state (XML)');
+  assert.strictEqual(D.describeTag(f.ds, 0x00331072).name, 'INDUSTREX display processing');
+  assert.strictEqual(D.describeTag(f.ds, 0x00331176).name, 'Private data (E2737)', 'E2737 block is named by its own creator');
+  assert.strictEqual(D.describeTag(f.ds, 0x003312A0).name, 'Private data (Diconde Private Tags 0033 Group)');
+  assert.strictEqual(D.describeTag(f.ds, 0x00330011).name, 'Private creator');
   assert.strictEqual(D.tagInfo(0x00081048).name, 'Inspecting Company Name');
   assert.strictEqual(D.tagInfo(0x00081048).dicomName, 'Physicians Of Record');
   assert.strictEqual(D.tagInfo(0x00100030).name, 'Component Manufacturing Date');
@@ -190,28 +193,52 @@ test('another vendor block in group 0033 is left alone', () => {
   assert.ok(copy.ds.el.has(0x00331040));
 });
 
-test('metadata-only copy of an INDUSTREX file keeps private data and icon byte for byte', async () => {
+test('INDUSTREX XML mirror: read, update in place, escape, leave the rest unchanged', () => {
+  const f = makeIndustrexLike();
+  const before = new TextDecoder().decode(f.ds.el.get(0x00331070).value);
+  assert.deepStrictEqual(D.industrexXmlValues(f.ds, 0x00080008), ['ORIGINAL', 'PRIMARY']);
+  assert.strictEqual(D.industrexXmlValues(f.ds, 0x00181004), null, 'no entry');
+  D.setText(f.ds, 0x00100020, 'A&B <weld> "7"');
+  D.setText(f.ds, 0x00204000, 'Comment');
+  D.setText(f.ds, 0x00181004, 'PL-1');
+  D.remove(f.ds, 0x00081048);
+  const done = D.syncIndustrexXml(f.ds, [0x00100020, 0x00204000, 0x00181004, 0x00081048, 0x00331072]);
+  assert.deepStrictEqual(done, [0x00100020, 0x00204000, 0x00081048]);
+  assert.deepStrictEqual(D.industrexXmlValues(f.ds, 0x00100020), ['A&B <weld> "7"']);
+  assert.deepStrictEqual(D.industrexXmlValues(f.ds, 0x00204000), ['Comment'], 'self-closing entry filled');
+  assert.deepStrictEqual(D.industrexXmlValues(f.ds, 0x00081048), [''], 'removed tag becomes an empty value, as INDUSTREX writes it');
+  const after = new TextDecoder().decode(f.ds.el.get(0x00331070).value);
+  assert.match(after, /<value>A&amp;B &lt;weld&gt; &quot;7&quot;<\/value>/);
+  const strip = x => x.replace(/<diconde KEY="(0010,0020|0020,4000|0008,1048)"[\s\S]*?(\/>|<\/diconde>)/g, '');
+  assert.strictEqual(strip(after), strip(before), 'everything else is byte for byte the same');
+  assert.ok(after.includes('<rotation>0,0,90</rotation>') && after.includes('C:\\fixture\\sample.dcm'));
+});
+
+test('metadata-only copy of an INDUSTREX file keeps private data and icon', async () => {
   const src = makeIndustrexLike();
   const copy = D.clone(src);
   D.setText(copy.ds, 0x00100020, 'NEW-ID');
   const out = await D.parse(D.write(D.derive(copy, src, {})));
-  for (const t of [0x00330010, 0x00331010, 0x00331040, 0x00331071, 0x00331072]) assert.deepStrictEqual([...out.ds.el.get(t).value], [...src.ds.el.get(t).value].concat(src.ds.el.get(t).value.length % 2 ? [src.ds.el.get(t).vr === 'OB' ? 0 : 0x20] : []), D.tagHex(t));
+  for (const t of [0x00330010, 0x00330011, 0x00330012, 0x00331010, 0x00331040, 0x00331050, 0x00331052, 0x00331071, 0x00331072, 0x00331176]) {
+    const a = src.ds.el.get(t).value, b = out.ds.el.get(t).value;
+    assert.deepStrictEqual([...b.subarray(0, a.length)], [...a], D.tagHex(t));
+  }
   assert.strictEqual(out.ds.el.get(0x00880200).items.length, 1);
   assert.strictEqual(D.getString(out.ds, 0x00080016), '1.2.840.10008.5.1.4.1.1.1', 'CR SOP class kept');
 });
 
-test('processed copy drops stale INDUSTREX presentation data and icon, keeps version', async () => {
+test('processed copy drops what INDUSTREX regenerates, keeps version, flag and display processing', async () => {
   const src = makeIndustrexLike();
   const copy = D.clone(src), removed = [];
   D.setImage(copy, I.rotate(D.getImage(copy), 1), { swapSpacing: true });
   D.derive(copy, src, { pixelsChanged: true, description: 'Rotated', removed });
-  assert.deepStrictEqual(removed, [0x00880200, 0x00331040, 0x00331071, 0x00331072]);
+  assert.deepStrictEqual(removed, [0x00880200, 0x00331040, 0x00331050, 0x00331052, 0x00331070]);
   const out = await D.parse(D.write(copy));
   for (const t of removed) assert.strictEqual(D.getElement(out.ds, t), null, D.tagHex(t));
-  assert.ok(out.ds.el.has(0x00330010) && out.ds.el.has(0x00331010));
+  for (const t of [0x00330010, 0x00331010, 0x00331071, 0x00331072, 0x00331176]) assert.ok(out.ds.el.has(t), D.tagHex(t));
   assert.strictEqual(D.getString(out.ds, 0x00080008), 'DERIVED\\SECONDARY', 'matches what INDUSTREX itself writes after a pixel change');
   assert.strictEqual(D.getString(out.ds, 0x00080016), '1.2.840.10008.5.1.4.1.1.1');
-  assert.strictEqual(D.getString(out.ds, 0x00281040), 'LIN');
+  assert.strictEqual(D.getString(out.ds, 0x00281040), 'LOG');
 });
 
 test('implicit VR INDUSTREX-style file: private elements read as UN and survive', async () => {
@@ -219,11 +246,12 @@ test('implicit VR INDUSTREX-style file: private elements read as UN and survive'
   const f = await D.parse(implicitBytes(src));
   assert.strictEqual(f.transferSyntax, D.TS.IMPLICIT_LE);
   assert.strictEqual(f.ds.el.get(0x00331071).vr, 'UN');
-  assert.strictEqual(D.industrexInfo(f.ds).version, '5.2');
+  assert.strictEqual(D.industrexInfo(f.ds).version, '7.2.1');
+  assert.deepStrictEqual(D.industrexXmlValues(f.ds, 0x00100020), ['WELD-0042'], 'XML readable from UN bytes');
   assert.strictEqual(D.getString(f.ds, 0x00081048), 'Inspect Co');
   const out = await D.parse(D.write(f));
   assert.strictEqual(out.transferSyntax, D.TS.EXPLICIT_LE);
-  assert.deepStrictEqual([...out.ds.el.get(0x00331071).value], [9, 9, 9, 9]);
+  assert.deepStrictEqual([...out.ds.el.get(0x00331050).value], [0xFF, 0xD8, 0xFF, 0xE0, 0xFF, 0xD9]);
   assert.deepStrictEqual([...D.getImage(out).frames[0]], [...D.getImage(src).frames[0]]);
 });
 

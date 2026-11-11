@@ -419,23 +419,62 @@
   }
 
 
-  // Carestream INDUSTREX private block in group 0033 (Conformance Statement 7.1.13.1): xx10 version (DS),
-  // xx40/xx50 internal data (OB), xx71 presentation image, xx72 display filter. The creator string is not
-  // published, so a block is recognised by a Carestream-like creator or by the presentation elements.
+  // Carestream INDUSTREX private block in group 0033. Element meanings come from INDUSTREX 7.2.1 files
+  // (HPX-PRO, creator "CSH_NDT") checked against the Conformance Statement rev. 10.0 (2017):
+  // xx10 version, xx40/xx52 internal data, xx50 JPEG preview, xx70 XML presentation state (display settings
+  // plus a mirror of ~200 DICONDE fields), xx71 presentation flag, xx72 display processing settings.
+  // INDUSTREX regenerates xx40/xx50/xx52/xx70 when it changes pixels and keeps xx71/xx72.
   const INDUSTREX_CREATOR = /CSH|CARESTREAM|KODAK|INDUSTREX/i;
-  const INDUSTREX_NAMES = { 0x10: 'INDUSTREX version', 0x40: 'INDUSTREX internal data', 0x50: 'INDUSTREX internal data', 0x71: 'INDUSTREX presentation image', 0x72: 'INDUSTREX display filter' };
-  const INDUSTREX_STALE = [0x40, 0x50, 0x71, 0x72];
+  const INDUSTREX_NAMES = { 0x10: 'INDUSTREX version', 0x40: 'INDUSTREX internal data', 0x50: 'INDUSTREX preview image', 0x52: 'INDUSTREX internal data',
+    0x70: 'INDUSTREX presentation state (XML)', 0x71: 'INDUSTREX presentation flag', 0x72: 'INDUSTREX display processing' };
+  const INDUSTREX_STALE = [0x40, 0x50, 0x52, 0x70];
   const latinTrim = el => (el && el.value ? bytesToLatin1(el.value).replace(/[\0 ]+$/, '').replace(/^ +/, '') : '');
   function industrexInfo(ds) {
     for (let b = 0x10; b <= 0xFF; b++) {
       const cr = ds.el.get((0x00330000 | b) >>> 0);
       if (!cr) continue;
       const creator = latinTrim(cr), base = (0x00330000 | (b << 8)) >>> 0, has = x => ds.el.has((base | x) >>> 0);
-      if (!INDUSTREX_CREATOR.test(creator) && !has(0x71) && !has(0x72)) continue;
+      if (!INDUSTREX_CREATOR.test(creator) && !(has(0x70) && has(0x72))) continue;
       const version = latinTrim(ds.el.get((base | 0x10) >>> 0));
-      return { creator, block: b, version: /^[\x20-\x7E]*$/.test(version) ? version : '', staleTags: INDUSTREX_STALE.filter(has).map(x => (base | x) >>> 0) };
+      return { creator, block: b, version: /^[\x20-\x7E]*$/.test(version) ? version : '', xmlTag: has(0x70) ? (base | 0x70) >>> 0 : null,
+        staleTags: INDUSTREX_STALE.filter(has).map(x => (base | x) >>> 0) };
     }
     return null;
+  }
+  const xmlEsc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const xmlUnesc = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  function industrexXml(ds) {
+    const ix = industrexInfo(ds), el = ix && ix.xmlTag && ds.el.get(ix.xmlTag);
+    if (!el || !el.value) return null;
+    const text = new TextDecoder('utf-8').decode(el.value).replace(/[\0 ]+$/, '');
+    return /^\s*<\?xml|^\s*<presentation_state/.test(text) ? { tag: ix.xmlTag, text } : null;
+  }
+  // Values INDUSTREX keeps in its XML for a DICOM tag, or null when the XML has no entry for it.
+  function industrexXmlValues(ds, tag) {
+    const x = industrexXml(ds); if (!x) return null;
+    const key = `${hex4(tag >>> 16)},${hex4(tag & 0xFFFF)}`;
+    const m = new RegExp(`<diconde KEY="${key}"\\s*(?:/>|>([\\s\\S]*?)</diconde>)`).exec(x.text);
+    if (!m) return null;
+    return [...(m[1] || '').matchAll(/<value>([\s\S]*?)<\/value>|<value\s*\/>/g)].map(v => xmlUnesc(v[1] || ''));
+  }
+  // Copies the current values of `tags` into existing entries of INDUSTREX's XML mirror, leaving the rest
+  // of the XML byte for byte. Returns the tags updated. Tags without an entry are not added.
+  function syncIndustrexXml(ds, tags) {
+    const x = industrexXml(ds); if (!x) return [];
+    let text = x.text; const done = [];
+    for (const tag of tags) {
+      if ((tag >>> 16) === 0x0033) continue;
+      const key = `${hex4(tag >>> 16)},${hex4(tag & 0xFFFF)}`;
+      const re = new RegExp(`<diconde KEY="${key}"\\s*(?:/>|>[\\s\\S]*?</diconde>)`);
+      if (!re.test(text)) continue;
+      const el = ds.el.get(tag);
+      const raw = el && el.value ? valueToText(el, charsetIsUtf8(ds)) : '';
+      const vals = el && SINGLE_TEXT.has(el.vr) ? [raw] : raw.split('\\');
+      text = text.replace(re, () => `<diconde KEY="${key}">${vals.map(v => `<value>${xmlEsc(v)}</value>`).join('')}</diconde>`);
+      done.push(tag);
+    }
+    if (done.length) ds.el.set(x.tag, { tag: x.tag, vr: ds.el.get(x.tag).vr, value: new TextEncoder().encode(text) });
+    return done;
   }
   // Elements that describe the old pixels and must not travel with an edited image.
   function stalePresentationTags(ds) { const ix = industrexInfo(ds); return (ds.el.has(0x00880200) ? [0x00880200] : []).concat(ix ? ix.staleTags : []); }
@@ -490,5 +529,5 @@
   }
 
   return { TS, TS_NAMES, PIXEL, DicomError, DICT, parse, write, clone, tagInfo, tagHex, parseTag, findTagsByText, validate, editable, valueToText,
-    textToBytes, getElement, charsetMode, foldText, industrexInfo, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
+    textToBytes, getElement, charsetMode, foldText, industrexInfo, industrexXmlValues, syncIndustrexXml, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
 });

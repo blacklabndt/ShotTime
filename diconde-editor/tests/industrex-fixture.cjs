@@ -1,23 +1,45 @@
 'use strict';
-/* An INDUSTREX-style CR file built from Carestream's INDUSTREX DICOM/DICONDE Conformance Statement
-   (rev. 10.0, 2017): CR SOP class, DICONDE attributes in the reused DICOM tags, the private block in
-   group 0033 and an icon image. The private creator string is not published; 'CSH_TEST' is a stand-in.
-   This is not a real INDUSTREX export. */
+/* An INDUSTREX-style CR file. Its layout copies real INDUSTREX 7.2.1 / HPX-PRO exports supplied by the owner
+   (JPEG 2000 there; uncompressed here so the image tools work): DICONDE attributes in reused DICOM tags,
+   three private creators in group 0033 (CSH_NDT, E2737, "Diconde Private Tags 0033 Group"), the CSH_NDT
+   elements (version, internal data, JPEG preview, XML presentation state, flag, display processing) and an
+   icon image. All values are synthetic; no real inspection data is included. */
 const D = require('../dicom.js');
 const { makeSample } = require('../sample.js');
 
+const bytes = s => Uint8Array.from(Buffer.from(s, 'latin1'));
+function presentationXml(ds) {
+  const entry = (key, vals) => `<diconde KEY="${key}">${vals.map(v => `<value>${v}</value>`).join('')}</diconde>`;
+  const tagVals = (t) => (D.getString(ds, t) ? D.getString(ds, t).split('\\') : ['']);
+  return '<?xml version="1.0" encoding="UTF-8" standalone="no" ?><presentation_state><display_state><color_table>0</color_table>' +
+    '<rotation>0,0,90</rotation><viewplane_rect>-100.0,50.0,300.0,200.0</viewplane_rect><wl_range>11.0000,2915.00</wl_range><zoom>0.500000,0.500000</zoom></display_state><metadata>' +
+    entry('0008,0060', ['CR']) + entry('0008,0008', ['ORIGINAL', 'PRIMARY']) + entry('0010,0010', tagVals(0x00100010)) + entry('0010,0020', tagVals(0x00100020)) +
+    entry('0008,1048', ['Inspect Co']) + '<diconde KEY="0020,4000"/>' + entry('0033,XX72', ['EDGE', 'Image Class: HD 1']) +
+    entry('DEFAULTWL', ['1513.00', '1488.00']) + entry('ANGLE', ['0', '0', '90']) + entry('FILENAME', ['C:\\fixture\\sample.dcm']) +
+    '</metadata><graphics /></presentation_state>';
+}
+
 function makeIndustrexLike(opts = {}) {
-  const f = makeSample({ rows: opts.rows || 40, cols: opts.cols || 80, sopUID: opts.sopUID });
-  const ds = f.ds, set = (t, v, vr) => D.setText(ds, t, v, vr), raw = (tag, vr, bytes) => ds.el.set(tag, { tag, vr, value: Uint8Array.from(bytes) });
-  set(0x00080016, '1.2.840.10008.5.1.4.1.1.1'); set(0x00080060, 'CR');
-  set(0x00080090, 'Pipeline Owner Ltd'); set(0x00081048, 'Inspect Co'); set(0x00081050, 'Inspector^One');
-  set(0x00180015, 'GIRTH WELD'); set(0x00324000, 'Shot 3 of 4'); set(0x00181260, 'FLEX HR');
-  set(0x00281040, 'LIN'); set(0x00281041, '1', 'SS');
-  raw(0x00330010, 'LO', [...'CSH_TEST'].map(c => c.charCodeAt(0)));
-  raw(0x00331010, 'DS', [...'5.2 '].map(c => c.charCodeAt(0)));
-  raw(0x00331040, 'OB', [1, 2, 3, 4]);
-  raw(0x00331071, 'OB', [9, 9, 9, 9]);
-  raw(0x00331072, 'OB', [7, 7]);
+  const f = makeSample({ rows: opts.rows || 40, cols: opts.cols || 80, sopUID: opts.sopUID, bitsStored: 12 });
+  const ds = f.ds, set = (t, v, vr) => D.setText(ds, t, v, vr), raw = (tag, vr, b) => ds.el.set(tag, { tag, vr, value: b });
+  set(0x00080016, '1.2.840.10008.5.1.4.1.1.1'); set(0x00080060, 'CR'); set(0x00280004, 'MONOCHROME1');
+  set(0x00080070, 'Carestream Health, Inc.'); set(0x00081090, 'HPX-PRO');
+  set(0x00080090, 'Pipeline Owner Ltd'); set(0x00081048, 'Inspect Co'); set(0x00081060, 'Inspector One (Level 2)');
+  set(0x00180015, ''); set(0x00324000, 'Shot 3 of 4'); set(0x00181260, '3 Shot - S/M'); set(0x00141010, 'CSA Z662 SWEET');
+  set(0x00181020, 'DICONDE11\\INDUSTREX 7.2.1\\HPX-PRO');
+  set(0x00281040, 'LOG'); set(0x00281041, '-1', 'SS'); set(0x00280120, '0', 'US');
+  raw(0x00330010, 'LO', bytes('CSH_NDT '));
+  raw(0x00330011, 'LO', bytes('E2737 '));
+  raw(0x00330012, 'LO', bytes('Diconde Private Tags 0033 Group '));
+  raw(0x00331010, 'ST', bytes('7.2.1 '));
+  raw(0x00331040, 'OB', Uint8Array.from([0x53, 0x52, 0, 6, 0x78, 0x9c]));
+  raw(0x00331050, 'OB', Uint8Array.from([0xFF, 0xD8, 0xFF, 0xE0, 0xFF, 0xD9]));
+  raw(0x00331052, 'OB', Uint8Array.from([0x79, 7, 0, 0]));
+  raw(0x00331070, 'OB', new TextEncoder().encode(presentationXml(ds)));
+  raw(0x00331071, 'IS', bytes('0 '));
+  raw(0x00331072, 'LO', bytes('EDGE\\Image Class: HD 1'));
+  raw(0x00331176, 'DS', new Uint8Array(0));
+  raw(0x003312A0, 'ST', new Uint8Array(0));
   const icon = D.newDataset();
   D.setText(icon, 0x00280010, '2', 'US'); D.setText(icon, 0x00280011, '2', 'US');
   icon.el.set(D.PIXEL, { tag: D.PIXEL, vr: 'OB', value: new Uint8Array([0, 1, 2, 3]) });
