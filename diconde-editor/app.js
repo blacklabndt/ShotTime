@@ -21,6 +21,7 @@
     origEls: new Map(),       // key -> original element (or null if it did not exist)
     frame: 0, win: { c: 0, w: 1 }, invertView: false,
     view: { zoom: 1, x: 0, y: 0 }, viewRot: 0, tool: 'pan',
+    edge: { on: false, gc: 1, dc: 1, sh: 1, nr: 0, mm: 6, br: 0, ds: false }, edgeCache: null, rawWin: null,
     crop: null, regions: [], metaView: 'common', drag: null, bmp: null, dirtyImage: true
   };
 
@@ -50,7 +51,7 @@
     S.orig = file; S.file = D.clone(file); S.name = name;
     S.undo = []; S.redo = []; S.ops = []; S.turns = 0; S.origEls = new Map(); S.crop = null; S.regions = []; S.frame = 0; S.comparing = false; savedState = '';
     let img = D.getImage(S.file);
-    S.decoded = false;
+    S.decoded = false; S.edge.on = false; S.edgeCache = null; S.rawAutoWidth = null;
     if (img.compressed && window.Codec && Codec.canDecode(file.transferSyntax)) {
       try {
         $('busy').textContent = 'Decompressing JPEG 2000…';
@@ -85,6 +86,7 @@
     updateViewRotLabel(); $('btn-viewrot').disabled = !S.img;
     if (S.img) { resetWindow('file'); S.dirtyImage = true; fit(); }
     else { S.bmp = null; draw(); }
+    syncEdgeInputs(); showEdgeFileSettings();
     renderMeta(); refreshImageUi(); renderRegions(); renderHistory();
     toast(`Opened ${name}`);
   }
@@ -283,11 +285,82 @@
     if (S.fitted) fit(); else draw();
   }
   function frameData() { return S.img.frames[Math.min(S.frame, S.img.frames.length - 1)]; }
+  // ---------- EDGE-style display enhancement ----------
+  function pixelSpacingMm() { const ds = S.file.ds; return D.getNumber(ds, 0x00181164) || D.getNumber(ds, 0x00280030) || 0.1; }
+  function edgeParams() {
+    const e = S.edge, whiteSign = S.img.photometric === 'MONOCHROME1' ? -1 : 1;
+    if (S.rawAutoWidth == null) S.rawAutoWidth = I.autoWindow(frameData(), 1, 0, 0.5, 99.8, S.img.padding).width;
+    // Thresholds scale with the image's useful exposure range (the width of its automatic window).
+    return { globalContrast: e.gc, detailContrast: e.dc, sharpness: e.sh, noiseReduction: e.nr, kernelPx: e.mm / pixelSpacingMm(),
+      padding: S.img.padding, despeckle: e.ds, whiteSign, despeckleThreshold: e.ds ? 0.3 * S.rawAutoWidth : 0, detailLimit: 0.35 * S.rawAutoWidth };
+  }
+  function edgeFrameFor(img, frame) { return I.edgeEnhance(img.frames[frame], img.cols, img.rows, edgeParams()); }
+  function edgeFrame() {
+    const key = JSON.stringify([S.frame, edgeParams()]);
+    if (!S.edgeCache || S.edgeCache.img !== S.img || S.edgeCache.key !== key) S.edgeCache = { img: S.img, key, data: edgeFrameFor(S.img, Math.min(S.frame, S.img.frames.length - 1)) };
+    return S.edgeCache.data;
+  }
+  const EDGE_FIELDS = [['gc', 'edge-gc'], ['dc', 'edge-dc'], ['sh', 'edge-sh'], ['nr', 'edge-nr'], ['mm', 'edge-mm'], ['br', 'edge-br']];
+  function syncEdgeInputs() {
+    EDGE_FIELDS.forEach(([k, id]) => { $(id).value = S.edge[k]; $(id + '-r').value = S.edge[k]; });
+    $('edge-on').checked = S.edge.on; $('edge-ds').checked = S.edge.ds;
+    $('edge-controls').classList.toggle('dim', !S.edge.on);
+    $('store-window').disabled = S.edge.on; if (S.edge.on) $('store-window').checked = false;
+  }
+  // Recomputes the enhanced frame (about a second for a full plate) and picks a window for it.
+  function updateEdge(rewindow) {
+    if (!S.img) return;
+    if (!S.edge.on) { S.dirtyImage = true; draw(); return; }
+    busy(() => {
+      const f = edgeFrame();
+      if (rewindow) { const w = I.autoWindow(f, S.img.slope, S.img.intercept); S.win = { c: w.center, w: w.width }; syncWindowInputs(); }
+      S.dirtyImage = true; draw();
+    }, 'Enhancing…');
+  }
+  function setEdgeOn(on) {
+    if (!S.img || S.edge.on === on) return;
+    if (on) S.rawWin = { ...S.win }; else if (S.rawWin) S.win = { ...S.rawWin };
+    S.edge.on = on; syncEdgeInputs(); syncWindowInputs(); updateEdge(on);
+  }
+  function edgeFromFile() {
+    const d = D.industrexDisplaySettings(S.orig.ds), st = d && d.settings, num = (k, def) => (typeof st[k] === 'number' ? st[k] : def);
+    if (!st) return;
+    Object.assign(S.edge, { gc: num('Global Contrast', 1), dc: num('Detail Contrast', 1), sh: num('Sharpness', 1), nr: Math.min(1, num('Noise Reduction', 0)), br: Math.max(-1, Math.min(1, num('Brightness', 0))), ds: !!num('Despeckle', 0) });
+    syncEdgeInputs(); updateEdge(true);
+  }
+  function showEdgeFileSettings() {
+    const d = S.orig && D.industrexDisplaySettings(S.orig.ds), box = $('edge-file'); box.innerHTML = '';
+    if (!d) { box.classList.add('hidden'); return; }
+    const parts = ['Image Class', 'Brightness', 'Global Contrast', 'Detail Contrast', 'Sharpness', 'Noise Reduction', 'Despeckle'].filter(k => k in d.settings).map(k => `${k} ${d.settings[k]}`);
+    box.append(`This file's INDUSTREX display settings: ${d.filter || 'filter'}${parts.length ? ' · ' + parts.join(' · ') : ''}. `, el('button', { class: 'icon', id: 'edge-use-file', onclick: edgeFromFile }, 'Use these'));
+    box.classList.remove('hidden');
+  }
+  function bakeEdge() {
+    if (!S.img || !S.edge.on) return;
+    busy(() => {
+      const img = S.img, e = S.edge;
+      const frames = img.frames.map((a, fi) => {
+        const f = fi === Math.min(S.frame, img.frames.length - 1) ? edgeFrame() : edgeFrameFor(img, fi), o = new a.constructor(a.length);
+        for (let i = 0; i < a.length; i++) { const v = f[i]; o[i] = v !== v ? a[i] : v < img.min ? img.min : v > img.max ? img.max : Math.round(v); }
+        return o;
+      });
+      const text = `EDGE-style enhancement applied (global contrast ${e.gc}, detail contrast ${e.dc}, sharpness ${e.sh}, noise reduction ${e.nr}, kernel ${e.mm} mm${e.ds ? ', despeckle' : ''})`;
+      const win = { ...S.win, c: S.win.c - e.br * S.win.w * 0.5 * (img.photometric === 'MONOCHROME1' ? -1 : 1) };
+      S.edge.on = false; syncEdgeInputs();
+      pushImage(Object.assign({}, img, { frames }), text);
+      S.win = win; syncWindowInputs(); S.dirtyImage = true; draw();
+      toast('Enhancement written into the image. Save a copy to keep it; the copy is marked DERIVED.');
+    }, 'Applying…');
+  }
   function rebuildBitmap() {
     if (!S.img) { S.bmp = null; return; }
     const w = S.img.cols, h = S.img.rows;
     if (!S.bmp || S.bmp.width !== w || S.bmp.height !== h) { S.bmp = document.createElement('canvas'); S.bmp.width = w; S.bmp.height = h; S.bmpData = S.bmp.getContext('2d').createImageData(w, h); }
-    I.render(frameData(), S.img, S.win.c, S.win.w, S.invertView, S.bmpData.data);
+    if (S.edge.on) {
+      const f = edgeFrame(), whiteSign = S.img.photometric === 'MONOCHROME1' ? -1 : 1;
+      // Brightness moves the window so the display gets lighter (+) or darker (−) whatever the photometric.
+      I.render(f, Object.assign({}, S.img, { bitsAllocated: 32 }), S.win.c - S.edge.br * S.win.w * 0.5 * whiteSign, S.win.w, S.invertView, S.bmpData.data);
+    } else I.render(frameData(), S.img, S.win.c, S.win.w, S.invertView, S.bmpData.data);
     S.bmp.getContext('2d').putImageData(S.bmpData, 0, 0);
     S.dirtyImage = false;
   }
@@ -300,7 +373,7 @@
     I.render(o.frames[Math.min(S.frame, o.frames.length - 1)], o, S.win.c, S.win.w, S.invertView, id.data); cx.putImageData(id, 0, 0);
     const v = sameSize ? S.view : fitView(o);
     drawRotated(c, o, v);
-    ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#4cc3ff'; ctx.fillRect(8, 8, 84, 22); ctx.fillStyle = '#000'; ctx.fillText('ORIGINAL', 16, 24);
+    ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#4cc3ff'; const lab = S.edge.on ? 'ORIGINAL (not enhanced)' : 'ORIGINAL'; ctx.fillRect(8, 8, ctx.measureText(lab).width + 16, 22); ctx.fillStyle = '#000'; ctx.fillText(lab, 16, 24);
   }
   function drawRotated(bitmap, img, v) {
     ctx.save(); ctx.translate(v.x, v.y); ctx.scale(v.zoom, v.zoom);
@@ -410,7 +483,7 @@
   // ---------- window / level ----------
   function resetWindow(kind) {
     if (!S.img) return;
-    const a = frameData(), sl = S.img.slope, ic = S.img.intercept;
+    const a = S.edge.on ? edgeFrame() : frameData(), sl = S.img.slope, ic = S.img.intercept;
     if (kind === 'file' && S.img.windowWidth > 0) { S.win = { c: S.img.windowCenter, w: S.img.windowWidth }; }
     else if (kind === 'full') { const st = I.stats(a, S.img.padding), lo = st.min * sl + ic, hi = st.max * sl + ic; S.win = { c: (lo + hi) / 2, w: Math.max(1, Math.abs(hi - lo)) }; }
     else { const w = I.autoWindow(a, sl, ic, undefined, undefined, S.img.padding); S.win = { c: w.center, w: w.width }; }
@@ -435,7 +508,7 @@
     setImg(next);
   }
   function setImg(next) {
-    S.img = next; S.dirtyImage = true;
+    S.img = next; S.dirtyImage = true; S.rawAutoWidth = null;
     if (S.frame >= next.frames.length) S.frame = 0;
     refreshImageUi(); renderHistory(); syncCropInputs(); draw();
   }
@@ -711,6 +784,16 @@
     pair('wl-c-r', 'wl-c', v => { S.win.c = v; S.dirtyImage = true; draw(); });
     pair('wl-w-r', 'wl-w', v => { S.win.w = Math.max(1, v); S.dirtyImage = true; draw(); });
     for (const id of ['bp-t', 'sm-s', 'sh-s', 'sh-a']) pair(id + '-r', id, () => {});
+    $('edge-on').onchange = e => setEdgeOn(e.target.checked);
+    EDGE_FIELDS.forEach(([k, id]) => {
+      const set = v => { if (!isFinite(v)) return; S.edge[k] = v; $(id).value = v; $(id + '-r').value = v; updateEdge(k !== 'br'); };
+      $(id + '-r').addEventListener('input', () => { $(id).value = $(id + '-r').value; });
+      $(id + '-r').addEventListener('change', () => set(parseFloat($(id + '-r').value)));
+      $(id).addEventListener('change', () => set(Math.min(+$(id).max, Math.max(+$(id).min, parseFloat($(id).value)))));
+    });
+    $('edge-ds').onchange = e => { S.edge.ds = e.target.checked; updateEdge(true); };
+    $('edge-reset').onclick = () => { Object.assign(S.edge, { gc: 1, dc: 1, sh: 1, nr: 0, mm: 6, br: 0, ds: false }); syncEdgeInputs(); updateEdge(true); };
+    $('edge-bake').onclick = bakeEdge;
     $('wl-auto').onclick = () => resetWindow('auto'); $('wl-full').onclick = () => resetWindow('full'); $('wl-file').onclick = () => resetWindow('file');
     $('view-invert').onchange = e => { S.invertView = e.target.checked; S.dirtyImage = true; draw(); };
     document.querySelectorAll('[data-op]').forEach(b => b.onclick = () => runOp(b.dataset.op));

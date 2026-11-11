@@ -109,6 +109,7 @@ h3:first-child { margin-top: 4px; }
 .busy.on { display: grid; }
 .warnbox { background: var(--changed); border: 1px solid var(--changed-edge); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
 .hidden { display: none !important; }
+.dim { opacity: .55; }
 @media (max-width: 900px) {
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 55vh auto; overflow: auto; }
   .panel { border-left: 0; border-top: 1px solid var(--border); min-width: 0; }
@@ -216,6 +217,21 @@ h3:first-child { margin-top: 4px; }
           <label><input type="checkbox" id="view-invert"> Invert view</label>
         </div>
         <label class="note"><input type="checkbox" id="store-window"> Save this window as the copy's default display</label>
+
+        <h3>EDGE-style enhancement (display)</h3>
+        <label><input type="checkbox" id="edge-on"> Enhance display</label>
+        <div id="edge-file" class="note hidden"></div>
+        <div id="edge-controls">
+          <div class="ctl"><label for="edge-gc">Global contrast</label><input type="range" id="edge-gc-r" min="0" max="2.5" step="0.05" value="1"><input type="number" id="edge-gc" min="0" max="2.5" step="0.05" value="1"></div>
+          <div class="ctl"><label for="edge-dc">Detail contrast</label><input type="range" id="edge-dc-r" min="0" max="3" step="0.05" value="1"><input type="number" id="edge-dc" min="0" max="3" step="0.05" value="1"></div>
+          <div class="ctl"><label for="edge-sh">Sharpness</label><input type="range" id="edge-sh-r" min="0" max="3" step="0.05" value="1"><input type="number" id="edge-sh" min="0" max="3" step="0.05" value="1"></div>
+          <div class="ctl"><label for="edge-nr">Noise reduction</label><input type="range" id="edge-nr-r" min="0" max="1" step="0.05" value="0"><input type="number" id="edge-nr" min="0" max="1" step="0.05" value="0"></div>
+          <div class="ctl"><label for="edge-mm">Kernel size (mm)</label><input type="range" id="edge-mm-r" min="1" max="30" step="0.5" value="6"><input type="number" id="edge-mm" min="1" max="30" step="0.5" value="6"></div>
+          <div class="ctl"><label for="edge-br">Brightness</label><input type="range" id="edge-br-r" min="-1" max="1" step="0.05" value="0"><input type="number" id="edge-br" min="-1" max="1" step="0.05" value="0"></div>
+          <label class="note"><input type="checkbox" id="edge-ds"> Despeckle (remove white dust specks)</label>
+          <div class="btns"><button id="edge-reset">Reset</button><button id="edge-bake" title="Write the enhanced image into the pixels of the copy you save">Apply to pixels</button></div>
+        </div>
+        <p class="note">An approximation of INDUSTREX's EDGE display filter: large-scale (thickness) contrast is reduced and fine detail is raised. Carestream has not published its algorithm, so the look will differ from INDUSTREX. Setting 1.0 is this editor's default strength. The enhancement is shown on screen and in PNG/PDF exports; saved files are unchanged unless you choose Apply to pixels.</p>
 
         <h3>Orientation</h3>
         <div class="btns">

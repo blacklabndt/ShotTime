@@ -346,6 +346,47 @@ test('view rotation maps coordinates both ways', () => {
   assert.deepStrictEqual(I.rectToView({ x: 2, y: 1, w: 5, h: 3 }, W, H, 270), { x: 1, y: 23, w: 3, h: 5 });
 });
 
+test('EDGE-style filter: neutral is exact, defaults compress thickness and raise detail', () => {
+  const w = 200, h = 60, a = new Uint16Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) a[y * w + x] = 1000 + x * 5 + (x % 20 < 10 ? 50 : 0);
+  const id = I.edgeEnhance(a, w, h, { kG: 1, kD: 1, kS: 1 });
+  assert.ok(id.every((v, i) => Math.abs(v - a[i]) < 1e-3), 'neutral gains return the input');
+  const e = I.edgeEnhance(a, w, h, { kernelPx: 40 }), row = 30 * w;
+  const rampIn = a[row + 180] - a[row + 20], rampOut = e[row + 180] - e[row + 20];
+  const stepIn = Math.abs(a[row + 70] - a[row + 69]), stepOut = Math.abs(e[row + 70] - e[row + 69]);
+  assert.ok(rampOut < 0.6 * rampIn, `large-scale range reduced (${rampOut} vs ${rampIn})`);
+  assert.ok(stepOut > 1.5 * stepIn, `fine detail raised (${stepOut} vs ${stepIn})`);
+  const flat = I.edgeEnhance(new Uint16Array(w * h).fill(700), w, h, {});
+  assert.ok(flat.every(v => Math.abs(v - 700) < 1e-3), 'flat image stays flat');
+});
+
+test('EDGE-style filter: padding, halo limit, despeckle direction, box blur', () => {
+  const w = 40, h = 40, a = new Uint16Array(w * h).fill(2000);
+  for (let i = 0; i < w * 10; i++) a[i] = 0; // padding rows
+  const e = I.edgeEnhance(a, w, h, { padding: 0, kernelPx: 10 });
+  assert.ok(Number.isNaN(e[0]) && Math.abs(e[20 * w + 20] - 2000) < 1e-3, 'padding becomes NaN and does not pull the rest');
+  // A bright wire: the dark band beside it is shallower with the detail limit.
+  const b = new Uint16Array(w * h).fill(2000); for (let y = 0; y < h; y++) b[y * w + 20] = 4000;
+  const depth = o => 2000 - I.edgeEnhance(b, w, h, Object.assign({ kernelPx: 12 }, o))[20 * w + 24];
+  assert.ok(depth({ detailLimit: 100 }) < depth({}) * 0.6, `halo reduced (${depth({ detailLimit: 100 })} vs ${depth({})})`);
+  // Despeckle removes specks on the white side only: MONOCHROME1 shows low values white.
+  const c = new Float32Array(25).fill(1000); c[12] = 100; c[6] = 1900;
+  const n = I.despeckle(c, 5, 5, -1, 300);
+  assert.deepStrictEqual([n, c[12], c[6]], [1, 1000, 1900]);
+  const box = I.boxBlur(Float32Array.from({ length: 50 }, (_, i) => i % 10), 10, 5, 1);
+  assert.ok(Math.abs(box[2 * 10 + 5] - 5) < 1e-6, 'moving average of 4,5,6');
+});
+
+test('INDUSTREX display settings are read from the file', () => {
+  const f = makeIndustrexLike();
+  assert.deepStrictEqual(D.industrexDisplaySettings(f.ds), { filter: 'EDGE', settings: { 'Image Class': 'HD 1' } });
+  f.ds.el.get(0x00331072).value = Uint8Array.from(Buffer.from('EDGE\\Brightness: 0.0\\Global Contrast: 1.2\\Despeckle: 1 '));
+  assert.deepStrictEqual(D.industrexDisplaySettings(f.ds).settings, { Brightness: 0, 'Global Contrast': 1.2, Despeckle: 1 });
+  f.ds.el.get(0x00331072).value = new Uint8Array(0);
+  assert.strictEqual(D.industrexDisplaySettings(f.ds), null);
+  assert.strictEqual(D.industrexDisplaySettings(makeSample().ds), null);
+});
+
 const tiny = (vals, rows, cols, extra = {}) => Object.assign({ rows, cols, frames: [Uint16Array.from(vals)], min: 0, max: 65535, bitsAllocated: 16, bitsStored: 16, signed: false, photometric: 'MONOCHROME2', slope: 1, intercept: 0 }, extra);
 
 test('rotation, flips and crop move pixels correctly', () => {

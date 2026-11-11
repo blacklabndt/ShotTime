@@ -479,6 +479,21 @@
     if (done.length) ds.el.set(x.tag, { tag: x.tag, vr: ds.el.get(x.tag).vr, value: new TextEncoder().encode(text) });
     return done;
   }
+  // INDUSTREX's display processing (CSH_NDT xx72), e.g. EDGE \ Image Class: HD 1 \ Brightness: 0.0 \ … .
+  // Returns { filter, settings: { name: value } } with numbers parsed where possible, or null when empty.
+  function industrexDisplaySettings(ds) {
+    const ix = industrexInfo(ds); if (!ix) return null;
+    const el = ds.el.get((0x00330000 | (ix.block << 8) | 0x72) >>> 0);
+    const parts = latinTrim(el).split('\\').map(p => p.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const out = { filter: '', settings: {} };
+    for (const p of parts) {
+      const m = /^([^:]+):\s*(.*)$/.exec(p);
+      if (!m) { if (!out.filter) out.filter = p; continue; }
+      const v = m[2].trim(); out.settings[m[1].trim()] = v !== '' && isFinite(Number(v)) ? Number(v) : v;
+    }
+    return out;
+  }
   // Elements that describe the old pixels and must not travel with an edited image.
   function stalePresentationTags(ds) { const ix = industrexInfo(ds); return (ds.el.has(0x00880200) ? [0x00880200] : []).concat(ix ? ix.staleTags : []); }
   // Like tagInfo, but names private elements from the file's own private creators.
@@ -552,5 +567,5 @@
   }
 
   return { TS, TS_NAMES, PIXEL, DicomError, DICT, parse, write, clone, tagInfo, tagHex, parseTag, findTagsByText, validate, editable, valueToText,
-    textToBytes, getElement, imageGeometry, imageFromFrames, setEncapsulated, charsetMode, foldText, industrexInfo, industrexXmlValues, industrexXmlEntry, syncIndustrexXml, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
+    textToBytes, getElement, imageGeometry, imageFromFrames, setEncapsulated, charsetMode, foldText, industrexInfo, industrexDisplaySettings, industrexXmlValues, industrexXmlEntry, syncIndustrexXml, stalePresentationTags, describeTag, getString, getNumber, setText, remove, newUID, getImage, imageError, setImage, derive, charsetIsUtf8, newDataset, IMPL_UID };
 });

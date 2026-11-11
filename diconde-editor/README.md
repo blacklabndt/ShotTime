@@ -11,6 +11,14 @@ Open `index.html` in Chrome, Edge or Firefox, or build a single shareable file w
   - JPEG 2000 images (as INDUSTREX saves them) are decoded when they open.
   - The starting window is set from the main exposure, leaving out unexposed plate areas, padding and markers.
   - INDUSTREX files open at INDUSTREX's stored viewing angle. **⟳ View** (or V) turns the view without changing pixels; PNG and PDF exports follow the view.
+- **EDGE-style enhancement** (Image tab):
+  - An approximation of INDUSTREX's EDGE display filter. Carestream has not published its algorithm, so the look differs from INDUSTREX.
+  - It follows the Kodak CR approach the stored settings point to (`ImagingSystem: Kodak_CR`). The image is split into a large-scale band (thickness changes) and detail bands. Global contrast scales the large-scale band, detail contrast the medium band, and sharpness the finest band. A soft limit keeps halos small next to wires and markers.
+  - Other controls: noise reduction, kernel size in mm (converted with Imager Pixel Spacing), brightness and despeckle (removes white dust specks on whichever side displays white).
+  - Setting 1.0 is this editor's default strength, not a calibrated match to INDUSTREX.
+  - **Use these** loads the EDGE settings INDUSTREX stored in the file (CSH_NDT xx72).
+  - Display only: shown on screen and in PNG/PDF exports. **Apply to pixels** writes it into the image as an undoable step, recorded in Derivation Description, and the copy is marked DERIVED.
+  - Takes about 1 second on a full 1353×4266 plate.
 - **Image clean-up**: window and level (display only; you can store it as the copy's default), invert view, rotate, flip, 3×3 median noise reduction, bad-pixel repair, Gaussian smoothing, unsharp-mask sharpening, invert pixel values, and up to 12 undo steps.
 - **Crop and split**: drag or type a crop box. Split into equal parts side by side or stacked, with optional overlap, or draw regions by hand. Each part's label can go into Image Comments or be appended to Component ID. Split parts download together as a ZIP.
 - **Export**: PNG (as displayed), TIFF (raw pixel values, 8/16/32-bit) and a two-page PDF report (key fields and the displayed image).

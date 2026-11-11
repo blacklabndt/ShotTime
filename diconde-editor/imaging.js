@@ -117,7 +117,7 @@
   //  3. the window spans the lowPct-highPct percentiles of that cluster.
   // `ignore` is a value to leave out entirely, such as the Pixel Padding Value.
   function autoWindow(a, slope = 1, intercept = 0, lowPct = 0.5, highPct = 99.8, ignore) {
-    const skip = ignore != null, use = v => !(skip && v === ignore);
+    const skip = ignore != null, use = v => v === v && !(skip && v === ignore); // v === v drops NaN
     let mn = Infinity, mx = -Infinity, n = 0;
     for (let i = 0; i < a.length; i++) { const v = a[i]; if (!use(v)) continue; n++; if (v < mn) mn = v; if (v > mx) mx = v; }
     if (!n) return { center: (skip ? ignore : 0) * slope + intercept, width: 1 };
@@ -176,6 +176,74 @@
     return o;
   }
 
+  // Box blur with edge clamping, O(n) per pass regardless of radius (running sums).
+  function boxBlur(src, w, h, r) {
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h), k = 2 * r + 1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w; let acc = 0;
+      for (let i = -r; i <= r; i++) acc += src[row + Math.min(w - 1, Math.max(0, i))];
+      for (let x = 0; x < w; x++) {
+        tmp[row + x] = acc / k;
+        acc += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let i = -r; i <= r; i++) acc += tmp[Math.min(h - 1, Math.max(0, i)) * w + x];
+      for (let y = 0; y < h; y++) {
+        out[y * w + x] = acc / k;
+        acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+      }
+    }
+    return out;
+  }
+
+  // Replaces isolated specks on the bright side of the display (CR dust shows as white dots). `whiteSign` is
+  // +1 when higher values display whiter (MONOCHROME2) and -1 for MONOCHROME1. Returns the number replaced.
+  function despeckle(f, w, h, whiteSign, threshold) {
+    const m = median3Frame(f, w, h); let count = 0;
+    for (let i = 0; i < f.length; i++) if (whiteSign * (f[i] - m[i]) > threshold) { f[i] = m[i]; count++; }
+    return count;
+  }
+
+  // EDGE-style display enhancement, after the Kodak CR approach of splitting an image into a large-scale
+  // band (thickness changes) and detail bands, then rebalancing them. Carestream's EDGE algorithm is not
+  // published; this is an approximation with controls of the same names.
+  //   out = mean + kG·(L − mean) + kD·(M − L) + kS·(I − M)
+  // I = input after optional noise reduction and despeckle, L = large-kernel blur (kernelPx), M = small blur.
+  // At the default 1.0 settings kG = 0.4 (thickness latitude compressed), kD = 1.6 (detail raised) and
+  // kS = 1.8 (fine edges raised). kG = kD = kS = 1 returns the input unchanged.
+  // detailLimit (pixel units) softly caps the detail band to limit halos. Returns Float32Array in pixel-value
+  // units; padding pixels (value `padding`) become NaN.
+  function edgeEnhance(a, w, h, o = {}) {
+    const gc = o.globalContrast ?? 1, dc = o.detailContrast ?? 1, sh = o.sharpness ?? 1, nr = Math.max(0, Math.min(1, o.noiseReduction ?? 0));
+    const r = Math.max(1, Math.round((o.kernelPx ?? 60) / 2)), pad = o.padding, n = w * h;
+    const src = new Float32Array(n);
+    let sum = 0, cnt = 0;
+    for (let i = 0; i < n; i++) { const v = a[i]; src[i] = v; if (pad == null || v !== pad) { sum += v; cnt++; } }
+    const mean = cnt ? sum / cnt : 0;
+    if (pad != null) for (let i = 0; i < n; i++) if (a[i] === pad) src[i] = mean; // keep padding from dragging the blurs
+    let specks = 0;
+    if (o.despeckle && o.despeckleThreshold > 0) specks = despeckle(src, w, h, o.whiteSign || 1, o.despeckleThreshold);
+    let I = src;
+    if (nr > 0) { const g = gaussianFrame(src, w, h, 1); I = new Float32Array(n); for (let i = 0; i < n; i++) I[i] = src[i] + nr * (g[i] - src[i]); }
+    const L = boxBlur(boxBlur(I, w, h, r), w, h, r); // two box passes ≈ a smooth kernel about kernelPx wide
+    const M = gaussianFrame(I, w, h, 1.5);
+    const kG = o.kG ?? 0.4 * gc, kD = o.kD ?? 1.6 * dc, kS = o.kS ?? 1 + 0.8 * sh;
+    // Optional soft limit on the detail band: ordinary detail passes almost unchanged, but the huge swings
+    // next to very bright or dark objects (wires, markers, plate edges) are capped, which keeps halos small.
+    const T = o.detailLimit > 0 ? o.detailLimit : 0;
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      if (pad != null && a[i] === pad) { out[i] = NaN; continue; }
+      let d = M[i] - L[i];
+      if (T) d = d / (1 + Math.abs(d) / T);
+      out[i] = mean + kG * (L[i] - mean) + kD * d + kS * (I[i] - M[i]);
+    }
+    out.specks = specks;
+    return out;
+  }
+
   // Display-only view rotation (0/90/180/270° clockwise). Maps image pixel coordinates to the rotated
   // frame and back; W = columns, H = rows of the unrotated image.
   const viewDims = (cols, rows, rot) => (rot % 180 ? { w: rows, h: cols } : { w: cols, h: rows });
@@ -197,5 +265,5 @@
     return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
   }
 
-  return { viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
+  return { boxBlur, despeckle, edgeEnhance, viewDims, toView, fromView, viewTransform, rectToView, rotate, flip, crop, invert, median, smooth, sharpen, fixBadPixels, stats, autoWindow, splitRegions, render };
 });

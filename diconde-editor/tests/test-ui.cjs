@@ -266,6 +266,31 @@ const field = (page, tag) => page.locator(`.field[data-tag="${tag}"]`);
   assert.deepStrictEqual([...metaOnly.ds.el.get(D.PIXEL).fragments[1]], [...j2kSrc.ds.el.get(D.PIXEL).fragments[1]]);
   ok('JPEG 2000 file');
 
+  // EDGE-style enhancement: display only until applied, then recorded like any image step.
+  const idle = () => page.waitForFunction(() => !document.getElementById('busy').classList.contains('on'));
+  await page.click('[data-tab=image]');
+  assert.match(await page.textContent('#edge-file'), /INDUSTREX display settings: EDGE · Image Class HD 1/);
+  const pngPlain = await grab(page, async () => { await page.click('#btn-export'); await page.click('[data-export=png]'); });
+  await page.check('#edge-on'); await idle();
+  assert.ok(await page.evaluate(() => window.__editor.S.edge.on));
+  assert.ok(await page.isDisabled('#store-window'), 'a window for enhanced values is not stored');
+  await page.fill('#edge-dc', '2'); await page.dispatchEvent('#edge-dc', 'change'); await idle();
+  assert.strictEqual(await page.evaluate(() => window.__editor.S.edge.dc), 2);
+  const pngEdge = await grab(page, async () => { await page.click('#btn-export'); await page.click('[data-export=png]'); });
+  assert.ok(Buffer.compare(pngPlain.bytes, pngEdge.bytes) !== 0, 'PNG export shows the enhancement');
+  assert.strictEqual(await page.evaluate(() => window.__editor.S.ops.length), 0, 'display only so far');
+  await page.click('#edge-use-file'); await idle();
+  assert.strictEqual(await page.evaluate(() => window.__editor.S.edge.dc), 1, 'Use these resets to the file values');
+  await page.click('#edge-bake'); await idle();
+  assert.match(await page.textContent('#btn-undo'), /EDGE-style enhancement applied \(global contrast 1, detail contrast 1, sharpness 1/);
+  assert.ok(!(await page.isChecked('#edge-on')), 'display enhancement switched off after applying');
+  const baked = await D.parse((await grab(page, () => page.click('#btn-save'))).bytes);
+  assert.match(D.getString(baked.ds, 0x00082111), /EDGE-style enhancement applied/);
+  assert.strictEqual(D.getString(baked.ds, 0x00080008), 'DERIVED\\SECONDARY');
+  const bakedImg = D.getImage(baked).error ? decodeOut(baked) : D.getImage(baked);
+  assert.ok(bakedImg.frames[0].every(v => v >= 0 && v <= 4095), 'values stay within 12 bits');
+  ok('EDGE-style enhancement');
+
   // Narrow layout has no horizontal scroll.
   await page.setViewportSize({ width: 380, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)); ok('narrow layout');
