@@ -53,7 +53,28 @@ impl Default for Work {
     fn default() -> Self { Work { img: None, orig_img: None, img_error: String::new(), decoded: false, loaded: false, ops: vec![], turns: 0, undo: vec![], redo: vec![], crop: None, regions: vec![], win: Win { c: 0.0, w: 1.0 }, frame: 0 } }
 }
 
-pub struct FileEntry { pub shot: Shot, pub work: Work, pub dirty: bool, pub saved_key: String, pub compat: Option<CompatResult>, pub thumb: Option<egui::TextureHandle>, pub thumb_queued: bool, pub view_rot: u32 }
+/// How a file relates to others in the list: which file it was made from (saved pieces and processed copies carry
+/// a Source Image Sequence; a metadata-only copy has the same series and identical pixel data as its original).
+#[derive(Clone, Debug, Default)]
+pub struct Link { pub uid: String, pub sources: Vec<String>, pub series: String, pub pix: u64, pub created: String, pub piece: Option<(usize, usize)>, pub in_edited: bool }
+impl Link {
+    pub fn of(shot: &Shot) -> Link {
+        let ds = &shot.orig.ds;
+        let sources = ds.get(0x00082112).and_then(|e| e.items()).map(|it| it.iter().map(|i| i.string(0x00081155)).filter(|u| !u.is_empty()).collect()).unwrap_or_default();
+        let mut h: u64 = 0xcbf29ce484222325;
+        let mut eat = |b: &[u8]| { for &x in b.iter().take(4096).chain(b.iter().rev().take(4096)) { h ^= x as u64; h = h.wrapping_mul(0x100000001b3); } h ^= b.len() as u64; h = h.wrapping_mul(0x100000001b3); };
+        match ds.get(d::PIXEL).map(|p| &p.value) { Some(d::Value::Bytes(b)) => eat(b), Some(d::Value::Fragments(f)) => for x in f.iter().skip(1) { eat(x) }, _ => {} }
+        let desc = ds.string(0x00082111);
+        let piece = desc.rfind("Split part ").and_then(|i| { let mut it = desc[i + 11..].split_whitespace(); let k = it.next()?.parse().ok()?; if it.next()? != "of" { return None; } let n = it.next()?.trim_end_matches(|c: char| !c.is_ascii_digit()).parse().ok()?; Some((k, n)) });
+        let in_edited = Path::new(&shot.path).parent().and_then(|p| p.file_name()).map_or(false, |n| n.to_string_lossy().eq_ignore_ascii_case("Edited"));
+        Link { uid: ds.string(0x00080018), sources, series: ds.string(0x0020000E), pix: h, created: ds.string(0x00080012) + &ds.string(0x00080013), piece, in_edited }
+    }
+    /// What to call a file shown inside its original.
+    pub fn label(&self) -> String {
+        match self.piece { Some((k, n)) => format!("Piece {k} of {n}"), None => if self.sources.is_empty() { "Edited copy".into() } else { "Edited copy (image changed)".into() } }
+    }
+}
+pub struct FileEntry { pub shot: Shot, pub work: Work, pub dirty: bool, pub saved_key: String, pub compat: Option<CompatResult>, pub link: Link, pub thumb: Option<egui::TextureHandle>, pub thumb_queued: bool, pub view_rot: u32 }
 impl FileEntry {
     pub fn state_key(&self) -> String { format!("{}:{}:{}", self.work.ops.len(), self.work.ops.join("|"), self.shot.orig_els.keys().cloned().collect::<Vec<_>>().join(",")) }
     pub fn has_changes(&self) -> bool { !self.work.ops.is_empty() || !self.shot.orig_els.is_empty() }
@@ -205,10 +226,28 @@ impl App {
         };
         if !args.is_empty() {
             let mut files = Vec::new();
-            for a in args { if a.is_dir() { files.extend(Self::dicom_files_in(&a)); app.folder = a.to_string_lossy().into(); } else { files.push(a); } }
+            for a in args { if a.is_dir() { files.extend(Self::dicom_files_in(&a)); files.extend(Self::dicom_files_in(&a.join("Edited"))); app.folder = a.to_string_lossy().into(); } else { files.push(a); } }
             app.add_paths(files, true, false);
         }
         app
+    }
+
+    /// For every file made from another file in the list: its id → the id of the original it belongs under.
+    pub fn parents(&self) -> std::collections::HashMap<u64, u64> {
+        use std::collections::HashMap;
+        let by_uid: HashMap<&str, u64> = self.entries.iter().filter(|e| !e.link.uid.is_empty()).map(|e| (e.link.uid.as_str(), e.shot.id)).collect();
+        // metadata-only copies: same series and identical pixel data; the original is the oldest one outside "Edited"
+        let mut same: HashMap<(&str, u64), Vec<&FileEntry>> = HashMap::new();
+        for e in &self.entries { if !e.link.series.is_empty() && e.link.sources.is_empty() { same.entry((e.link.series.as_str(), e.link.pix)).or_default().push(e); } }
+        let mut direct: HashMap<u64, u64> = HashMap::new();
+        for e in &self.entries {
+            if let Some(p) = e.link.sources.iter().rev().find_map(|u| by_uid.get(u.as_str()).copied()).filter(|p| *p != e.shot.id) { direct.insert(e.shot.id, p); continue; }
+            if let Some(v) = same.get(&(e.link.series.as_str(), e.link.pix)).filter(|v| v.len() > 1 && e.link.sources.is_empty()) {
+                let root = v.iter().min_by(|a, b| (a.link.in_edited, &a.link.created, a.shot.id).cmp(&(b.link.in_edited, &b.link.created, b.shot.id))).unwrap();
+                if root.shot.id != e.shot.id { direct.insert(e.shot.id, root.shot.id); }
+            }
+        }
+        direct.keys().map(|&c| { let mut r = direct[&c]; for _ in 0..8 { match direct.get(&r) { Some(&n) if n != c => r = n, _ => break } } (c, r) }).collect()
     }
 
     // ------------------------------------------------------------ small helpers
@@ -276,7 +315,8 @@ impl App {
         if !self.prefs.last_folder.is_empty() { dlg = dlg.set_directory(&self.prefs.last_folder); }
         if let Some(dir) = dlg.pick_folder() {
             if self.entries.iter().any(|e| e.dirty) && !rfd::MessageDialog::new().set_title("WeldScope").set_description("Some files have unsaved changes. Open another folder and discard them?").set_buttons(rfd::MessageButtons::YesNo).show().eq(&rfd::MessageDialogResult::Yes) { return; }
-            let files = Self::dicom_files_in(&dir);
+            let mut files = Self::dicom_files_in(&dir);
+            files.extend(Self::dicom_files_in(&dir.join("Edited"))); // files made here earlier, shown inside their originals
             if files.is_empty() { self.error(format!("No DICOM files (.dcm) in {}.", dir.display())); return; }
             self.folder = dir.to_string_lossy().into();
             self.prefs.last_folder = self.folder.clone();
@@ -310,7 +350,8 @@ impl App {
                     if app.entries.iter().any(|e| (!s.path.is_empty() && e.shot.path == s.path) || (e.shot.name == s.name && d::get_string(&e.shot.orig.ds, 0x00080018) == d::get_string(&s.orig.ds, 0x00080018))) { continue; }
                     s.id = app.next_id; app.next_id += 1;
                     if first.is_none() { first = Some(s.id); }
-                    app.entries.push(FileEntry { shot: s, work: Work::default(), dirty: false, saved_key: String::new(), compat: None, thumb: None, thumb_queued: false, view_rot: 0 });
+                    let link = Link::of(&s);
+                    app.entries.push(FileEntry { link, shot: s, work: Work::default(), dirty: false, saved_key: String::new(), compat: None, thumb: None, thumb_queued: false, view_rot: 0 });
                     added += 1;
                 }
                 if !bad.is_empty() {

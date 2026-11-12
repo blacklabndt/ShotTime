@@ -65,6 +65,10 @@ The opened files are never changed: every save writes a new file.
   files in the folder have.
 - **Organize:** dragging shots onto a weld and Rename weld both go through `shots::apply_batch` (validated, one
   undo step).
+- **Files shown inside their original:** `App::parents` links a file to the file it was made from, through the
+  Source Image Sequence that saved pieces and processed copies carry, or (metadata-only copies) the same series
+  with identical pixel data. The file list and Organize nest them under the original when both are in the same
+  weld group. Open folder also loads the `Edited` subfolder so the grouping survives reopening.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

@@ -12,7 +12,19 @@ fn group_name(tag: u32) -> String { d::tag_info(tag).name }
 /// Entry ids in display order, grouped by the chosen weld field.
 pub fn grouped(app: &App) -> Vec<(String, Vec<u64>)> {
     let refs: Vec<&shots::Shot> = app.entries.iter().map(|e| &e.shot).collect();
-    shots::groups(&refs, app.prefs.group_tag).into_iter().map(|(k, v)| (k, v.into_iter().map(|i| refs[i].id).collect())).collect()
+    let parents = app.parents();
+    shots::groups(&refs, app.prefs.group_tag).into_iter().map(|(k, v)| {
+        // files made from an original in the same weld follow it directly, so they can be shown inside it
+        let ids: Vec<u64> = v.into_iter().map(|i| refs[i].id).collect();
+        let nested = |c: &u64| parents.get(c).filter(|p| ids.contains(p)).copied();
+        let mut out = Vec::with_capacity(ids.len());
+        for id in &ids { if nested(id).is_some() { continue; } out.push(*id); out.extend(ids.iter().copied().filter(|c| nested(c) == Some(*id))); }
+        (k, out)
+    }).collect()
+}
+/// Within one weld group: file id → the original it is shown inside.
+pub fn nested_in(app: &App, ids: &[u64]) -> std::collections::HashMap<u64, u64> {
+    app.parents().into_iter().filter(|(c, p)| ids.contains(c) && ids.contains(p)).collect()
 }
 
 fn group_picker(app: &mut App, ui: &mut egui::Ui) {
@@ -48,14 +60,17 @@ pub fn file_pane(app: &mut App, ui: &mut egui::Ui) {
         for (key, ids) in groups {
             let title = if key.is_empty() { format!("No {} ({})", group_name(app.prefs.group_tag), ids.len()) } else { format!("{key} ({})", ids.len()) };
             egui::CollapsingHeader::new(RichText::new(title).strong()).id_salt(&key).default_open(true).show(ui, |ui| {
+                let nest = nested_in(app, &ids);
                 for id in ids {
                     let Some(i) = app.idx(id) else { continue };
                     let e = &app.entries[i];
                     let sel = app.cur == Some(id);
+                    let child = nest.contains_key(&id);
                     ui.horizontal(|ui| {
+                        if child { ui.add_space(14.0); ui.label(RichText::new("↳").weak()); }
                         if let Some(t) = &e.thumb { ui.add(egui::Image::new(t).fit_to_exact_size(egui::vec2(34.0, 34.0)).maintain_aspect_ratio(true)); } else { ui.add_space(38.0); }
                         // main label: weld and shot number; the long file name goes underneath
-                        let main = short_label(e, app.prefs.group_tag);
+                        let main = if child { let shot = e.shot.text(0x00200013); Some(format!("{}{}", e.link.label(), if shot.is_empty() { String::new() } else { format!(" · Shot {shot}") })) } else { short_label(e, app.prefs.group_tag) };
                         let r = ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 0.0;
                             let mut text = RichText::new(main.clone().unwrap_or_else(|| elide(&e.shot.name, 30)));
@@ -128,27 +143,33 @@ pub fn organize(app: &mut App, ui: &mut egui::Ui) {
                     }
                 });
                 ui.horizontal_wrapped(|ui| {
-                    for &id in ids {
-                        let Some(i) = app.idx(id) else { continue };
+                    let nest = nested_in(app, ids);
+                    let mut card = |ui: &mut egui::Ui, id: u64, sub: Option<String>| {
+                        let Some(i) = app.idx(id) else { return };
                         let e = &app.entries[i];
-                        let sel = app.org.sel.contains(&id);
-                        let frame = egui::Frame::group(ui.style()).fill(if sel { Color32::from_rgb(0x4A, 0x30, 0x12) } else { Color32::from_gray(30) }).stroke(egui::Stroke::new(if sel { 2.0_f32 } else { 1.0 }, if sel { ACCENT } else { Color32::from_gray(60) }));
-                        let r = frame.show(ui, |ui| {
-                            ui.set_width(150.0);
-                            ui.vertical_centered(|ui| {
-                                match &e.thumb { Some(t) => { ui.add(egui::Image::new(t).fit_to_exact_size(egui::vec2(140.0, 120.0)).maintain_aspect_ratio(true)); } None => { ui.add_sized([140.0, 120.0], egui::Spinner::new()); } }
-                                // key fields, so mistakes show without selecting the shot
-                                let (weld, shot, date) = (e.shot.text(app.prefs.group_tag), e.shot.text(0x00200013), date_text(e));
-                                ui.label(RichText::new(format!("{}{}", if weld.trim().is_empty() { "(no weld)".to_string() } else { elide(weld.trim(), 16) }, if shot.is_empty() { " · no shot no.".to_string() } else { format!(" · Shot {shot}") })).strong());
-                                if !date.is_empty() { ui.label(RichText::new(date).small()); }
-                                ui.label(RichText::new(elide(&e.shot.name, 26)).small().weak()).on_hover_text(&e.shot.name);
-                                if e.dirty { ui.label(RichText::new("● edited").small().color(ACCENT)); }
-                                else if let Some(c) = &e.compat { if weldscope_core::compat::summary(&c.checks).fail > 0 { ui.label(RichText::new("✖ saved, check failed").small().color(BAD)); } else { ui.label(RichText::new("✔ saved, check passed").small().color(OK)); } }
-                                else if !e.shot.saved_as.is_empty() { ui.label(RichText::new("✔ saved").small().color(OK)); }
-                            });
-                        }).response.interact(egui::Sense::click_and_drag());
+                        let r = shot_card(ui, e, app.org.sel.contains(&id), app.prefs.group_tag, sub);
                         if r.drag_started() { egui::DragAndDrop::set_payload(ui.ctx(), id); }
                         if r.double_clicked() { open = Some(id); } else if r.clicked() { clicked = Some((id, ui.input(|i| i.modifiers))); }
+                    };
+                    let mut k = 0;
+                    while k < ids.len() {
+                        let id = ids[k];
+                        let kids: Vec<u64> = ids.iter().copied().filter(|c| nest.get(c) == Some(&id)).collect();
+                        if kids.is_empty() { if !nest.contains_key(&id) { card(ui, id, None); } k += 1; continue; }
+                        // an original with the files made from it, shown as one item
+                        egui::Frame::group(ui.style()).fill(Color32::from_gray(22)).stroke(egui::Stroke::new(1.0_f32, Color32::from_gray(90))).show(ui, |ui| {
+                            ui.vertical(|ui| {
+                                let pieces = kids.iter().filter(|c| app.idx(**c).map_or(false, |i| app.entries[i].link.piece.is_some())).count();
+                                let name = app.idx(id).map(|i| elide(&app.entries[i].shot.name, 34)).unwrap_or_default();
+                                ui.label(RichText::new(if pieces == kids.len() && pieces > 1 { format!("{name} — split into {pieces} files") } else { format!("{name} — {} file{} made from it", kids.len(), if kids.len() == 1 { "" } else { "s" }) }).weak());
+                                ui.horizontal(|ui| {
+                                    card(ui, id, Some("Original".into()));
+                                    ui.label(RichText::new("→").size(18.0).weak());
+                                    for c in &kids { let l = app.idx(*c).map(|i| app.entries[i].link.label()); card(ui, *c, l); }
+                                });
+                            });
+                        });
+                        k += 1 + kids.len();
                     }
                 });
             }).response.rect;
@@ -186,6 +207,27 @@ pub fn organize(app: &mut App, ui: &mut egui::Ui) {
         else { app.org.sel = [id].into_iter().collect(); app.org.anchor = Some(id); }
     }
     if let Some(id) = open { app.open_entry(id); }
+}
+
+/// One shot as a card: thumbnail, weld · shot number, date, file name and state. `sub` is shown on top when the card
+/// sits inside its original ("Original", "Piece 1 of 2", "Edited copy").
+fn shot_card(ui: &mut egui::Ui, e: &crate::app::FileEntry, sel: bool, group_tag: u32, sub: Option<String>) -> egui::Response {
+    let frame = egui::Frame::group(ui.style()).fill(if sel { Color32::from_rgb(0x4A, 0x30, 0x12) } else { Color32::from_gray(30) }).stroke(egui::Stroke::new(if sel { 2.0_f32 } else { 1.0 }, if sel { ACCENT } else { Color32::from_gray(60) }));
+    frame.show(ui, |ui| {
+        ui.set_width(150.0);
+        ui.vertical_centered(|ui| {
+            if let Some(s) = &sub { ui.label(RichText::new(s).small().color(if s == "Original" { ui.visuals().weak_text_color() } else { Color32::from_rgb(120, 200, 255) })); }
+            match &e.thumb { Some(t) => { ui.add(egui::Image::new(t).fit_to_exact_size(egui::vec2(140.0, 120.0)).maintain_aspect_ratio(true)); } None => { ui.add_sized([140.0, 120.0], egui::Spinner::new()); } }
+            // key fields, so mistakes show without selecting the shot
+            let (weld, shot, date) = (e.shot.text(group_tag), e.shot.text(0x00200013), date_text(e));
+            ui.label(RichText::new(format!("{}{}", if weld.trim().is_empty() { "(no weld)".to_string() } else { elide(weld.trim(), 16) }, if shot.is_empty() { " · no shot no.".to_string() } else { format!(" · Shot {shot}") })).strong());
+            if !date.is_empty() { ui.label(RichText::new(date).small()); }
+            ui.label(RichText::new(elide(&e.shot.name, 26)).small().weak()).on_hover_text(&e.shot.name);
+            if e.dirty { ui.label(RichText::new("● edited").small().color(ACCENT)); }
+            else if let Some(c) = &e.compat { if weldscope_core::compat::summary(&c.checks).fail > 0 { ui.label(RichText::new("✖ saved, check failed").small().color(BAD)); } else { ui.label(RichText::new("✔ saved, check passed").small().color(OK)); } }
+            else if !e.shot.saved_as.is_empty() { ui.label(RichText::new("✔ saved").small().color(OK)); }
+        });
+    }).response.interact(egui::Sense::click_and_drag())
 }
 
 /// Sets the weld field on the given shots (every shot is checked first; one undo step).
