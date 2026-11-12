@@ -1,7 +1,7 @@
 # Fitting the EDGE-style filter to INDUSTREX screenshots
 
 Carestream's EDGE algorithm is not published. `imaging::edge_enhance_v2` is an approximation whose defaults were
-fitted (2026-11-11) to matched INDUSTREX 7.2.1 screenshots the owner supplied: the same image with Display Filter
+fitted (2026-11-11/12) to matched INDUSTREX 7.2.1 screenshots the owner supplied: the same image with Display Filter
 EDGE on and off. It must not be described as INDUSTREX's EDGE. The screenshots and raw pixels are the owner's real
 data and are never committed; `common.py` and `evaluate.py` are the method.
 
@@ -38,18 +38,32 @@ data and are never committed; `common.py` and `evaluate.py` are the method.
   (or on how it was opened); this filter does not model that.
 - Sharpness below about 0.3 mm cannot be measured at these screenshot scales.
 
+## Why the two pairs differ (owner, 2026-11-12)
+
+The owner explained the difference: empty area around the film (no film, shown white) changes INDUSTREX's result a
+great deal, which is why they crop plates first. Pair A contains empty area (the gap and the plate edges); pair B is
+a cropped piece. So pair B is the truer picture of EDGE on film, and pair A shows the distortion.
+
+`edge_enhance_v2` therefore leaves empty area out altogether (padding, and background found by `plate_levels`): it
+does not enter the mean or the blurs, and film values are spread a short way into it so edges stay clean. The film
+looks the same before and after cropping. This is a deliberate difference from INDUSTREX.
+
 ## Result
 
-Correlation with the EDGE screenshots (all plate pixels, markers included):
+Correlation with the EDGE screenshots, with empty area left out of the model (all film pixels, markers included):
 
-| Settings | Pair A | Pair B |
+| Settings | Pair A (has empty area) | Pair B (cropped) |
 |---|---|---|
-| Old defaults (`edge_enhance`: 20 mm kernel, kG 0.5, kD 2.4, kS 1.8, limit 0.35) | 0.75 | 0.78 |
-| Best for pair A alone (kG/kD 0.085, limit 35) | 0.93 | 0.73 |
-| **New defaults** (`edge_enhance_v2`: 11 mm kernel, fine scale 1.1 mm, kG 0.36, kD 2.4, kS 6.0, limit 0.14) | **0.84** | **0.86** |
+| Old defaults (`edge_enhance`: 20 mm kernel, kG 0.5, kD 2.4, kS 1.8, limit 0.35) | 0.87 | 0.92 |
+| First refit, a compromise over both pairs (11 mm, kG 0.36, kS 6.0, limit 0.14) | 0.93 | 0.90 |
+| **Current defaults**, fitted to pair B (20 mm kernel, fine scale 1.5 mm, kG 1.2, kD 2.4, kS 6.0, limit 1.1) | 0.82 | **0.96** |
 
-The new defaults are the best compromise over both pairs. Global Contrast near 0.55 reproduces the pair A fit.
-The starting window in EDGE view (plate at about 70% brightness, width 6.7 × the limit) follows pair A.
+(Without leaving empty area out, the first two rows scored 0.75/0.78 and 0.84/0.86.)
+
+The optimum on pair B is flat (0.955–0.963 over kernels of 16–24 mm and kG/kD 0.5–0.65), and its EDGE screenshot is
+dark (grey 17–57), so these values are approximate. The lower score on pair A is expected: it measures agreement
+with a result the owner regards as distorted by the empty area. Global Contrast near 0.3 with Detail limit lowered
+reproduces the pair A look if ever wanted. The EDGE view starts with the automatic window of the film.
 
 ## To improve further
 

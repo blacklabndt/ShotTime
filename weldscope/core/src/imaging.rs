@@ -289,9 +289,12 @@ pub struct EdgeParams {
     pub global_contrast: f64, pub detail_contrast: f64, pub sharpness: f64, pub noise_reduction: f64, pub kernel_px: f64,
     pub padding: Option<i32>, pub despeckle: bool, pub white_sign: f64, pub despeckle_threshold: f64, pub detail_limit: f64,
     pub kg: Option<f64>, pub kd: Option<f64>, pub ks: Option<f64>,
+    /// Empty area (no film): (sign, threshold) from `plate_levels`; pixels with sign·value below the threshold are
+    /// left out of the filter, like padding. Used by `edge_enhance_v2` only.
+    pub background: Option<(f64, f64)>,
 }
 impl Default for EdgeParams {
-    fn default() -> Self { EdgeParams { global_contrast: 1.0, detail_contrast: 1.0, sharpness: 1.0, noise_reduction: 0.0, kernel_px: 60.0, padding: None, despeckle: false, white_sign: 1.0, despeckle_threshold: 0.0, detail_limit: 0.0, kg: None, kd: None, ks: None } }
+    fn default() -> Self { EdgeParams { global_contrast: 1.0, detail_contrast: 1.0, sharpness: 1.0, noise_reduction: 0.0, kernel_px: 60.0, padding: None, despeckle: false, white_sign: 1.0, despeckle_threshold: 0.0, detail_limit: 0.0, kg: None, kd: None, ks: None, background: None } }
 }
 /// EDGE-style display enhancement, after the Kodak CR approach of splitting an image into a large-scale band
 /// (thickness changes) and detail bands, then rebalancing them. Carestream's EDGE algorithm is not published;
@@ -330,41 +333,64 @@ pub fn edge_enhance(a: &[i32], w: usize, h: usize, o: &EdgeParams) -> (Vec<f32>,
 }
 
 /// EDGE-style enhancement, second version (WeldScope only; the frozen prototype keeps `edge_enhance`).
-/// Same idea and controls, refitted to two matched INDUSTREX screenshot pairs (EDGE on/off) of the owner's
-/// plates; see tools/edge-fit/README.md for the measurements. It is still an approximation, not INDUSTREX's EDGE:
-/// on those pairs INDUSTREX's result depended on the image content, which this filter does not model.
+/// Same idea and controls, refitted to matched INDUSTREX screenshot pairs (EDGE on/off) of the owner's plates; see
+/// tools/edge-fit/README.md. It is still an approximation, not INDUSTREX's EDGE.
 ///   d   = kD·(M − L) + kS·(I − M)                    detail, then softly limited: d / (1 + |d| / (limit·kD))
 ///   out = mean + kG·(L − mean) + limited d
 /// L = three box passes of radius kernel_px/2 (close to a Gaussian of that sigma), M = Gaussian of fine_px.
-/// At the 1.0 settings kG = 0.36, kD = 2.4, kS = 6.0: structure larger than about 5 mm is flattened to 15% of
-/// the detail gain, and detail finer than about 1 mm is raised 2.5×. kG = kD = kS = 1 with no limit returns the
-/// input. Padding pixels become NaN. Returns (frame, specks).
+/// At the 1.0 settings kG = 1.2, kD = 2.4, kS = 6.0, fitted to a cropped piece of film: structure larger than about
+/// 10 mm keeps half the detail gain and detail finer than about 1.5 mm is raised 2.5×.
+/// Empty area (padding, and `background` where there is no film) is left out: it does not enter the mean or the
+/// blurs, so it cannot change how the film looks, which it visibly does in INDUSTREX. Padding becomes NaN and
+/// background pixels keep their own value. kG = kD = kS = 1 with no limit returns the input.
 pub fn edge_enhance_v2(a: &[i32], w: usize, h: usize, o: &EdgeParams, fine_px: f64) -> (Vec<f32>, usize) {
     let (gc, dc, sh, nr) = (o.global_contrast, o.detail_contrast, o.sharpness, o.noise_reduction.clamp(0.0, 1.0));
     let r = (js_round(o.kernel_px / 2.0) as i64).max(1) as usize;
     let n = w * h;
     let pad = o.padding;
+    let empty = |v: i32| pad == Some(v) || o.background.map_or(false, |(sign, thr)| sign * (v as f64) < thr);
     let mut src: Vec<f32> = Vec::with_capacity(n);
     let (mut sum, mut cnt) = (0f64, 0usize);
-    for &v in &a[..n] { src.push(v as f32); if pad.map_or(true, |p| v != p) { sum += v as f64; cnt += 1; } }
+    for &v in &a[..n] { src.push(v as f32); if !empty(v) { sum += v as f64; cnt += 1; } }
     let mean = if cnt > 0 { sum / cnt as f64 } else { 0.0 };
-    if let Some(p) = pad { for i in 0..n { if a[i] == p { src[i] = mean as f32; } } }
+    for i in 0..n { if empty(a[i]) { src[i] = mean as f32; } }
+    // film right next to empty area: spread the film's own values a little way into it, so blurs near the edge
+    // see film rather than the plate-wide mean
+    if cnt > 0 && cnt < n { feather_into_empty(&mut src, a, w, h, &empty, (r / 2).clamp(2, 40)); }
     let mut specks = 0;
     if o.despeckle && o.despeckle_threshold > 0.0 { specks = despeckle(&mut src, w, h, if o.white_sign == 0.0 { 1.0 } else { o.white_sign }, o.despeckle_threshold); }
     let i_band: Vec<f32> = if nr > 0.0 { let g = gaussian(&src, w, h, 1.0); src.iter().zip(&g).map(|(&s, &gv)| (s as f64 + nr * (gv as f64 - s as f64)) as f32).collect() } else { src };
     let l = box_blur(&box_blur(&box_blur(&i_band, w, h, r), w, h, r), w, h, r);
     let m = gaussian(&i_band, w, h, fine_px.max(0.5));
-    let kg = o.kg.unwrap_or(0.36 * gc);
+    let kg = o.kg.unwrap_or(1.2 * gc);
     let kd = o.kd.unwrap_or(2.4 * dc);
     let ks = o.ks.unwrap_or(6.0 * sh);
     let t = if o.detail_limit > 0.0 { o.detail_limit * kd.abs().max(1e-6) } else { 0.0 };
     let out = (0..n).map(|i| {
-        if pad.map_or(false, |p| a[i] == p) { return f32::NAN; }
+        if pad == Some(a[i]) { return f32::NAN; }
+        if empty(a[i]) { return a[i] as f32; }
         let mut d = kd * (m[i] as f64 - l[i] as f64) + ks * (i_band[i] as f64 - m[i] as f64);
         if t > 0.0 { d /= 1.0 + d.abs() / t; }
         (mean + kg * (l[i] as f64 - mean) + d) as f32
     }).collect();
     (out, specks)
+}
+
+/// Fills empty pixels within `reach` of film with the nearest film value along rows, then columns.
+fn feather_into_empty(src: &mut [f32], a: &[i32], w: usize, h: usize, empty: &dyn Fn(i32) -> bool, reach: usize) {
+    let mut filled: Vec<bool> = a[..w * h].iter().map(|&v| !empty(v)).collect();
+    for pass in 0..2 {
+        let (outer, inner) = if pass == 0 { (h, w) } else { (w, h) };
+        let at = |o: usize, i: usize| if pass == 0 { o * w + i } else { i * w + o };
+        let mut add: Vec<(usize, f32)> = Vec::new();
+        for o in 0..outer {
+            let mut last: Option<(usize, f32)> = None;
+            for i in 0..inner { let k = at(o, i); if filled[k] { last = Some((i, src[k])); } else if let Some((j, v)) = last { if i - j <= reach { add.push((k, v)); } } }
+            let mut last: Option<(usize, f32)> = None;
+            for i in (0..inner).rev() { let k = at(o, i); if filled[k] { last = Some((i, src[k])); } else if let Some((j, v)) = last { if j - i <= reach { add.push((k, v)); } } }
+        }
+        for (k, v) in add { src[k] = v; filled[k] = true; }
+    }
 }
 
 // ---------------------------------------------------------------- film pieces

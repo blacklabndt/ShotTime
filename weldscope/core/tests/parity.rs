@@ -179,7 +179,7 @@ fn edge_filter_matches_the_prototype() {
         let params = im::EdgeParams {
             global_contrast: g("globalContrast", 1.0), detail_contrast: g("detailContrast", 1.0), sharpness: g("sharpness", 1.0), noise_reduction: g("noiseReduction", 0.0),
             kernel_px: g("kernelPx", 60.0), padding: o.get("padding").map(|v| v.as_i64().unwrap() as i32), despeckle: o.get("despeckle").is_some(), white_sign: g("whiteSign", 1.0),
-            despeckle_threshold: g("despeckleThreshold", 0.0), detail_limit: g("detailLimit", 0.0), kg: o.get("kG").map(f), kd: o.get("kD").map(f), ks: o.get("kS").map(f),
+            despeckle_threshold: g("despeckleThreshold", 0.0), detail_limit: g("detailLimit", 0.0), kg: o.get("kG").map(f), kd: o.get("kD").map(f), ks: o.get("kS").map(f), background: None,
         };
         let (out, specks) = im::edge_enhance(&a, w, h, &params);
         let name = e["name"].as_str().unwrap();

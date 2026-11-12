@@ -69,7 +69,7 @@ pub enum Tool { Pan, Window, Crop, Region, Scratch }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeSettings { pub on: bool, pub gc: f64, pub dc: f64, pub sh: f64, pub nr: f64, pub mm: f64, pub br: f64, pub ds: bool }
-impl Default for EdgeSettings { fn default() -> Self { EdgeSettings { on: false, gc: 1.0, dc: 1.0, sh: 1.0, nr: 0.0, mm: 11.0, br: 0.0, ds: false } } }
+impl Default for EdgeSettings { fn default() -> Self { EdgeSettings { on: false, gc: 1.0, dc: 1.0, sh: 1.0, nr: 0.0, mm: 20.0, br: 0.0, ds: false } } }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct OverlaySettings { pub enabled: bool, pub labels: bool, pub size: u8, pub in_exports: bool, pub layout: Vec<Vec<String>> }
@@ -413,25 +413,22 @@ impl App {
         if self.raw_auto_width.is_none() { self.raw_auto_width = Some(im::auto_window(&img.frames[f], 1.0, 0.0, 0.5, 99.8, img.padding).width); }
         let raw = self.raw_auto_width.unwrap();
         let e = self.edge;
+        // empty area (no film) is left out of the filter, so it cannot change how the film looks
+        let lv = im::plate_levels(&img.frames[f], img.cols, img.rows, img.padding, 0.6);
+        let background = if lv.has_background { Some((lv.sign, lv.thr)) } else { None };
         // Thresholds scale with the image's useful exposure range (the width of its automatic window).
         Some(im::EdgeParams { global_contrast: e.gc, detail_contrast: e.dc, sharpness: e.sh, noise_reduction: e.nr, kernel_px: e.mm / self.pixel_spacing_mm(), padding: img.padding,
-            despeckle: e.ds, white_sign: if img.monochrome1() { -1.0 } else { 1.0 }, despeckle_threshold: if e.ds { 0.3 * raw } else { 0.0 }, detail_limit: 0.14 * raw, kg: None, kd: None, ks: None })
+            despeckle: e.ds, white_sign: if img.monochrome1() { -1.0 } else { 1.0 }, despeckle_threshold: if e.ds { 0.3 * raw } else { 0.0 }, detail_limit: 1.1 * raw, kg: None, kd: None, ks: None, background })
     }
-    /// Starting window for the enhanced image, set the way the INDUSTREX EDGE screenshot of the owner's plate looked:
-    /// the plate sits at a light grey (about 70% brightness) and the window is 6.7× the detail limit wide, so
-    /// markers and the weld stay inside it.
+    /// Starting window for the enhanced image: the automatic window of the film itself (empty area left out).
     pub fn edge_window(v: &[f32], img: &Image, p: &im::EdgeParams) -> Window {
-        let (mut sum, mut n) = (0f64, 0usize);
-        for &x in v { if !x.is_nan() { sum += x as f64; n += 1; } }
-        let mean = if n > 0 { sum / n as f64 } else { 0.0 };
-        let kd = p.kd.unwrap_or(2.4 * p.detail_contrast).abs().max(0.05);
-        if p.detail_limit <= 0.0 { return im::auto_window(v, img.slope, img.intercept, 0.5, 99.8, None); }
-        let width = (6.7 * p.detail_limit * kd * img.slope.abs()).max(1.0);
-        let sign = if img.monochrome1() { 1.0 } else { -1.0 };
-        Window { center: mean * img.slope + img.intercept + sign * 0.19 * width, width }
+        match p.background {
+            Some((sign, thr)) => { let film: Vec<f32> = v.iter().copied().filter(|x| !x.is_nan() && sign * (*x as f64) >= thr).collect(); im::auto_window(&film, img.slope, img.intercept, 0.5, 99.8, None) }
+            None => im::auto_window(v, img.slope, img.intercept, 0.5, 99.8, None),
+        }
     }
-    /// Fine-detail scale of the EDGE-style filter: 1.1 mm, in pixels.
-    pub fn edge_fine_px(&self) -> f64 { 1.1 / self.pixel_spacing_mm() }
+    /// Fine-detail scale of the EDGE-style filter: 1.5 mm, in pixels.
+    pub fn edge_fine_px(&self) -> f64 { 1.5 / self.pixel_spacing_mm() }
     fn edge_key(&self, p: &im::EdgeParams, img: &ImgRef, f: usize) -> String { format!("{:p}:{f}:{p:?}", Arc::as_ptr(img)) }
     /// The enhanced current frame (computed on this thread if not cached; the UI computes it in a job first).
     pub fn edge_frame(&mut self) -> Arc<Vec<f32>> {

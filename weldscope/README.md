@@ -41,8 +41,10 @@ The opened files are never changed: every save writes a new file.
   the WebAssembly prototype could not do.
 - **INDUSTREX ANGLE:** applied counter-clockwise for the display-only view rotation.
 - **EDGE-style filter:** an approximation. WeldScope uses `imaging::edge_enhance_v2`, whose defaults were refitted
-  to two matched INDUSTREX screenshot pairs (`tools/edge-fit/README.md`: correlation 0.84 and 0.86, up from 0.75
-  and 0.78). The prototype's `edge_enhance` is kept unchanged for the parity tests. Never describe either as
+  to matched INDUSTREX screenshot pairs (`tools/edge-fit/README.md`: correlation 0.96 on the cropped piece, up
+  from 0.92). Empty area (no film) is left out of the filter, so it cannot change how the film looks; in INDUSTREX
+  it does, which is why the owner crops first. The prototype's `edge_enhance` is kept unchanged for the parity
+  tests. Never describe either as
   INDUSTREX's EDGE. It stays display-only until Apply to pixels.
 - **Overlay text:** display and export only; never written into DICONDE pixels.
 - **Scratch repair:** only thin lines reading as less radiation than the plate on both sides. Never cracks or voids,

@@ -391,15 +391,27 @@ fn image_operations() {
     assert!(e.iter().zip(&a).all(|(x, y)| (*x as f64 - *y as f64).abs() < 0.01));
     let (e2, _) = im::edge_enhance_v2(&a, 50, 40, &im::EdgeParams { kg: Some(1.0), kd: Some(1.0), ks: Some(1.0), kernel_px: 12.0, ..Default::default() }, 2.0);
     assert!(e2.iter().zip(&a).all(|(x, y)| (*x as f64 - *y as f64).abs() < 0.01), "v2 neutral settings return the input");
-    // v2 defaults: a slow ramp (large-scale shading) is flattened, a fine ripple is raised, a huge spike is limited
+    // v2 defaults: large-scale shading keeps half the detail gain, a fine ripple is raised, a huge spike is limited
     let (w2, h2) = (400usize, 60usize);
     let ramp: Vec<i32> = (0..w2 * h2).map(|i| 2000 + (i % w2) as i32 + if (i % w2) % 8 < 4 { 3 } else { -3 } + if i == 30 * w2 + 200 { 1500 } else { 0 }).collect();
     let (e3, _) = im::edge_enhance_v2(&ramp, w2, h2, &im::EdgeParams { kernel_px: 60.0, detail_limit: 40.0, ..Default::default() }, 6.0);
     let at = |x: usize| e3[30 * w2 + x] as f64;
     let slope = (at(304) - at(104)) / 200.0;
-    assert!(slope > 0.2 && slope < 0.5, "ramp slope {slope} (input 1.0)");
+    assert!(slope > 1.0 && slope < 1.4, "ramp slope {slope} (kG 1.2, half of kD 2.4)");
     assert!((at(101) - at(105)).abs() > 12.0, "ripple of 6 raised: {}", (at(101) - at(105)).abs());
     assert!(at(200) - at(180) < 200.0, "spike of 1500 (9000 unlimited) limited: {}", at(200) - at(180));
+    // empty area beside the film must not change how the film looks
+    let film: Vec<i32> = (0..w2 * h2).map(|i| 2800 + ((i % w2) % 7) as i32).collect();
+    let with_gap: Vec<i32> = film.iter().enumerate().map(|(i, &v)| if i % w2 < 120 { 15 } else { v }).collect();
+    let p = im::EdgeParams { kernel_px: 60.0, detail_limit: 300.0, ..Default::default() };
+    let lv = im::plate_levels(&with_gap, w2, h2, None, 0.6);
+    assert!(lv.has_background);
+    let (alone, _) = im::edge_enhance_v2(&film, w2, h2, &p, 6.0);
+    let (masked, _) = im::edge_enhance_v2(&with_gap, w2, h2, &im::EdgeParams { background: Some((lv.sign, lv.thr)), ..p.clone() }, 6.0);
+    let (unmasked, _) = im::edge_enhance_v2(&with_gap, w2, h2, &p, 6.0);
+    let worst = |x: &[f32]| (130..w2).map(|c| (x[30 * w2 + c] - alone[30 * w2 + c]).abs()).fold(0f32, f32::max);
+    assert!(worst(&masked) < 25.0 && worst(&unmasked) > 500.0, "masked {} unmasked {}", worst(&masked), worst(&unmasked));
+    assert_eq!(masked[30 * w2 + 10], 15.0, "empty area keeps its own value");
     // view rotation maps both ways
     for rot in [0, 90, 180, 270] { let (x, y) = im::to_view(10.0, 20.0, 300.0, 200.0, rot); assert_eq!(im::from_view(x, y, 300.0, 200.0, rot), (10.0, 20.0)); }
 }
