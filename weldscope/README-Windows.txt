@@ -34,6 +34,14 @@ Editing
 - The ? button (top right) lists all shortcuts.
 - Undo / Redo (Ctrl+Z / Ctrl+Y) covers metadata and image changes.
 
+Process whole job
+- Open the job folder, then press Process whole job… (file list, or the Organize shots tab). WeldScope goes
+  through every plate: finds each piece of film, straightens it, crops it to the film and saves it as its own
+  new file in the folder shown, with its coverage where the numbers read cleanly.
+- It asks once before starting and shows a summary at the end; there is no preview for each plate. Lines in
+  amber in the summary need a look. Plates that already have pieces made from them are left out, so running
+  it again only does new plates. Originals are never changed and nothing is overwritten.
+
 Organize shots
 - Shots are grouped by weld (Series Description by default), each showing its weld, shot number and date.
 - Drag a shot (or the selected shots) onto another weld to move it there. Rename weld changes the weld on every

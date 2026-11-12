@@ -83,6 +83,12 @@ The opened files are never changed: every save writes a new file.
   was right on all five, with three flagged unsure; a piece whose numbers are cut by the film edge reads nothing.
   It is a reading aid, not a measurement. Not in the frozen prototype. Within a weld, shots are listed by where
   their coverage starts (`shots::coverage_start`); shots without a coverage follow in their usual order.
+- **Process whole job:** `App::job_run` does for every plate in the list what Process this plate does for one:
+  `pieces_in_screen_order`, then each piece straightened, cropped and written by `App::write_piece` (shared with
+  the single-plate path) into the output folder, with a confirmation first and a per-plate summary after. No
+  per-plate preview. Left out (`job_candidates`): files WeldScope made, plates that already have pieces made
+  from them, plates with unsaved image steps; a single film with no empty area round it is skipped. Never
+  overwrites; originals untouched. Not in the frozen prototype.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

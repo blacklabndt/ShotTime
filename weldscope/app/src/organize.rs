@@ -67,6 +67,7 @@ pub fn file_pane(app: &mut App, ui: &mut egui::Ui) {
     group_picker(app, ui);
     let n = app.entries.iter().filter(|e| e.dirty).count();
     if ui.add_enabled(n > 0, egui::Button::new(format!("Save all edited ({n})"))).on_hover_text("Writes a new file for every edited file into the folder shown at the bottom; originals and existing files are never overwritten").clicked() { app.save_all_edited(); }
+    if ui.button("Process whole job…").on_hover_text("Finds, straightens and crops every piece of film on every plate in the list and saves each as its own new file. Originals are not changed.").clicked() { app.job_open(); }
     ui.separator();
     let groups = grouped(app);
     let mut open = None;
@@ -120,6 +121,7 @@ pub fn organize(app: &mut App, ui: &mut egui::Ui) {
         if ui.button("Select none").clicked() { app.org.sel.clear(); }
         ui.label(RichText::new(format!("{} shots, {} selected", app.entries.len(), app.org.sel.len())).weak());
         if ui.button("Add files").clicked() { app.open_files_dialog(); }
+        if ui.button("Process whole job…").on_hover_text("Finds, straightens and crops every piece of film on every plate in the list and saves each as its own new file. Originals are not changed.").clicked() { app.job_open(); }
         let n = app.entries.iter().filter(|e| e.dirty).count();
         if ui.add_enabled(n > 0, egui::Button::new(RichText::new(format!("Save all edited ({n})")).color(if n > 0 { ACCENT } else { ui.visuals().text_color() }))).clicked() { app.save_all_edited(); }
     });
@@ -172,6 +174,9 @@ pub fn organize(app: &mut App, ui: &mut egui::Ui) {
                         let kids: Vec<u64> = ids.iter().copied().filter(|c| nest.get(c) == Some(&id)).collect();
                         if kids.is_empty() { if !nest.contains_key(&id) { card(ui, id, None); } k += 1; continue; }
                         // an original with the files made from it, shown as one item
+                        // a family is one wide item: start a new row when it would not fit in what is left of this one
+                        let need = (1 + kids.len()) as f32 * 168.0 + 44.0;
+                        if ui.available_size_before_wrap().x < need && ui.cursor().min.x > ui.max_rect().min.x + 1.0 { ui.end_row(); }
                         egui::Frame::group(ui.style()).fill(Color32::from_gray(22)).stroke(egui::Stroke::new(1.0_f32, Color32::from_gray(90))).show(ui, |ui| {
                             ui.vertical(|ui| {
                                 let pieces = kids.iter().filter(|c| app.idx(**c).map_or(false, |i| app.entries[i].link.piece.is_some())).count();

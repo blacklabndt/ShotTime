@@ -148,6 +148,13 @@ pub fn read_cov(file: &DicomFile, img: &Image) -> (String, bool) {
 pub struct CoverageRow { pub id: u64, pub name: String, pub now: String, pub text: String, pub note: String, pub sure: bool, pub include: bool }
 pub struct CoverageDialog { pub rows: Vec<CoverageRow>, pub error: String }
 
+/// Everything one piece needs to be written as its own file.
+pub struct PieceJob<'a> { pub file: &'a DicomFile, pub orig: &'a DicomFile, pub img: Option<&'a Image>, pub ops: &'a [String], pub turns: i32, pub orig_els: &'a shots::OrigEls, pub j2k: bool, pub target: u8,
+    pub series: &'a str, pub base: &'a str, pub dir: &'a Path, pub originals: &'a BTreeSet<PathBuf>, pub split: SplitOptions }
+/// Whole-job run: the confirmation first, then the summary.
+pub struct JobRow { pub name: String, pub files: usize, pub note: String, pub bad: bool }
+pub struct JobDialog { pub ids: Vec<u64>, pub skipped: usize, pub dir: Option<PathBuf>, pub rows: Vec<JobRow>, pub done: bool }
+
 pub type Apply = Box<dyn FnOnce(&mut App, &egui::Context) + Send>;
 pub struct Job { pub label: String, pub rx: Receiver<Apply>, pub started: Instant }
 
@@ -183,6 +190,8 @@ pub struct App {
     pub flash: Option<(Vec<im::Segment>, Instant)>,
     pub show_keys: bool,
     pub coverage: Option<CoverageDialog>,
+    pub job_dlg: Option<JobDialog>,
+    pub progress: Arc<std::sync::Mutex<String>>,
     pub rename_weld: Option<(String, String)>,
     pub texture: Option<egui::TextureHandle>,
     pub tex_key: String,
@@ -243,7 +252,7 @@ impl App {
         let mut app = App {
             entries: vec![], folder: String::new(), cur: None, next_id: 1, mode: Mode::Edit, prefs, tool: Tool::Pan, ts: ToolSettings::default(), view: View::default(),
             view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![],
-            compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, coverage: None, rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0, cov_tx, cov_rx,
+            compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, coverage: None, job_dlg: None, progress: Default::default(), rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0, cov_tx, cov_rx,
             meta: MetaUi::default(), org: OrgState::default(), dialog: None, allow_close: false, drag: None, probe: String::new(), edge_pending: false,
         };
         if !args.is_empty() {
@@ -1076,38 +1085,10 @@ impl App {
             let mut err = std::fs::create_dir_all(&dir).err().map(|e| format!("{}: {e}", dir.display()));
             for (k, r) in regions.iter().enumerate() {
                 if err.is_some() { break; }
-                let label = { let l = r.label.trim(); if l.is_empty() { (k + 1).to_string() } else { l.to_string() } };
-                let part = PartInfo { series: series.clone(), index: k + 1, text: format!("Split part {} of {n} ({}×{} at {},{})", k + 1, r.region.rect.w, r.region.rect.h, r.region.rect.x, r.region.rect.y) };
-                let st = CopyState { file: &file, orig: &orig, img: img.as_deref(), ops: &ops, turns, orig_els: &orig_els, store_window: None, j2k };
-                let res = copy::build_copy(&st, Some(&r.region), Some(&part), split).and_then(|mut b| {
-                    if n > 1 {   // the plate's coverage covers every piece; each piece gets its own
-                        let c = b.file.ds.string(shots::COMMENTS); let next = shots::with_coverage(&c, "");
-                        if next != c { if next.is_empty() { b.file.ds.remove(shots::COMMENTS); } else { b.file.ds.set_text(shots::COMMENTS, &next, Some("LT")).map_err(|e| e.0)?; } }
-                    }
-                    if target == 1 { b.file.ds.set_text(0x00204000, &label, Some("LT")).map_err(|e| e.0)?; }
-                    // each new file carries its own coverage when its numbers read cleanly
-                    if shots::coverage_in(&b.file.ds.string(shots::COMMENTS)).is_empty() {
-                        if let Some((text, true)) = crate::export_img::first_frame(&b.file).map(|i| read_cov(&b.file, &i)) {
-                            let next = shots::with_coverage(&b.file.ds.string(shots::COMMENTS), &text);
-                            b.file.ds.set_text(shots::COMMENTS, &next, Some("LT")).map_err(|e| e.0)?;
-                        }
-                    }
-                    if target == 2 {
-                        let id = b.file.ds.string(0x00100020);
-                        let next = if id.is_empty() { label.clone() } else { format!("{id}-{label}") };
-                        if let Some(m) = d::validate("LO", &next) { return Err(format!("Part {}: Component ID “{next}” — {m}", k + 1)); }
-                        b.file.ds.set_text(0x00100020, &next, None).map_err(|e| e.0)?;
-                    }
-                    let bytes = d::write(&b.file).map_err(|e| e.0)?;
-                    let safe: String = label.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' }).collect();
-                    let path = App::unique_path(&dir, &format!("{base}_{safe}.dcm"));
-                    if originals.contains(&path) { return Err("would overwrite an original".into()); }
-                    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-                    let checks = compat::check(&bytes, Some(&orig), &CheckOptions { removed: b.removed.clone(), edited: b.edited.clone(), pixels_changed: true, ..Default::default() });
-                    if compat::summary(&checks).fail > 0 { problems += 1; }
-                    Ok(path)
-                });
-                match res { Ok(p) => written.push(p), Err(m) => err = Some(m) }
+                match App::write_piece(&PieceJob { file: &file, orig: &orig, img: img.as_deref(), ops: &ops, turns, orig_els: &orig_els, j2k, target, series: &series, base: &base, dir: &dir, originals: &originals, split }, r, k, n) {
+                    Ok((p, bad)) => { written.push(p); if bad { problems += 1; } }
+                    Err(m) => err = Some(m),
+                }
             }
             Box::new(move |app: &mut App, _: &egui::Context| {
                 if !written.is_empty() { app.last_saved = Some(written[0].clone()); }
@@ -1120,6 +1101,151 @@ impl App {
                 else { app.toast(format!("Saved {n} new file{} in {} — passed the INDUSTREX check. The original file is unchanged.", if n == 1 { "" } else { "s" }, dir.display())); }
             })
         });
+    }
+
+    /// Builds, checks and writes one piece of a plate as its own new file. Returns the path and whether the
+    /// INDUSTREX check found a problem. Never overwrites: the name is made unique and originals are refused.
+    fn write_piece(j: &PieceJob, r: &RegionItem, k: usize, n: usize) -> Result<(PathBuf, bool), String> {
+        let label = { let l = r.label.trim(); if l.is_empty() { (k + 1).to_string() } else { l.to_string() } };
+        let part = PartInfo { series: j.series.to_string(), index: k + 1, text: format!("Split part {} of {n} ({}×{} at {},{})", k + 1, r.region.rect.w, r.region.rect.h, r.region.rect.x, r.region.rect.y) };
+        let st = CopyState { file: j.file, orig: j.orig, img: j.img, ops: j.ops, turns: j.turns, orig_els: j.orig_els, store_window: None, j2k: j.j2k };
+        let mut b = copy::build_copy(&st, Some(&r.region), Some(&part), j.split)?;
+        let comments_before = b.file.ds.string(shots::COMMENTS);
+        if n > 1 {   // the plate's coverage covers every piece; each piece gets its own
+            let c = b.file.ds.string(shots::COMMENTS); let next = shots::with_coverage(&c, "");
+            if next != c { if next.is_empty() { b.file.ds.remove(shots::COMMENTS); } else { b.file.ds.set_text(shots::COMMENTS, &next, Some("LT")).map_err(|e| e.0)?; } }
+        }
+        if j.target == 1 { b.file.ds.set_text(0x00204000, &label, Some("LT")).map_err(|e| e.0)?; }
+        // each new file carries its own coverage when its numbers read cleanly
+        if shots::coverage_in(&b.file.ds.string(shots::COMMENTS)).is_empty() {
+            if let Some((text, true)) = crate::export_img::first_frame(&b.file).map(|i| read_cov(&b.file, &i)) {
+                let next = shots::with_coverage(&b.file.ds.string(shots::COMMENTS), &text);
+                b.file.ds.set_text(shots::COMMENTS, &next, Some("LT")).map_err(|e| e.0)?;
+            }
+        }
+        if j.target == 2 {
+            let id = b.file.ds.string(0x00100020);
+            let next = if id.is_empty() { label.clone() } else { format!("{id}-{label}") };
+            if let Some(m) = d::validate("LO", &next) { return Err(format!("Part {}: Component ID “{next}” — {m}", k + 1)); }
+            b.file.ds.set_text(0x00100020, &next, None).map_err(|e| e.0)?;
+        }
+        let bytes = d::write(&b.file).map_err(|e| e.0)?;
+        let safe: String = label.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' }).collect();
+        let path = App::unique_path(j.dir, &format!("{}_{safe}.dcm", j.base));
+        if j.originals.contains(&path) { return Err("would overwrite an original".into()); }
+        std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+        // the label or coverage written into Image Comments is a deliberate edit, so the check must expect it
+        let mut edited = b.edited.clone();
+        if b.file.ds.string(shots::COMMENTS) != comments_before && !edited.contains(&shots::COMMENTS) { edited.push(shots::COMMENTS); }
+        let checks = compat::check(&bytes, Some(j.orig), &CheckOptions { removed: b.removed.clone(), edited, pixels_changed: true, ..Default::default() });
+        if std::env::var_os("WELDSCOPE_TEST_DIR").is_some() { for c in checks.iter().filter(|c| c.level == compat::Level::Fail) { eprintln!("check failed: {} — {}", c.title, c.detail); } }
+        Ok((path, compat::summary(&checks).fail > 0))
+    }
+
+    // ---- whole job: every plate in the list, found, straightened, cropped and saved
+    /// Plates the job run would process: originals with a file on disk, no unsaved image steps, and no pieces
+    /// made from them yet. Files that were themselves made by WeldScope are left out.
+    pub fn job_candidates(&self) -> (Vec<u64>, usize) {
+        let parents = self.parents();
+        let has_children: BTreeSet<u64> = parents.values().copied().collect();
+        let mut skipped = 0;
+        let ids = self.entries.iter().filter(|e| !e.shot.path.is_empty() && !e.link.in_edited && !parents.contains_key(&e.shot.id) && e.link.sources.is_empty())
+            .filter(|e| { let ok = !has_children.contains(&e.shot.id) && e.work.ops.is_empty(); if !ok { skipped += 1; } ok }).map(|e| e.shot.id).collect();
+        (ids, skipped)
+    }
+    pub fn job_open(&mut self) {
+        let (ids, skipped) = self.job_candidates();
+        let near = self.near();
+        self.job_dlg = Some(JobDialog { ids, skipped, dir: self.output_dir(&near), rows: Vec::new(), done: false });
+    }
+    /// Runs the whole job in the background: one new file per film piece, nothing overwritten, originals untouched.
+    fn job_run(&mut self, ids: Vec<u64>, dir: PathBuf) {
+        struct In { name: String, base: String, file: DicomFile, orig: Arc<DicomFile>, orig_els: shots::OrigEls, rot: u32 }
+        let items: Vec<In> = self.entries.iter().filter(|e| ids.contains(&e.shot.id)).map(|e| In { name: e.shot.name.clone(), base: base_name(&e.shot.name), file: e.shot.file.clone(), orig: e.shot.orig.clone(), orig_els: e.shot.orig_els.clone(), rot: e.view_rot }).collect();
+        let (save_j2k, target, originals, progress) = (self.ts.save_j2k, self.ts.label_target, self.originals(), self.progress.clone());
+        let total = items.len();
+        self.run(format!("Processing {total} plate{}…", if total == 1 { "" } else { "s" }), move || {
+            let mut rows: Vec<JobRow> = Vec::new();
+            let mut written: Vec<PathBuf> = Vec::new();
+            let mut stop = std::fs::create_dir_all(&dir).err().map(|e| format!("{}: {e}", dir.display()));
+            for (n, it) in items.iter().enumerate() {
+                if let Some(m) = &stop { rows.push(JobRow { name: it.name.clone(), files: 0, note: format!("not processed ({m})"), bad: true }); continue; }
+                *progress.lock().unwrap() = format!("{} of {total}: {}", n + 1, elide(&it.name, 40));
+                let Some(img) = crate::export_img::first_frame(&it.file) else { rows.push(JobRow { name: it.name.clone(), files: 0, note: "the image could not be read — skipped".into(), bad: true }); continue };
+                let pieces = App::pieces_in_screen_order(&img, 0, 0.6, 0, it.rot);
+                let lv = im::plate_levels(&img.frames[0], img.cols, img.rows, img.padding, 0.6);
+                if pieces.is_empty() { rows.push(JobRow { name: it.name.clone(), files: 0, note: "no film found — skipped; open it and use Find film pieces".into(), bad: true }); continue; }
+                if pieces.len() == 1 && !lv.has_background { rows.push(JobRow { name: it.name.clone(), files: 0, note: "one film with no empty area round it — nothing to crop".into(), bad: false }); continue; }
+                let steep = pieces.iter().filter(|p| p.tilt.map_or(false, |t| t.abs() > 5.0)).count();
+                let series = d::new_uid();
+                let j2k = save_j2k && img.bits_allocated <= 16;
+                let job = PieceJob { file: &it.file, orig: &it.orig, img: Some(&img), ops: &[], turns: 0, orig_els: &it.orig_els, j2k, target, series: &series, base: &it.base, dir: &dir, originals: &originals, split: SplitOptions { straighten: true, fill_slivers: false } };
+                let (mut files, mut problems, mut failed) = (0, 0, None);
+                for (k, r) in pieces.iter().enumerate() {
+                    match App::write_piece(&job, r, k, pieces.len()) { Ok((p, bad)) => { written.push(p); files += 1; if bad { problems += 1; } } Err(m) => { failed = Some(m); break; } }
+                }
+                let mut note = format!("{} piece{} found", pieces.len(), if pieces.len() == 1 { "" } else { "s" });
+                if steep > 0 { note += &format!(" · {steep} tilted over 5°: cropped, not rotated"); }
+                if problems > 0 { note += &format!(" · INDUSTREX check found problems in {problems}"); }
+                if let Some(m) = &failed { note += &format!(" · stopped: {m}"); if files == 0 && m.contains("os error") { stop = Some(m.clone()); } }
+                rows.push(JobRow { name: it.name.clone(), files, note, bad: failed.is_some() || problems > 0 || steep > 0 });
+            }
+            progress.lock().unwrap().clear();
+            Box::new(move |app: &mut App, _: &egui::Context| {
+                let n = written.len();
+                if n > 0 { app.last_saved = Some(written[0].clone()); app.add_paths_opt(written, false, false, true); }
+                app.job_dlg = Some(JobDialog { ids: Vec::new(), skipped: 0, dir: Some(dir), rows, done: true });
+            })
+        });
+    }
+    fn job_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut dlg) = self.job_dlg.take() else { return };
+        if self.busy() { self.job_dlg = Some(dlg); return; }
+        let (mut go, mut close, mut change) = (false, false, false);
+        egui::Window::new(if dlg.done { "Job processed" } else { "Process the whole job" }).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.set_min_width(620.0);
+            if dlg.done {
+                let files: usize = dlg.rows.iter().map(|r| r.files).sum();
+                let made = dlg.rows.iter().filter(|r| r.files > 0).count();
+                ui.label(format!("{files} new file{} saved from {made} plate{}. The original files are unchanged.", if files == 1 { "" } else { "s" }, if made == 1 { "" } else { "s" }));
+                if let Some(d) = &dlg.dir { ui.label(RichText::new(format!("Saved in {}", d.display())).weak().small()); }
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical().max_height((ctx.screen_rect().height() - 320.0).max(140.0)).show(ui, |ui| {
+                    egui::Grid::new("jobrows").num_columns(3).spacing([14.0, 5.0]).striped(true).show(ui, |ui| {
+                        for r in &dlg.rows {
+                            ui.label(elide(&r.name, 34)).on_hover_text(&r.name);
+                            ui.label(if r.files == 0 { RichText::new("—").weak() } else { RichText::new(format!("{} file{}", r.files, if r.files == 1 { "" } else { "s" })).color(OK) });
+                            ui.label(RichText::new(&r.note).small().color(if r.bad { ACCENT } else { ui.visuals().weak_text_color() }));
+                            ui.end_row();
+                        }
+                    });
+                });
+                ui.add_space(6.0);
+                ui.label(RichText::new("The new files are listed inside their originals. Look through them before relying on them: lines in amber need a check.").weak().small());
+                if ui.button("Close").clicked() { close = true; }
+            } else {
+                let n = dlg.ids.len();
+                if n == 0 { ui.label(if dlg.skipped > 0 { "Every plate in the list already has pieces made from it (or has unsaved image changes), so there is nothing left to process." } else { "There are no plates in the list. Open the job folder first." }); }
+                else {
+                    ui.label(format!("{n} plate{} will be processed. For each one WeldScope finds every piece of film, straightens it, crops it to the film and saves it as its own new file, with its coverage where the numbers read cleanly.", if n == 1 { "" } else { "s" }));
+                    if dlg.skipped > 0 { ui.label(RichText::new(format!("{} plate{} left out: pieces were already made from them, or they have unsaved image changes.", dlg.skipped, if dlg.skipped == 1 { " is" } else { "s are" })).weak()); }
+                    ui.label("The original files are not changed and nothing is overwritten. There is no preview for each plate; a summary is shown at the end.");
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(match &dlg.dir { Some(d) => format!("Save to: {}", elide(&d.to_string_lossy(), 70)), None => "Choose a folder for the new files".to_string() });
+                        if ui.button("Change…").clicked() { change = true; }
+                    });
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if n > 0 && ui.add_enabled(dlg.dir.is_some(), egui::Button::new(RichText::new(format!("Process {n} plate{}", if n == 1 { "" } else { "s" })).color(ACCENT))).clicked() { go = true; }
+                    if ui.button(if n > 0 { "Cancel" } else { "Close" }).clicked() { close = true; }
+                });
+            }
+        });
+        if change { let near = self.near(); if let Some(d) = self.pick_folder("Choose the folder for new files", &near) { self.prefs.output_dir = d.to_string_lossy().into(); dlg.dir = Some(d); } }
+        if go { if let Some(dir) = dlg.dir.clone() { self.job_run(dlg.ids.clone(), dir); return; } }
+        if !close { self.job_dlg = Some(dlg); }
     }
 
     /// Saves a new file for every edited file: files with image steps are saved with them (as Save as new file
@@ -1315,7 +1441,7 @@ impl eframe::App for App {
         if let Some(job) = &self.job {
             if job.started.elapsed() > Duration::from_millis(150) {
                 egui::Area::new(egui::Id::new("busy")).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).order(egui::Order::Foreground).show(ctx, |ui| {
-                    egui::Frame::popup(ui.style()).inner_margin(16.0).show(ui, |ui| { ui.horizontal(|ui| { ui.spinner(); ui.label(RichText::new(&job.label).size(15.0)); }); });
+                    egui::Frame::popup(ui.style()).inner_margin(16.0).show(ui, |ui| { ui.horizontal(|ui| { ui.spinner(); ui.label(RichText::new(&job.label).size(15.0)); }); let p = self.progress.lock().unwrap().clone(); if !p.is_empty() { ui.label(RichText::new(p).weak()); } });
                 });
             }
             ctx.request_repaint_after(Duration::from_millis(50));
@@ -1426,6 +1552,7 @@ impl App {
         if close { self.dialog = None; }
         self.pieces_dialog(ctx);
         self.coverage_dialog(ctx);
+        self.job_dialog(ctx);
         if self.show_keys {
             let mut open = true;
             egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
