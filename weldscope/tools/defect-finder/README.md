@@ -138,3 +138,27 @@ Real plates, candidates inside the weld band (band.py), same cut-offs 0.52 / 0.3
 
 Accepted does not mean free of indications (the owner: technicians can under-call), so these counts are a reading
 load, not a false-alarm rate. Recall on real CR indications is still unmeasured.
+
+## Bigger naming model test (name_data.py, name_big.py, 2026-11-12)
+
+The owner asked whether a bigger AI model would name the types better. Test: a ResNet-18 pretrained on ImageNet,
+fine-tuned on 27,341 crops (round 4 finder regions plus outlines on training films; porosity and "not a defect"
+capped at 9,000), scored on the 8,781 finder regions of the 644 held-out films next to the current small naming
+step on exactly the same regions. Two inputs: the close crop only, and the close crop plus two wider views (3x and
+6x) that take in the weld cross-section. 2,500 steps each, about 17 minutes on four cores.
+
+Named right, % of real regions of each type (held-out counts: porosity 1,450, slag 219, undercut 41, lack of
+penetration 164, lack of fusion 116, crack 326):
+
+| model | porosity | slag | undercut | LoP | LoF | crack | mean of types | defect-or-not AUC |
+|---|---|---|---|---|---|---|---|---|
+| current small step | 77 | 28 | 73 | 55 | 49 | 69 | 59 | 0.935 |
+| ResNet-18, close crop | 73 | 35 | 41 | 61 | 54 | 77 | 57 | 0.938 |
+| ResNet-18, close + wider views | 72 | 30 | 41 | 64 | 54 | 73 | 56 | 0.936 |
+
+No real gain. Slag moves by a few points, which is inside the noise for 219 regions (about +-3 points), and it
+swung between 10 % and 38 % from checkpoint to checkpoint. The wider views did not help. A model 20 times larger
+that starts from general image knowledge ends in the same place, so model size is not what limits naming here.
+What is left: the half-resolution 8-bit copies (the full-resolution comparison is still blocked by the download
+limit on the archive), how consistently slag and porosity were labelled in the reference set, and marks from the
+owner's own technicians. WeldScope keeps the small naming step.
