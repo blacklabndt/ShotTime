@@ -102,13 +102,9 @@ pub fn draw_overlay_rgb(rgb: &mut [u8], w: usize, h: usize, lines: &[Vec<String>
     }
 }
 
-/// A small preview of a file (decoded from a reduced copy of the image), turned to its INDUSTREX viewing angle.
-/// INDUSTREX's stored icon is not used: on the owner's files its pixel data does not match its own description.
-pub fn thumbnail(file: &DicomFile) -> (egui::ColorImage, u32) {
-    let angle = d::industrex_xml_entry(&file.ds, "ANGLE").and_then(|a| a.last().and_then(|v| v.trim().parse::<f64>().ok())).map(|v| v.round() as i64).unwrap_or(0);
-    let cw = (((360 - angle) % 360) + 360) % 360;
-    let rot = if [0, 90, 180, 270].contains(&cw) { cw as u32 } else { 0 };
-    let img = match d::get_image(file) {
+/// The first frame of a file, decoded when it is JPEG 2000 (None when it cannot be shown).
+pub fn first_frame(file: &DicomFile) -> Option<d::Image> {
+    match d::get_image(file) {
         Ok(i) => Some(i),
         Err(e) if e.compressed && codec::can_decode(&file.transfer_syntax) => {
             let g = d::image_geometry(file);
@@ -119,7 +115,17 @@ pub fn thumbnail(file: &DicomFile) -> (egui::ColorImage, u32) {
             })
         }
         Err(_) => None,
-    };
+    }
+}
+
+/// A small preview of a file (decoded from a reduced copy of the image), turned to its INDUSTREX viewing angle.
+/// INDUSTREX's stored icon is not used: on the owner's files its pixel data does not match its own description.
+pub fn thumbnail(file: &DicomFile) -> (egui::ColorImage, u32) { thumbnail_of(file, first_frame(file)) }
+/// The same from an image already decoded.
+pub fn thumbnail_of(file: &DicomFile, img: Option<d::Image>) -> (egui::ColorImage, u32) {
+    let angle = d::industrex_xml_entry(&file.ds, "ANGLE").and_then(|a| a.last().and_then(|v| v.trim().parse::<f64>().ok())).map(|v| v.round() as i64).unwrap_or(0);
+    let cw = (((360 - angle) % 360) + 360) % 360;
+    let rot = if [0, 90, 180, 270].contains(&cw) { cw as u32 } else { 0 };
     let Some(img) = img else { return (egui::ColorImage::new([2, 2], egui::Color32::from_gray(40)), 0) };
     let max = 220usize;
     let k = ((img.cols.max(img.rows) + max - 1) / max).max(1);

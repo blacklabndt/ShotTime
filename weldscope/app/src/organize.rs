@@ -38,6 +38,17 @@ fn short_label(e: &crate::app::FileEntry, group_tag: u32) -> Option<String> {
     let (weld, shot) = (e.shot.text(group_tag).trim().to_string(), e.shot.text(0x00200013));
     match (weld.is_empty(), shot.is_empty()) { (true, true) => None, (false, true) => Some(elide(&weld, 26)), (true, false) => Some(format!("Shot {shot}")), _ => Some(format!("{} · Shot {shot}", elide(&weld, 20))) }
 }
+/// Coverage line of a shot: green when stored or read cleanly, amber with a question mark when the read is unsure.
+fn coverage_label(ui: &mut egui::Ui, e: &crate::app::FileEntry, always: bool) {
+    let (cov, kind) = e.coverage_shown();
+    if cov.is_empty() { if always { ui.label(RichText::new(if e.auto_cov.is_some() || !e.shot.coverage().is_empty() { "no coverage" } else { "reading coverage…" }).small().weak()); } return; }
+    let (text, color, tip) = match kind {
+        2 => (format!("Coverage {} ?", elide(&cov, 18)), ACCENT, format!("{cov} — read from the film, but some numbers were unclear or missing. Check it and confirm or correct it.")),
+        1 => (format!("Coverage {}", elide(&cov, 18)), Color32::from_rgb(150, 220, 150), format!("{cov} — read from the numbers on the film; written into the file when it is saved.")),
+        _ => (format!("Coverage {}", elide(&cov, 18)), Color32::from_rgb(150, 220, 150), cov.clone()),
+    };
+    ui.label(RichText::new(text).small().color(color)).on_hover_text(tip);
+}
 fn date_text(e: &crate::app::FileEntry) -> String {
     let dt = { let a = e.shot.text(0x00080022); if a.is_empty() { e.shot.text(0x00080020) } else { a } };
     weldscope_core::overlay::format_value("DA", &dt)
@@ -76,6 +87,7 @@ pub fn file_pane(app: &mut App, ui: &mut egui::Ui) {
                             let mut text = RichText::new(main.clone().unwrap_or_else(|| elide(&e.shot.name, 30)));
                             if sel { text = text.strong(); }
                             let r = ui.selectable_label(sel, text);
+                            coverage_label(ui, e, false);
                             if main.is_some() { ui.label(RichText::new(elide(&e.shot.name, 22)).weak().small()); }
                             r
                         }).inner;
@@ -221,6 +233,7 @@ fn shot_card(ui: &mut egui::Ui, e: &crate::app::FileEntry, sel: bool, group_tag:
             // key fields, so mistakes show without selecting the shot
             let (weld, shot, date) = (e.shot.text(group_tag), e.shot.text(0x00200013), date_text(e));
             ui.label(RichText::new(format!("{}{}", if weld.trim().is_empty() { "(no weld)".to_string() } else { elide(weld.trim(), 16) }, if shot.is_empty() { " · no shot no.".to_string() } else { format!(" · Shot {shot}") })).strong());
+            coverage_label(ui, e, true);
             if !date.is_empty() { ui.label(RichText::new(date).small()); }
             ui.label(RichText::new(elide(&e.shot.name, 26)).small().weak()).on_hover_text(&e.shot.name);
             if e.dirty { ui.label(RichText::new("● edited").small().color(ACCENT)); }
@@ -304,6 +317,20 @@ pub fn batch_panel(app: &mut App, ui: &mut egui::Ui) {
                 shots::renumber(list, start).map_err(|m| vec![m])
             });
         }
+    });
+    ui.add_space(4.0);
+    ui.label(RichText::new("Coverage").strong());
+    let (same, differs) = { let mut v: Vec<String> = app.entries.iter().filter(|e| sel.contains(&e.shot.id)).map(|e| e.coverage_shown().0).collect(); v.sort(); v.dedup(); if v.len() == 1 { (v.remove(0), false) } else { (String::new(), true) } };
+    ui.horizontal(|ui| {
+        let mut buf = app.org.coverage.clone().unwrap_or_else(|| same.clone());
+        let r = ui.add(egui::TextEdit::singleline(&mut buf).hint_text(if differs { "(different)" } else { "e.g. 0-35" }).desired_width(110.0));
+        if r.changed() { app.org.coverage = Some(buf.clone()); }
+        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if (ui.add_enabled(app.org.coverage.is_some(), egui::Button::new("Set")).clicked() || enter) && app.org.coverage.is_some() {
+            let changes: Vec<(u64, String)> = sel.iter().map(|id| (*id, buf.clone())).collect();
+            match app.set_coverage(&changes) { Ok(()) => app.org.coverage = None, Err(m) => app.error(format!("Not changed: {m}")) }
+        }
+        if ui.button("Read from film…").on_hover_text("Reads the lead location numbers on each selected shot and suggests its range; you confirm or correct each one").clicked() { app.read_coverage(&sel); }
     });
     let names: Vec<String> = app.prefs.templates.keys().cloned().collect();
     if !names.is_empty() {

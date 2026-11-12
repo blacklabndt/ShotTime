@@ -243,3 +243,39 @@ pub fn copy_names(names: &[&str]) -> Vec<String> {
         name
     }).collect()
 }
+
+// ---------------------------------------------------------------- coverage
+/// Coverage (the location-marker range a shot shows, e.g. "0-35") is kept as its own line in Image Comments
+/// (0020,4000): "Coverage: 0-35". DICONDE has no dedicated element for it, and INDUSTREX shows Image Comments.
+pub const COMMENTS: u32 = 0x00204000;
+const COVERAGE_LABEL: &str = "coverage:";
+fn is_coverage_line(l: &str) -> bool { l.trim_start().get(..COVERAGE_LABEL.len()).map_or(false, |p| p.eq_ignore_ascii_case(COVERAGE_LABEL)) }
+
+/// The coverage recorded in an Image Comments text ("" when none).
+pub fn coverage_in(comments: &str) -> String {
+    comments.lines().find(|l| is_coverage_line(l)).map(|l| l.trim_start()[COVERAGE_LABEL.len()..].trim().to_string()).unwrap_or_default()
+}
+/// Image Comments with the coverage line set, replaced or (for an empty coverage) removed; other text is kept.
+pub fn with_coverage(comments: &str, coverage: &str) -> String {
+    let cov = coverage.trim();
+    let mut lines: Vec<String> = comments.lines().filter(|l| !is_coverage_line(l)).map(|l| l.to_string()).collect();
+    while lines.last().map_or(false, |l| l.trim().is_empty()) { lines.pop(); }
+    if !cov.is_empty() { lines.push(format!("Coverage: {cov}")); }
+    lines.join("\r\n")
+}
+/// A message when the text cannot be stored as a coverage.
+pub fn coverage_problem(coverage: &str) -> Option<String> {
+    if coverage.contains('\n') || coverage.contains('\r') { return Some("Coverage must be a single line".into()); }
+    if coverage.trim().chars().count() > 64 { return Some("Coverage is limited to 64 characters".into()); }
+    None
+}
+impl Shot { pub fn coverage(&self) -> String { coverage_in(&self.text(COMMENTS)) } }
+/// Sets (or, when empty, clears) a shot's coverage through the normal field path, so it is tracked like any edit.
+pub fn set_coverage(e: &mut Shot, coverage: &str) -> Result<(), String> {
+    if let Some(m) = coverage_problem(coverage) { return Err(m); }
+    let now = e.text(COMMENTS);
+    let next = with_coverage(&now, coverage);
+    if next == now { return Ok(()); }
+    if next.is_empty() { delete_field(&mut e.file, &mut e.orig_els, &[], COMMENTS); return Ok(()); }
+    set_field(&mut e.file, &mut e.orig_els, &[], COMMENTS, &next, Some("LT")).map(|_| ())
+}

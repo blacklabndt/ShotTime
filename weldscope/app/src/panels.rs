@@ -105,8 +105,32 @@ fn field(app: &mut App, ui: &mut egui::Ui, path: &[(u32, usize)], tag: u32, name
     if let Some(m) = app.meta.errors.get(&key) { ui.label(RichText::new(m).color(BAD).small()); }
 }
 
+/// Coverage of the open shot: typed, or read from the lead numbers on the film and then confirmed.
+fn coverage_row(app: &mut App, ui: &mut egui::Ui) {
+    let Some(e) = app.cur() else { return };
+    let (id, cur) = (e.shot.id, e.shot.coverage());
+    let (shown, kind) = e.coverage_shown();
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Coverage").strong()).on_hover_text("The location-marker range this shot shows, e.g. 0-35. Stored as a line of Image Comments.");
+        let mut buf = app.meta.edits.get("coverage").cloned().unwrap_or_else(|| shown.clone());
+        let r = ui.add(egui::TextEdit::singleline(&mut buf).hint_text("e.g. 0-35").desired_width((ui.available_width() - 130.0).max(70.0)));
+        if r.changed() { app.meta.edits.insert("coverage".into(), buf.clone()); app.meta.errors.remove("coverage"); }
+        if r.lost_focus() {
+            if let Some(text) = app.meta.edits.remove("coverage") { if text.trim() != cur && !(cur.is_empty() && text.trim() == shown) { if let Err(m) = app.set_coverage(&[(id, text.clone())]) { app.meta.edits.insert("coverage".into(), text); app.meta.errors.insert("coverage".into(), m); } } }
+        }
+        if ui.button("Read again").on_hover_text("Reads the lead location numbers on the image as it is now and shows the range for you to confirm or correct").clicked() { app.read_coverage(&[id]); }
+    });
+    match kind {
+        1 => note(ui, "Read from the numbers on the film. It is written into the file when you save it; type over it to correct it."),
+        2 => { ui.label(RichText::new("Read from the film, but some numbers were unclear or missing. Check it; it is only stored once you confirm it here (press Enter in the box, or correct it).").small().color(ACCENT)); if ui.small_button("It is correct").clicked() { let _ = app.set_coverage(&[(id, shown.clone())]); } }
+        _ => {}
+    }
+    if let Some(m) = app.meta.errors.get("coverage") { ui.label(RichText::new(m).color(BAD).small()); }
+}
+
 fn metadata(app: &mut App, ui: &mut egui::Ui) {
     summary(app, ui);
+    coverage_row(app, ui);
     ui.horizontal(|ui| {
         ui.selectable_value(&mut app.meta.all, false, "Common fields");
         ui.selectable_value(&mut app.meta.all, true, "All tags");

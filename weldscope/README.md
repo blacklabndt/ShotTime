@@ -25,6 +25,7 @@ The opened files are never changed: every save writes a new file.
   - `build-windows.sh`: tests, cross-build and `dist/WeldScope-Windows.zip`.
   - `make-notices.py`: `THIRD-PARTY-NOTICES.txt`.
   - `make-parity-fixtures.cjs`: records the prototype's answers for the parity tests.
+  - `digit-templates/make.py`: renders the digit templates used to read location numbers.
 
 ## Rules carried over from the prototype (owner-confirmed with INDUSTREX 7.2.1)
 
@@ -69,6 +70,18 @@ The opened files are never changed: every save writes a new file.
   Source Image Sequence that saved pieces and processed copies carry, or (metadata-only copies) the same series
   with identical pixel data. The file list and Organize nest them under the original when both are in the same
   weld group. Open folder also loads the `Edited` subfolder so the grouping survives reopening.
+- **Coverage:** the location-marker range a shot shows (e.g. `0-35`) is kept as a `Coverage: …` line of Image
+  Comments (0020,4000) (`shots::coverage_in` / `with_coverage` / `set_coverage`); DICONDE has no element for it.
+  `markers::find_belts` reads the lead location numbers: blobs that saw less radiation than their surroundings,
+  digits matched against font-rendered templates (`core/src/marker_digits.bin`, made by
+  `tools/digit-templates/make.py` from DejaVu Sans, never from radiographs), tried in all four quarter turns. A
+  row only counts when its numbers sit at an even pitch and rise by a constant step; misreads are then corrected
+  from the row, and the belt may pass zero (… 126, 0, 7). The app reads every file as it opens (same background
+  thread as the preview) and shows the result on the cards and the file list. A read with every number in step
+  is written into the file when it is saved (pieces get their own); an unsure read is shown in amber with a
+  question mark and is stored only when the user confirms or corrects it. On the owner's five plates the range
+  was right on all five, with three flagged unsure; a piece whose numbers are cut by the film edge reads nothing.
+  It is a reading aid, not a measurement. Not in the frozen prototype.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

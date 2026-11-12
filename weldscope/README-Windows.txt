@@ -38,6 +38,11 @@ Organize shots
 - Shots are grouped by weld (Series Description by default), each showing its weld, shot number and date.
 - Drag a shot (or the selected shots) onto another weld to move it there. Rename weld changes the weld on every
   shot in a group. Both are one undo step.
+- Coverage: WeldScope reads the lead location numbers on each film when the folder opens and shows the range
+  on every shot (for example Coverage 0-35). Green means every number it read was in step; it is written into
+  the file when you save it. Amber with a ? means some numbers were unclear or missing: check it, then confirm
+  or correct it in the Coverage box (Metadata tab, or Batch edit). You can always type over it. It is a reading
+  aid, so check it against the image; numbers cut off at the film edge cannot be read.
 - Select several shots and edit their metadata together; every shot is checked before any change is made.
   Renumber shots, apply templates, then Save all edited. Originals and existing files are never overwritten.
 

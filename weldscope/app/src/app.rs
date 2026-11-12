@@ -74,8 +74,15 @@ impl Link {
         match self.piece { Some((k, n)) => format!("Piece {k} of {n}"), None => if self.sources.is_empty() { "Edited copy".into() } else { "Edited copy (image changed)".into() } }
     }
 }
-pub struct FileEntry { pub shot: Shot, pub work: Work, pub dirty: bool, pub saved_key: String, pub compat: Option<CompatResult>, pub link: Link, pub thumb: Option<egui::TextureHandle>, pub thumb_queued: bool, pub view_rot: u32 }
+pub struct FileEntry { pub shot: Shot, pub work: Work, pub dirty: bool, pub saved_key: String, pub compat: Option<CompatResult>, pub link: Link, pub thumb: Option<egui::TextureHandle>, pub thumb_queued: bool, pub view_rot: u32, pub auto_cov: Option<(String, bool)> }
 impl FileEntry {
+    /// Coverage to show: the one stored in the file, else the one read from the film when it was opened.
+    /// The second value is 0 for stored, 1 for read with every number in step, 2 for read but unsure.
+    pub fn coverage_shown(&self) -> (String, u8) {
+        let c = self.shot.coverage();
+        if !c.is_empty() { return (c, 0); }
+        match &self.auto_cov { Some((t, sure)) if !t.is_empty() => (t.clone(), if *sure { 1 } else { 2 }), _ => (String::new(), 0) }
+    }
     pub fn state_key(&self) -> String { format!("{}:{}:{}", self.work.ops.len(), self.work.ops.join("|"), self.shot.orig_els.keys().cloned().collect::<Vec<_>>().join(",")) }
     pub fn has_changes(&self) -> bool { !self.work.ops.is_empty() || !self.shot.orig_els.is_empty() }
     pub fn refresh_dirty(&mut self) { self.dirty = self.has_changes() && self.state_key() != self.saved_key; }
@@ -130,6 +137,17 @@ pub struct CompatResult { pub name: String, pub checks: Vec<Check> }
 pub struct PiecePreview { pub item: RegionItem, pub include: bool, pub before: egui::TextureHandle, pub after: egui::TextureHandle, pub info: String, pub warn: bool }
 pub struct PiecesDialog { pub title: &'static str, pub items: Vec<PiecePreview>, pub split: SplitOptions, pub add_to_list: bool, pub dir: Option<PathBuf> }
 
+/// Reads the location numbers of an image: the coverage text and whether every number read was in step.
+pub fn read_cov(file: &DicomFile, img: &Image) -> (String, bool) {
+    let px = file.ds.number(0x00181164).or_else(|| file.ds.number(0x00280030)).filter(|v| *v > 0.0).unwrap_or(0.1);
+    let belts = weldscope_core::markers::find_belts(&img.frames[0], img.cols, img.rows, img.padding, px);
+    (weldscope_core::markers::coverage_text(&belts), !belts.is_empty() && belts.iter().all(|b| b.confidence > 0.95 && b.reads >= 4))
+}
+
+/// Coverage read from the film, waiting for the user to confirm or correct it.
+pub struct CoverageRow { pub id: u64, pub name: String, pub now: String, pub text: String, pub note: String, pub sure: bool, pub include: bool }
+pub struct CoverageDialog { pub rows: Vec<CoverageRow>, pub error: String }
+
 pub type Apply = Box<dyn FnOnce(&mut App, &egui::Context) + Send>;
 pub struct Job { pub label: String, pub rx: Receiver<Apply>, pub started: Instant }
 
@@ -138,8 +156,8 @@ pub enum Dialog { Close }
 pub struct MetaUi { pub all: bool, pub filter: String, pub edits: BTreeMap<String, String>, pub errors: BTreeMap<String, String>, pub add_tag: String, pub add_vr: String, pub add_value: String, pub add_error: String, pub tpl_name: String, pub tpl_sel: String }
 impl Default for MetaUi { fn default() -> Self { MetaUi { all: false, filter: String::new(), edits: BTreeMap::new(), errors: BTreeMap::new(), add_tag: String::new(), add_vr: "LO".into(), add_value: String::new(), add_error: String::new(), tpl_name: String::new(), tpl_sel: String::new() } } }
 
-pub struct OrgState { pub sel: BTreeSet<u64>, pub pending: BTreeMap<u32, String>, pub removals: BTreeSet<u32>, pub undo: Vec<(Vec<shots::ShotSnap>, String)>, pub redo: Vec<(Vec<shots::ShotSnap>, String)>, pub anchor: Option<u64>, pub errors: Vec<String>, pub result: String, pub renumber_start: usize }
-impl Default for OrgState { fn default() -> Self { OrgState { sel: BTreeSet::new(), pending: BTreeMap::new(), removals: BTreeSet::new(), undo: vec![], redo: vec![], anchor: None, errors: vec![], result: String::new(), renumber_start: 1 } } }
+pub struct OrgState { pub sel: BTreeSet<u64>, pub pending: BTreeMap<u32, String>, pub removals: BTreeSet<u32>, pub undo: Vec<(Vec<shots::ShotSnap>, String)>, pub redo: Vec<(Vec<shots::ShotSnap>, String)>, pub anchor: Option<u64>, pub errors: Vec<String>, pub result: String, pub renumber_start: usize, pub coverage: Option<String> }
+impl Default for OrgState { fn default() -> Self { OrgState { sel: BTreeSet::new(), pending: BTreeMap::new(), removals: BTreeSet::new(), undo: vec![], redo: vec![], anchor: None, errors: vec![], result: String::new(), renumber_start: 1, coverage: None } } }
 
 pub struct App {
     pub entries: Vec<FileEntry>,
@@ -164,6 +182,7 @@ pub struct App {
     pub last_saved: Option<PathBuf>,
     pub flash: Option<(Vec<im::Segment>, Instant)>,
     pub show_keys: bool,
+    pub coverage: Option<CoverageDialog>,
     pub rename_weld: Option<(String, String)>,
     pub texture: Option<egui::TextureHandle>,
     pub tex_key: String,
@@ -174,6 +193,8 @@ pub struct App {
     pub thumb_tx: Sender<(u64, egui::ColorImage, u32)>,
     pub thumb_rx: Receiver<(u64, egui::ColorImage, u32)>,
     pub thumbs_running: usize,
+    pub cov_tx: Sender<(u64, String, bool)>,
+    pub cov_rx: Receiver<(u64, String, bool)>,
     pub meta: MetaUi,
     pub org: OrgState,
     pub dialog: Option<Dialog>,
@@ -218,10 +239,11 @@ impl App {
         cc.egui_ctx.set_fonts(fonts);
         let logo = Some(cc.egui_ctx.load_texture("logo", crate::png_image(include_bytes!("../assets/logo.png")), egui::TextureOptions::LINEAR));
         let (thumb_tx, thumb_rx) = channel();
+        let (cov_tx, cov_rx) = channel();
         let mut app = App {
             entries: vec![], folder: String::new(), cur: None, next_id: 1, mode: Mode::Edit, prefs, tool: Tool::Pan, ts: ToolSettings::default(), view: View::default(),
             view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![],
-            compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0,
+            compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, coverage: None, rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0, cov_tx, cov_rx,
             meta: MetaUi::default(), org: OrgState::default(), dialog: None, allow_close: false, drag: None, probe: String::new(), edge_pending: false,
         };
         if !args.is_empty() {
@@ -287,6 +309,7 @@ impl App {
             }
         }
         if self.job.is_none() && !self.queue.is_empty() { let (l, w) = self.queue.remove(0); self.run(l, w); }
+        while let Ok((id, text, sure)) = self.cov_rx.try_recv() { if let Some(i) = self.idx(id) { self.entries[i].auto_cov = Some((text, sure)); } }
         while let Ok((id, img, rot)) = self.thumb_rx.try_recv() {
             self.thumbs_running = self.thumbs_running.saturating_sub(1);
             if let Some(i) = self.idx(id) {
@@ -351,7 +374,7 @@ impl App {
                     s.id = app.next_id; app.next_id += 1;
                     if first.is_none() { first = Some(s.id); }
                     let link = Link::of(&s);
-                    app.entries.push(FileEntry { link, shot: s, work: Work::default(), dirty: false, saved_key: String::new(), compat: None, thumb: None, thumb_queued: false, view_rot: 0 });
+                    app.entries.push(FileEntry { link, shot: s, work: Work::default(), dirty: false, saved_key: String::new(), compat: None, thumb: None, thumb_queued: false, view_rot: 0, auto_cov: None });
                     added += 1;
                 }
                 if !bad.is_empty() {
@@ -920,6 +943,7 @@ impl App {
     /// Save as new file. Without `ask` it goes straight into the output folder under a name that is not taken.
     pub fn save_copy(&mut self, ask: bool) {
         let Some(i) = self.cur_idx() else { return };
+        self.store_auto_coverage(i);
         let e = &self.entries[i];
         let name = format!("{}_edited.dcm", base_name(&e.shot.name));
         let near = e.shot.path.clone();
@@ -1056,7 +1080,18 @@ impl App {
                 let part = PartInfo { series: series.clone(), index: k + 1, text: format!("Split part {} of {n} ({}×{} at {},{})", k + 1, r.region.rect.w, r.region.rect.h, r.region.rect.x, r.region.rect.y) };
                 let st = CopyState { file: &file, orig: &orig, img: img.as_deref(), ops: &ops, turns, orig_els: &orig_els, store_window: None, j2k };
                 let res = copy::build_copy(&st, Some(&r.region), Some(&part), split).and_then(|mut b| {
+                    if n > 1 {   // the plate's coverage covers every piece; each piece gets its own
+                        let c = b.file.ds.string(shots::COMMENTS); let next = shots::with_coverage(&c, "");
+                        if next != c { if next.is_empty() { b.file.ds.remove(shots::COMMENTS); } else { b.file.ds.set_text(shots::COMMENTS, &next, Some("LT")).map_err(|e| e.0)?; } }
+                    }
                     if target == 1 { b.file.ds.set_text(0x00204000, &label, Some("LT")).map_err(|e| e.0)?; }
+                    // each new file carries its own coverage when its numbers read cleanly
+                    if shots::coverage_in(&b.file.ds.string(shots::COMMENTS)).is_empty() {
+                        if let Some((text, true)) = crate::export_img::first_frame(&b.file).map(|i| read_cov(&b.file, &i)) {
+                            let next = shots::with_coverage(&b.file.ds.string(shots::COMMENTS), &text);
+                            b.file.ds.set_text(shots::COMMENTS, &next, Some("LT")).map_err(|e| e.0)?;
+                        }
+                    }
                     if target == 2 {
                         let id = b.file.ds.string(0x00100020);
                         let next = if id.is_empty() { label.clone() } else { format!("{id}-{label}") };
@@ -1097,6 +1132,7 @@ impl App {
         let names = shots::copy_names(&edited.iter().map(|&i| self.entries[i].shot.name.as_str()).collect::<Vec<_>>());
         struct Item { id: u64, name: String, key: String, orig: Arc<DicomFile>, built: Result<copy::BuiltCopy, String> }
         let mut items = Vec::new();
+        for &i in &edited { self.store_auto_coverage(i); }
         for (k, &i) in edited.iter().enumerate() {
             let e = &self.entries[i];
             let j2k = e.work.decoded && e.work.img.as_ref().map_or(false, |m| m.bits_allocated <= 16);
@@ -1199,8 +1235,16 @@ impl App {
             let Some(i) = self.entries.iter().position(|e| e.thumb.is_none() && !e.thumb_queued) else { break };
             self.entries[i].thumb_queued = true;
             self.thumbs_running += 1;
-            let (id, file, tx) = (self.entries[i].shot.id, self.entries[i].shot.orig.clone(), self.thumb_tx.clone());
-            std::thread::spawn(move || { let (img, rot) = crate::export_img::thumbnail(&file); let _ = tx.send((id, img, rot)); });
+            let (id, file, tx, ctx) = (self.entries[i].shot.id, self.entries[i].shot.orig.clone(), self.thumb_tx.clone(), self.cov_tx.clone());
+            let want_cov = self.entries[i].shot.coverage().is_empty();
+            std::thread::spawn(move || {
+                // the coverage is read from the same decoded image, straight after the preview
+                let full = crate::export_img::first_frame(&file);
+                let cov = if want_cov { full.as_ref().map(|i| read_cov(&file, i)) } else { None };
+                let (img, rot) = crate::export_img::thumbnail_of(&file, full);
+                let _ = tx.send((id, img, rot));
+                if let Some((text, sure)) = cov { let _ = ctx.send((id, text, sure)); }
+            });
         }
     }
 
@@ -1381,6 +1425,7 @@ impl App {
         }
         if close { self.dialog = None; }
         self.pieces_dialog(ctx);
+        self.coverage_dialog(ctx);
         if self.show_keys {
             let mut open = true;
             egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
@@ -1395,6 +1440,96 @@ impl App {
             });
             self.show_keys = open;
         }
+    }
+
+    // ---- coverage (location-marker range of a shot)
+    /// Before a file is saved: a coverage read from the film with every number in step is written into it when
+    /// the user has not entered one. After image changes it is read again from the image as it is now.
+    fn store_auto_coverage(&mut self, i: usize) {
+        let e = &self.entries[i];
+        if !e.shot.coverage().is_empty() { return; }
+        let auto = if e.work.ops.is_empty() { e.auto_cov.clone() } else { e.work.img.as_ref().map(|img| read_cov(&e.shot.file, img)) };
+        if let Some((text, true)) = auto { let e = &mut self.entries[i]; if shots::set_coverage(&mut e.shot, &text).is_ok() { e.auto_cov = Some((text, true)); } }
+    }
+
+    /// Sets or clears the coverage of shots (kept as a line of Image Comments). One undo step; nothing changes
+    /// when any value is refused.
+    pub fn set_coverage(&mut self, changes: &[(u64, String)]) -> Result<(), String> {
+        for (_, c) in changes { if let Some(m) = shots::coverage_problem(c) { return Err(m); } }
+        let changes: Vec<(u64, String)> = changes.iter().filter(|(id, c)| self.entries.iter().any(|e| e.shot.id == *id && e.shot.coverage() != c.trim())).cloned().collect();
+        if changes.is_empty() { return Ok(()); }
+        if self.mode == Mode::Edit && changes.len() == 1 && self.cur == Some(changes[0].0) {
+            // the open file: an ordinary metadata step in its own undo list
+            let now = self.cur().unwrap().shot.text(shots::COMMENTS);
+            let next = shots::with_coverage(&now, &changes[0].1);
+            if next.is_empty() { self.delete_field(&[], shots::COMMENTS); } else { self.set_field(&[], shots::COMMENTS, &next, Some("LT"))?; }
+            self.meta.edits.remove("coverage");
+            return Ok(());
+        }
+        let ids: Vec<u64> = changes.iter().map(|c| c.0).collect();
+        let text = if changes.len() == 1 { format!("Coverage {}", if changes[0].1.trim().is_empty() { "cleared".to_string() } else { changes[0].1.trim().to_string() }) } else { format!("Coverage set on {} shots", changes.len()) };
+        if self.shots_change(&ids, &text, |list| {
+            let errs: Vec<String> = list.iter_mut().filter_map(|s| { let c = changes.iter().find(|c| c.0 == s.id)?; shots::set_coverage(s, &c.1).err().map(|m| format!("{}: {m}", s.name)) }).collect();
+            if errs.is_empty() { Ok(()) } else { Err(errs) }
+        }) { Ok(()) } else { Err(self.org.errors.first().cloned().unwrap_or_default()) }
+    }
+    /// Reads the location numbers on the film of the given shots and offers the ranges for confirmation.
+    pub fn read_coverage(&mut self, ids: &[u64]) {
+        struct In { id: u64, name: String, now: String, file: DicomFile, img: Option<ImgRef> }
+        let group_tag = self.prefs.group_tag;
+        let items: Vec<In> = self.entries.iter().filter(|e| ids.contains(&e.shot.id)).map(|e| {
+            let (weld, shot) = (e.shot.text(group_tag).trim().to_string(), e.shot.text(0x00200013));
+            let name = if weld.is_empty() && shot.is_empty() { elide(&e.shot.name, 34) } else { format!("{}{}", if weld.is_empty() { "(no weld)".to_string() } else { elide(&weld, 22) }, if shot.is_empty() { String::new() } else { format!(" · Shot {shot}") }) };
+            In { id: e.shot.id, name, now: e.shot.coverage(), file: e.shot.file.clone(), img: e.work.img.clone() }
+        }).collect();
+        if items.is_empty() { return; }
+        self.run(if items.len() == 1 { "Reading the location numbers…".to_string() } else { format!("Reading the location numbers on {} shots…", items.len()) }, move || {
+            let rows: Vec<CoverageRow> = items.into_iter().map(|it| {
+                let img = it.img.or_else(|| crate::export_img::first_frame(&it.file).map(Arc::new));
+                let (text, sure) = img.map(|i| read_cov(&it.file, &i)).unwrap_or_default();
+                let note = if text.is_empty() { "No row of numbers could be read — type it in".to_string() }
+                    else if sure { "Every number read was in step".to_string() }
+                    else { "Some numbers were unclear or missing — please check".to_string() };
+                CoverageRow { id: it.id, name: it.name, include: sure && text != it.now, now: it.now, text, note, sure }
+            }).collect();
+            Box::new(move |app: &mut App, _: &egui::Context| { app.coverage = Some(CoverageDialog { rows, error: String::new() }); })
+        });
+    }
+    fn coverage_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut dlg) = self.coverage.take() else { return };
+        let (mut apply, mut cancel) = (false, false);
+        egui::Window::new("Coverage read from the film").collapsible(false).resizable(false).default_width(700.0).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.set_min_width(680.0);
+            ui.label("WeldScope read the lead location numbers on the film. Check each range against the image and correct it if needed; nothing is stored until you confirm. Ranges it is unsure of are left unticked.");
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical().max_height((ctx.screen_rect().height() - 320.0).max(140.0)).show(ui, |ui| {
+                egui::Grid::new("coverage").num_columns(5).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
+                    for h in ["Use", "Shot", "Now", "Read from film", ""] { ui.label(RichText::new(h).weak().small()); }
+                    ui.end_row();
+                    for r in dlg.rows.iter_mut() {
+                        ui.checkbox(&mut r.include, "");
+                        ui.label(&r.name);
+                        ui.label(if r.now.is_empty() { RichText::new("—").weak() } else { RichText::new(&r.now) });
+                        if ui.add(egui::TextEdit::singleline(&mut r.text).desired_width(180.0).min_size(egui::vec2(180.0, 0.0)).hint_text("e.g. 0-35")).changed() { r.include = !r.text.trim().is_empty(); }
+                        ui.label(RichText::new(&r.note).small().color(if r.sure { OK } else { ACCENT }));
+                        ui.end_row();
+                    }
+                });
+            });
+            if !dlg.error.is_empty() { ui.label(RichText::new(&dlg.error).color(BAD)); }
+            ui.add_space(6.0);
+            let n = dlg.rows.iter().filter(|r| r.include && !r.text.trim().is_empty()).count();
+            ui.horizontal(|ui| {
+                if ui.add_enabled(n > 0, egui::Button::new(RichText::new(if n == 1 { "Use this coverage".to_string() } else { format!("Use {n} coverages") }).color(ACCENT))).clicked() { apply = true; }
+                if ui.button("Cancel").clicked() { cancel = true; }
+            });
+            ui.label(RichText::new("A suggestion only: numbers at the very edge of the film, faint numbers and other lead letters can be missed or misread.").weak().small());
+        });
+        if apply {
+            let changes: Vec<(u64, String)> = dlg.rows.iter().filter(|r| r.include && !r.text.trim().is_empty()).map(|r| (r.id, r.text.trim().to_string())).collect();
+            match self.set_coverage(&changes) { Ok(()) => return, Err(m) => dlg.error = format!("Not changed: {m}") }
+        }
+        if !cancel { self.coverage = Some(dlg); }
     }
 
     /// Preview of the pieces before any file is written: untick a piece to skip it, fix labels, check the folder.

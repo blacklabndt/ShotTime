@@ -9,3 +9,4 @@ pub mod export;
 pub mod shots;
 pub mod copy;
 pub mod sample;
+pub mod markers;
