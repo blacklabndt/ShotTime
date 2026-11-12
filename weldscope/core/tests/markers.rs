@@ -86,6 +86,7 @@ fn the_row_check_corrects_misreads_and_rejects_rows_that_are_not_a_belt() {
 #[test]
 fn coverage_is_one_line_of_image_comments() {
     assert_eq!(shots::coverage_in(""), "");
+    assert_eq!((shots::coverage_start("35-70"), shots::coverage_start(" 0-35, 35-70"), shots::coverage_start("98-7"), shots::coverage_start("A 12.5 to 20"), shots::coverage_start("none"), shots::coverage_start("")), (Some(35.0), Some(0.0), Some(98.0), Some(12.5), None, None));
     assert_eq!(shots::coverage_in("Piece 2\r\ncoverage:  35-70 \r\nchecked"), "35-70");
     assert_eq!(shots::with_coverage("", "0-35"), "Coverage: 0-35");
     assert_eq!(shots::with_coverage("Piece 2", " 0-35 "), "Piece 2\r\nCoverage: 0-35");

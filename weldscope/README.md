@@ -81,7 +81,8 @@ The opened files are never changed: every save writes a new file.
   is written into the file when it is saved (pieces get their own); an unsure read is shown in amber with a
   question mark and is stored only when the user confirms or corrects it. On the owner's five plates the range
   was right on all five, with three flagged unsure; a piece whose numbers are cut by the film edge reads nothing.
-  It is a reading aid, not a measurement. Not in the frozen prototype.
+  It is a reading aid, not a measurement. Not in the frozen prototype. Within a weld, shots are listed by where
+  their coverage starts (`shots::coverage_start`); shots without a coverage follow in their usual order.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

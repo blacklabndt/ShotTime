@@ -15,7 +15,10 @@ pub fn grouped(app: &App) -> Vec<(String, Vec<u64>)> {
     let parents = app.parents();
     shots::groups(&refs, app.prefs.group_tag).into_iter().map(|(k, v)| {
         // files made from an original in the same weld follow it directly, so they can be shown inside it
-        let ids: Vec<u64> = v.into_iter().map(|i| refs[i].id).collect();
+        let mut ids: Vec<u64> = v.into_iter().map(|i| refs[i].id).collect();
+        // along the weld: by where each shot's coverage starts; shots without one keep their order, after the rest
+        let start = |id: &u64| app.entries.iter().find(|e| e.shot.id == *id).and_then(|e| shots::coverage_start(&e.coverage_shown().0)).unwrap_or(f64::INFINITY);
+        ids.sort_by(|a, b| start(a).partial_cmp(&start(b)).unwrap_or(std::cmp::Ordering::Equal));
         let nested = |c: &u64| parents.get(c).filter(|p| ids.contains(p)).copied();
         let mut out = Vec::with_capacity(ids.len());
         for id in &ids { if nested(id).is_some() { continue; } out.push(*id); out.extend(ids.iter().copied().filter(|c| nested(c) == Some(*id))); }

@@ -43,6 +43,7 @@ Organize shots
   the file when you save it. Amber with a ? means some numbers were unclear or missing: check it, then confirm
   or correct it in the Coverage box (Metadata tab, or Batch edit). You can always type over it. It is a reading
   aid, so check it against the image; numbers cut off at the film edge cannot be read.
+- Within a weld the shots are listed in coverage order (0-35, then 35-70 …); shots with no coverage come last.
 - Select several shots and edit their metadata together; every shot is checked before any change is made.
   Renumber shots, apply templates, then Save all edited. Originals and existing files are never overwritten.
 

@@ -269,6 +269,12 @@ pub fn coverage_problem(coverage: &str) -> Option<String> {
     if coverage.trim().chars().count() > 64 { return Some("Coverage is limited to 64 characters".into()); }
     None
 }
+/// Where a coverage starts along the weld: its first number ("35-70" → 35). None when it has no number.
+pub fn coverage_start(coverage: &str) -> Option<f64> {
+    let s = coverage.trim_start_matches(|c: char| !c.is_ascii_digit());
+    let end = s.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(s.len());
+    s[..end].trim_end_matches('.').parse().ok()
+}
 impl Shot { pub fn coverage(&self) -> String { coverage_in(&self.text(COMMENTS)) } }
 /// Sets (or, when empty, clears) a shot's coverage through the normal field path, so it is tracked like any edit.
 pub fn set_coverage(e: &mut Shot, coverage: &str) -> Result<(), String> {
