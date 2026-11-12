@@ -48,6 +48,20 @@ Named right when found (retrained step, lower / higher sensitivity): porosity 67
 undercut 67 / 74%, lack of penetration 59 / 60%, lack of fusion 53 / 54%, slag 30 / 32%. Slag is still mostly
 called porosity; the outline-only step named it better (47%) but named porosity far worse (34%).
 
+## Position and shape (`stage2d.py`)
+The study material places each indication across the weld (lack of penetration central, undercut at the edge)
+and SWRD agrees (83% of lack-of-penetration outlines in the centre third; undercut 46% in the outer third).
+Feeding the naming step the distance from the weld centre, length-to-width, direction and relative size made
+almost no difference on held-out finder regions: overall 77% → 78%, lack of penetration 39% → 42%, crack
+65% → 68%, slag 25% both ways.
+
+## Owner feedback on CR plates (2026-11-12)
+Every region the pipeline flagged in the weld band of the owner's five plates was a false call: "porosity" was
+bead ripple, "lack of fusion" was the density change between passes; real lack of fusion or penetration would
+be much darker. Cause on our side: `lnorm` and the crop standardisation stretched every patch to the same
+spread, discarding how dark an indication really is. `NORM_K` keeps real contrast and `CR_NEG` adds the flagged
+spots as not-a-defect examples (round 4).
+
 ## What did not work
 - A patch classifier trained on RIAWELC scored 88% on its own held-out radiographs but flagged every no-defect
   reference card and most lead letters, numbers and film edges on the owner's CR plates.

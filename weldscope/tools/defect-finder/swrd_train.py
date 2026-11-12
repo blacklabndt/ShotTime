@@ -6,9 +6,23 @@ SP=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAMES=['none','porosity','slag','undercut','lack_of_penetration','lack_of_fusion','crack']
 EN={'气孔':1,'夹渣':2,'咬边':3,'未焊透':4,'未熔合':5,'裂纹':6}
 FALSE='伪缺陷'; STRIDE=8; CROP=256
+NORM_K=float(os.environ.get('NORM_K','0'))   # >0: keep real contrast (grey levels below the surroundings / K) instead of stretching every patch to the same spread
 def lnorm(a):
-    a=a.astype(np.float32); m=cv2.GaussianBlur(a,(0,0),20); v=cv2.GaussianBlur((a-m)**2,(0,0),20)
+    a=a.astype(np.float32); m=cv2.GaussianBlur(a,(0,0),20)
+    if NORM_K>0: return np.clip((a-m)/NORM_K,-6,6)
+    v=cv2.GaussianBlur((a-m)**2,(0,0),20)
     return np.clip((a-m)/(np.sqrt(v)+2.0),-4,4)
+def cr_negatives(names):
+    """The owner's CR pieces as extra training films: everything the earlier pipeline flagged in the weld band was
+    judged by the owner to be bead ripple or pass-to-pass density change, so those spots are 'not a defect'."""
+    import glob,pickle
+    flags=pickle.load(open(SP+'/ml/cr_flags.pkl','rb')); out=[]
+    for n in names:
+        for f in sorted(glob.glob(SP+'/crpieces/%s*.npy'%n)):
+            key=os.path.basename(f)[:-4]; a=np.load(f).astype(np.float32); lo,hi=np.percentile(a,[0.5,99.5]); img=(255-np.clip((a-lo)/(hi-lo+1e-6),0,1)*255).astype(np.uint8)
+            objs=[(0,np.array(b[:2],np.float32),np.array(b[2:4],np.float32)) for b in flags.get(key,[])]
+            out.append(dict(key='CR_'+key,film='CR_'+key,img=img,lab=np.zeros(img.shape,np.uint8),objs=objs,welds=[]))
+    return out
 class Net(nn.Module):
     def __init__(s,n=len(NAMES),w=(32,64,128,192)):
         super().__init__()
@@ -34,7 +48,8 @@ def load(limit=None,only=None):
             if len(p)<3: continue
             if c is None: objs.append((0,p.min(0),p.max(0))); continue
             cv2.fillPoly(lab,[p],c); cv2.polylines(lab,[p],True,c,2); objs.append((c,p.min(0),p.max(0)))
-        D.append(dict(key=key,film=film_id(key),img=img,lab=lab,objs=objs))
+        welds=[np.array(s_['points'],np.float32)*0.5 for s_ in j['shapes'] if s_['label']=='焊缝' and len(s_['points'])>=3]
+        D.append(dict(key=key,film=film_id(key),img=img,lab=lab,objs=objs,welds=welds))
     return D
 def cells(lab):  # the highest-numbered class present in each cell
     t=torch.from_numpy(lab)[None,None].float(); return F.max_pool2d(t,STRIDE,STRIDE)[0,0].long()
@@ -84,8 +99,13 @@ if __name__=='__main__':
     torch.manual_seed(0); random.seed(0); np.random.seed(0); torch.set_num_threads(4); t0=time.time()
     D=load(); import hashlib; films=sorted(set(d['film'] for d in D)); test_f=set(f for f in films if int(hashlib.md5(f.encode()).hexdigest(),16)%100<15)   # fixed per film, so later rounds keep the same test films
     tr=[d for d in D if d['film'] not in test_f]; te=[d for d in D if d['film'] in test_f]
+    crtest=[]
+    if os.environ.get('CR_NEG'):
+        cr=cr_negatives(['027937c4','60f16d5d','e653f48a']); crtest=cr_negatives(['8d183613']); print('CR pieces added as not-a-defect examples:',len(cr),'with',sum(len(d['objs']) for d in cr),'flagged spots',flush=True)
+        tr+=cr
     cnt=collections.Counter(o[0] for d in tr for o in d['objs']); print('films',len(D),'train',len(tr),'test',len(te),'train outlines',{(NAMES[k] if k else 'false'):v for k,v in sorted(cnt.items())},round(time.time()-t0),'s',flush=True)
     byc={c:[d for d in tr if any(o[0]==c for o in d['objs'])] for c in range(0,len(NAMES))}
+    crpool=[d for d in tr if d['key'].startswith('CR_')]
     net=Net()
     if init: net.load_state_dict(torch.load(init,weights_only=False)['net'])
     opt=torch.optim.AdamW(net.parameters(),1e-3,weight_decay=1e-4); sched=torch.optim.lr_scheduler.OneCycleLR(opt,3e-3 if not init else 1e-3,total_steps=steps)
@@ -94,7 +114,9 @@ if __name__=='__main__':
         xs=[];ys=[]
         for b in range(B):
             c=random.choice([None,0,1,2,3,4,5,6,2,3,4,5,6]); pool=byc.get(c) if c is not None else tr
-            d=random.choice(pool if pool else tr); x,y=sample(d,c); xs.append(x); ys.append(y)
+            if crpool and b<3: d=random.choice(crpool); c=0 if random.random()<0.7 else None    # a steady share of the owner's plates in every batch
+            else: d=random.choice(pool if pool else tr)
+            x,y=sample(d,c); xs.append(x); ys.append(y)
         loss=F.cross_entropy(net(torch.from_numpy(np.stack(xs))[:,None]),torch.stack(ys),weight=w)
         opt.zero_grad(); loss.backward(); opt.step(); sched.step(); run=0.98*run+0.02*loss.item() if st else loss.item()
         if st%200==199: print('step',st+1,'loss %.3f'%run,round(time.time()-t0),'s',flush=True); torch.save({'net':net.state_dict(),'test_films':sorted(test_f)},SP+'/ml/swrd_%s.pt'%tag)
@@ -105,3 +127,5 @@ if __name__=='__main__':
         for c in range(1,len(NAMES)):
             if tot[c]: print('  %-20s outlined %5d  found %3.0f%%  of those, right type %3.0f%%'%(NAMES[c],tot[c],100*found[c]/tot[c],100*right[c]/max(1,found[c])))
         print('  all defects found %.0f%%; false alarms %.1f per film (%d films)'%(100*sum(found.values())/max(1,sum(tot.values())),fa/max(1,len(te)),len(te)))
+        for d in crtest:
+            p=predict(net,d['img']); n_,_=cv2.connectedComponents(((1-p[0])>thr).astype(np.uint8),connectivity=8); print('  held-out CR piece',d['key'],': regions flagged on the whole piece',n_-1)
