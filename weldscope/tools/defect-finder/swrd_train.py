@@ -16,12 +16,13 @@ class Net(nn.Module):
         s.f=nn.Sequential(blk(1,w[0],2),blk(w[0],w[1],2),blk(w[1],w[2],2),blk(w[2],w[3],1,2),nn.Dropout2d(0.1)); s.h=nn.Conv2d(w[3],n,1)
     def forward(s,x): return s.h(s.f(x))
 def film_id(key): return re.sub(r'^[LT]_\d_[A-Z]_','',key)
-def load(limit=None):
+def load(limit=None,only=None):
     J=pickle.load(open(SP+'/swrd/jsons.pkl','rb')); JJ={k.split('crop_weld_jsons/')[1].rsplit('.',1)[0].replace('/','_'):v for k,v in J.items()}
     D=[]
     for f in sorted(glob.glob(SP+'/swrd/img/*.png'))[:limit]:
         key=os.path.basename(f)[:-4]; j=JJ.get(key)
         if j is None: continue
+        if only is not None and not only(film_id(key)): continue
         img=cv2.imread(f,0)
         if img is None or min(img.shape)<64: continue
         lab=np.zeros(img.shape,np.uint8); objs=[]

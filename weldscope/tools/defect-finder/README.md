@@ -32,6 +32,22 @@ Round 3 at the higher sensitivity: 91% found, 8.5 false alarms per film. Right t
 86%, undercut 76%, lack of penetration 74%, lack of fusion 69%, porosity 62%, slag 34%.
 Stage 2 (given the exact outline): slag 42%, porosity 77%, crack 77%, artefacts rejected 84%.
 
+## Finder and naming step together (644 held-out films)
+`e2e.py` joins them: finder regions, each named or thrown out by the close-crop step. `stage2b.py` retrains the
+naming step on the regions the finder actually produces on the training films (merged pores, loose boxes and
+the finder's own false alarms as not-a-defect), which is what made the pair work.
+
+| Setting | Found | False alarms per film |
+|---|---|---|
+| Finder alone, lower sensitivity | 82% | 2.5 |
+| + naming step trained on outlines only | 85% | 2.1 |
+| + naming step retrained on finder regions, lower sensitivity | 84% | 0.9 |
+| + the same, higher sensitivity | 91% | 2.2 |
+
+Named right when found (retrained step, lower / higher sensitivity): porosity 67 / 54%, crack 77 / 81%,
+undercut 67 / 74%, lack of penetration 59 / 60%, lack of fusion 53 / 54%, slag 30 / 32%. Slag is still mostly
+called porosity; the outline-only step named it better (47%) but named porosity far worse (34%).
+
 ## What did not work
 - A patch classifier trained on RIAWELC scored 88% on its own held-out radiographs but flagged every no-defect
   reference card and most lead letters, numbers and film edges on the owner's CR plates.
