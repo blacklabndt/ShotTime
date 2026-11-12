@@ -16,6 +16,8 @@ The opened files are never changed: every save writes a new file.
   - `shots.rs`: metadata edit record, batch edits, weld grouping.
   - `copy.rs`: building saved copies.
   - `overlay.rs`, `export.rs`, `sample.rs`.
+  - `markers.rs`: location numbers (coverage).
+  - `indications.rs`: possible-indication marks (see below).
 - `app/` (`WeldScope.exe`) is the interface:
   - `app.rs`: state, background jobs, undo, saving.
   - `viewer.rs`, `panels.rs`, `organize.rs`.
@@ -26,6 +28,7 @@ The opened files are never changed: every save writes a new file.
   - `make-notices.py`: `THIRD-PARTY-NOTICES.txt`.
   - `make-parity-fixtures.cjs`: records the prototype's answers for the parity tests.
   - `digit-templates/make.py`: renders the digit templates used to read location numbers.
+  - `defect-finder/`: the research behind the possible-indication marks, `export_weights.py` and `make_fixture.py`.
 
 ## Rules carried over from the prototype (owner-confirmed with INDUSTREX 7.2.1)
 
@@ -96,10 +99,40 @@ The opened files are never changed: every save writes a new file.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 
+## Possible indications (WeldScope only, not in the prototype)
+
+The owner asked for an overlay that shows possible indications in the weld band and leaves the call to the
+technician. `core/src/indications.rs` is a Rust port of the research code in `tools/defect-finder` (read its
+README first): a finder network lists candidate spots, a second network scores a close crop of each, the weld
+band finder keeps what lies in the band, and the list is ranked by finder peak x "is an indication" score.
+
+- Image tab > Possible indications > Find possible indications. Marks are numbered boxes, strongest = 1, with the
+  weld band drawn as thin lines (green = sure, amber = unsure, where the whole film is searched). A sensitivity
+  slider (1 to 5, remembered) sets how far down the ranked list is shown; M or the toolbar button hides the marks.
+  Picking a list entry brings that spot to the middle.
+- Display only. Marks are never written to the file, never burned into pixels and not drawn on exported pictures.
+  They are cleared when the image changes.
+- Never describe it as measuring, sizing, accepting or rejecting. The type shown is a guess (slag is often named
+  porosity). It misses indications and marks things that are not indications; on reference films sensitivity 3
+  found 93 % of marked indications with about 5 other marks per film. Recall on the owner's kind of CR plate has
+  not been measured.
+- It works on stored pixels, not the EDGE-style view, and is meant for cropped pieces. On whole plates with empty
+  area the weld band is often unsure.
+- The trained weights are not in the repository. WeldScope reads `indication-models.bin` from the folder of the
+  program (or the path in `WELDSCOPE_INDICATION_MODELS`); without it the button is disabled and says where the
+  file belongs. Make the file with `tools/defect-finder/export_weights.py`; `tools/build-windows.sh` packs it
+  when `models/indication-models.bin` exists (git-ignored). The weights were trained on the SWRD reference set,
+  which the owner obtained for research and education; check its licence before any wider distribution.
+- `core/tests/indications.rs` checks the port against the research code with tiny random networks on a synthetic
+  image (`make_fixture.py`), and the band finder on synthetic plates. With the real weights the port gave the same
+  142 candidates as the research code on one owner piece (scores within 0.03).
+- Pixel spacings outside 0.08 to 0.125 mm are resampled to 0.1 mm first. About 7 s for a cropped piece and 15 s
+  for a whole plate on four cores.
+
 ## Tests
 
 ```sh
-cargo test --release -p weldscope-core                      # 22 tests
+cargo test --release -p weldscope-core                      # 35 tests
 DICONDE_REAL_DIR=/path/to/dcm cargo test --release real_files -- --nocapture
 ```
 

@@ -114,9 +114,11 @@ pub struct Prefs {
     pub output_dir: String,
     /// Values typed before, per field, offered as a pick-list.
     pub history: BTreeMap<String, Vec<String>>,
+    /// Sensitivity of the possible-indication marks, 1 (fewest) to 5 (most).
+    pub ind_level: u8,
 }
 impl Default for Prefs {
-    fn default() -> Self { Prefs { show_files: true, show_tools: true, tab: Tab::Metadata, overlay: OverlaySettings::default(), templates: BTreeMap::new(), group_tag: 0x0008103E, last_folder: String::new(), output_dir: String::new(), history: BTreeMap::new() } }
+    fn default() -> Self { Prefs { show_files: true, show_tools: true, tab: Tab::Metadata, overlay: OverlaySettings::default(), templates: BTreeMap::new(), group_tag: 0x0008103E, last_folder: String::new(), output_dir: String::new(), history: BTreeMap::new(), ind_level: 3 } }
 }
 
 /// Settings of the tool panels (this session).
@@ -184,6 +186,11 @@ pub struct App {
     pub raw_win: Option<Win>,
     pub raw_auto_width: Option<f64>,
     pub scratches: Vec<Scratch>,
+    /// Possible indications on the image shown (display only), whether they are drawn, and the one picked in the list.
+    pub ind: Option<weldscope_core::indications::Found>,
+    pub ind_show: bool,
+    pub ind_sel: Option<usize>,
+    pub ind_models: Option<Arc<weldscope_core::indications::Models>>,
     pub compare: bool,
     pub pieces: Option<PiecesDialog>,
     pub last_saved: Option<PathBuf>,
@@ -251,7 +258,7 @@ impl App {
         let (cov_tx, cov_rx) = channel();
         let mut app = App {
             entries: vec![], folder: String::new(), cur: None, next_id: 1, mode: Mode::Edit, prefs, tool: Tool::Pan, ts: ToolSettings::default(), view: View::default(),
-            view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![],
+            view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![], ind: None, ind_show: true, ind_sel: None, ind_models: None,
             compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, coverage: None, job_dlg: None, progress: Default::default(), rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0, cov_tx, cov_rx,
             meta: MetaUi::default(), org: OrgState::default(), dialog: None, allow_close: false, drag: None, probe: String::new(), edge_pending: false,
         };
@@ -400,7 +407,7 @@ impl App {
         if let Some(e) = self.cur_mut() {
             if e.work.ops.is_empty() && !e.work.undo.iter().chain(&e.work.redo).any(|s| matches!(s, Step::Image { .. })) { e.work.img = None; e.work.orig_img = None; e.work.loaded = false; }
         }
-        self.edge.on = false; self.edge_cache = None; self.raw_win = None; self.raw_auto_width = None; self.scratches.clear(); self.compare = false; self.drag = None;
+        self.edge.on = false; self.edge_cache = None; self.raw_win = None; self.raw_auto_width = None; self.scratches.clear(); self.ind = None; self.ind_sel = None; self.compare = false; self.drag = None;
         self.meta.edits.clear(); self.meta.errors.clear();
     }
 
@@ -594,7 +601,7 @@ impl App {
         e.work.img = Some(Arc::new(next));
         if e.work.frame >= e.work.img.as_ref().unwrap().frames.len() { e.work.frame = 0; }
         e.refresh_dirty();
-        self.scratches.clear(); self.raw_auto_width = None; self.edge_cache = None;
+        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.raw_auto_width = None; self.edge_cache = None;
         self.trim_undo();
         if geom { self.view.fit_pending = true; }
         self.invalidate();
@@ -605,7 +612,7 @@ impl App {
         let geom = { let cur = self.img(); match (&cur, &st.img) { (Some(a), Some(b)) => a.rows != b.rows || a.cols != b.cols, _ => true } };
         let e = self.cur_mut().unwrap();
         e.work.img = st.img; e.work.ops = st.ops; e.work.turns = st.turns; e.work.crop = st.crop; e.work.regions = st.regions;
-        self.scratches.clear(); self.raw_auto_width = None; self.edge_cache = None;
+        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.raw_auto_width = None; self.edge_cache = None;
         if geom { self.view.fit_pending = true; }
         self.invalidate(); self.sync_crop_inputs();
         if self.edge.on { self.update_edge(false); }
@@ -804,6 +811,54 @@ impl App {
                 app.toast(format!("{text}. Hold to compare shows the difference; Undo is available."));
             })
         });
+    }
+    /// Where the indication model file is looked for: beside the program (or WELDSCOPE_INDICATION_MODELS).
+    pub fn indication_model_path() -> PathBuf {
+        if let Ok(p) = std::env::var("WELDSCOPE_INDICATION_MODELS") { return PathBuf::from(p); }
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("indication-models.bin"))).unwrap_or_else(|| PathBuf::from("indication-models.bin"))
+    }
+    /// Lists possible indications in the weld band of the image shown. Display only: nothing is written anywhere.
+    pub fn find_indications(&mut self) {
+        let Some((img, f)) = self.frame_data() else { return };
+        let models = match &self.ind_models {
+            Some(m) => m.clone(),
+            None => {
+                let path = Self::indication_model_path();
+                let loaded = std::fs::read(&path).map_err(|_| format!("The indication model file was not found. It should be here: {}", path.display())).and_then(|b| weldscope_core::indications::load_models(&b));
+                match loaded { Ok(m) => { let m = Arc::new(m); self.ind_models = Some(m.clone()); m } Err(e) => { self.error(e); return; } }
+            }
+        };
+        let px = self.cur().and_then(|e| e.shot.file.ds.number(0x00181164).or_else(|| e.shot.file.ds.number(0x00280030))).filter(|v| *v > 0.0).unwrap_or(0.1);
+        let progress = self.progress.clone();
+        self.run("Looking for possible indications…", move || {
+            let found = weldscope_core::indications::find(&models, &img.frames[f], img.cols, img.rows, img.padding, px, &|p| { *progress.lock().unwrap() = format!("{:.0}%", p * 100.0); });
+            progress.lock().unwrap().clear();
+            Box::new(move |app: &mut App, _: &egui::Context| {
+                if !app.img().map_or(false, |cur| Arc::ptr_eq(&cur, &img)) { return; } // the image changed meanwhile
+                let cut = weldscope_core::indications::CUTS[(app.prefs.ind_level.clamp(1, 5) - 1) as usize];
+                let (n, all) = (found.items.iter().filter(|i| i.score > cut).count(), found.items.len());
+                let sure = found.bands.films.iter().filter(|b| b.sure).count();
+                let band = if found.bands.films.is_empty() || sure == found.bands.films.len() { "" } else { " The weld band was not clear on every film, so the whole film was searched there." };
+                app.ind = Some(found); app.ind_sel = None; app.ind_show = true;
+                app.toast(if all == 0 { "No possible indications listed. That is not a finding: read the weld as usual.".to_string() } else { format!("{n} possible indication{} marked for you to check.{band}", if n == 1 { "" } else { "s" }) });
+            })
+        });
+    }
+    /// Possible indications above the chosen sensitivity, strongest first.
+    pub fn indications_shown(&self) -> Vec<(usize, weldscope_core::indications::Indication)> {
+        let cut = weldscope_core::indications::CUTS[(self.prefs.ind_level.clamp(1, 5) - 1) as usize];
+        self.ind.as_ref().map(|f| f.items.iter().cloned().enumerate().filter(|(_, i)| i.score > cut).collect()).unwrap_or_default()
+    }
+    /// Brings one possible indication to the middle of the viewer.
+    pub fn show_indication(&mut self, n: usize) {
+        let Some(it) = self.ind.as_ref().and_then(|f| f.items.get(n)).cloned() else { return };
+        let Some(img) = self.img() else { return };
+        self.ind_sel = Some(n); self.ind_show = true;
+        if self.view.zoom < 0.75 { self.view.zoom = 1.0; }
+        let (vx, vy) = im::to_view((it.x0 + it.x1) / 2.0, (it.y0 + it.y1) / 2.0, img.cols as f64, img.rows as f64, self.view_rot);
+        let c = self.view.canvas.size();
+        self.view.off = egui::Vec2::new(c.x / 2.0 - vx as f32 * self.view.zoom, c.y / 2.0 - vy as f32 * self.view.zoom);
+        self.invalidate();
     }
     pub fn find_scratches(&mut self) {
         let Some((img, f)) = self.frame_data() else { return };
@@ -1421,6 +1476,7 @@ impl eframe::App for App {
                 if key(egui::Key::R) { self.view_rot = (self.view_rot + 90) % 360; self.view.fit_pending = true; }
                 if key(egui::Key::I) { self.invert_view = !self.invert_view; self.invalidate(); }
                 if key(egui::Key::O) { self.prefs.overlay.enabled = !self.prefs.overlay.enabled; }
+                if key(egui::Key::M) && self.ind.is_some() { self.ind_show = !self.ind_show; }
             }
         }
         match self.mode {
@@ -1559,7 +1615,7 @@ impl App {
             egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
                 egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
                     for (k, t) in [("Mouse wheel", "Zoom"), ("Right-drag", "Brightness and contrast (window/level), with any tool; hold Shift for finer steps"), ("Middle-drag", "Move the image, with any tool"), ("Double-click", "Fit the image"),
-                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"),
+                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"), ("M", "Possible-indication marks on/off"),
                         ("Ctrl+S", "Save as new file"), ("Ctrl+Z / Ctrl+Y", "Undo / redo"), ("Ctrl+O", "Add files")] {
                         ui.label(RichText::new(k).strong()); ui.label(t); ui.end_row();
                     }

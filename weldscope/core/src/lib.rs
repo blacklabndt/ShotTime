@@ -10,3 +10,4 @@ pub mod shots;
 pub mod copy;
 pub mod sample;
 pub mod markers;
+pub mod indications;

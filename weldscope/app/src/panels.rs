@@ -336,6 +336,37 @@ fn image_tab(app: &mut App, ui: &mut egui::Ui) {
         });
     }
 
+    section(ui, "Possible indications");
+    note(ui, "Marks spots inside the weld band for you to look at, strongest first. It does not measure, accept or reject anything; it can miss indications and it marks things that are not indications. Display only: never written to the file or to exported pictures.");
+    let have_model = app.ind_models.is_some() || App::indication_model_path().is_file();
+    if !have_model { ui.label(RichText::new(format!("The indication model file is missing. It should be here: {}", App::indication_model_path().display())).color(BAD).small()); }
+    ui.horizontal_wrapped(|ui| {
+        if ui.add_enabled(have_model, egui::Button::new("Find possible indications")).on_hover_text("Works best on a cropped piece. Takes a few seconds for a piece and longer for a whole plate.").clicked() { app.find_indications(); }
+        if app.ind.is_some() {
+            ui.checkbox(&mut app.ind_show, "Show marks").on_hover_text("M");
+            if ui.button("Clear").clicked() { app.ind = None; app.ind_sel = None; }
+        }
+    });
+    if app.ind.is_some() {
+        let mut lv = app.prefs.ind_level.clamp(1, 5);
+        ui.add(egui::Slider::new(&mut lv, 1..=5).text("sensitivity")).on_hover_text("1 marks only the strongest spots; 5 marks faint ones too, with many more that are not indications.");
+        if lv != app.prefs.ind_level { app.prefs.ind_level = lv; app.ind_sel = None; }
+        let shown = app.indications_shown();
+        let f = app.ind.as_ref().unwrap();
+        let (films, sure) = (f.bands.films.len(), f.bands.films.iter().filter(|b| b.sure).count());
+        note(ui, &format!("{} marked of {} candidates.{}{}", shown.len(), f.items.len(),
+            if films == 0 { String::new() } else if sure == films { " Weld band found (green lines).".to_string() } else { format!(" Weld band clear on {sure} of {films} film{}; the whole film is searched where it is not (amber lines).", if films == 1 { "" } else { "s" }) },
+            if f.limited { " Only the strongest candidates were kept on this large image." } else { "" }));
+        let mut go = None;
+        egui::ScrollArea::vertical().id_salt("ind_list").max_height(170.0).min_scrolled_height(130.0).show(ui, |ui| {
+            for (rank, (n, it)) in shown.iter().enumerate() {
+                let text = format!("{} · {}? · {:.2}", rank + 1, weldscope_core::indications::NAMES.get(it.class).copied().unwrap_or(""), it.score);
+                if ui.selectable_label(app.ind_sel == Some(*n), text).on_hover_text("Show this spot. The type is a guess; the number is the model's score, not a size.").clicked() { go = Some(*n); }
+            }
+        });
+        if let Some(n) = go { app.show_indication(n); }
+    }
+
     section(ui, "Saving");
     let can = img.bits_allocated <= 16;
     ui.add_enabled_ui(can, |ui| {

@@ -11,6 +11,8 @@ rm -rf dist/WeldScope && mkdir -p dist/WeldScope
 cp target/x86_64-pc-windows-gnu/release/WeldScope.exe dist/WeldScope/
 cp README-Windows.txt dist/WeldScope/README.txt
 cp THIRD-PARTY-NOTICES.txt dist/WeldScope/
+# Trained weights for the possible-indication marks: never in the repository; packed only when present.
+if [ -f models/indication-models.bin ]; then cp models/indication-models.bin dist/WeldScope/; else echo "note: models/indication-models.bin not found; the indication marks will be disabled in this build"; fi
 python3 - <<'PY'
 import zipfile, os
 with zipfile.ZipFile("dist/WeldScope-Windows.zip", "w", zipfile.ZIP_DEFLATED) as z:

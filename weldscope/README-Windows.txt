@@ -29,6 +29,12 @@ Editing
 - Image tab: window/level, EDGE-style enhancement (an approximation for viewing; not INDUSTREX's EDGE),
   rotate/flip, noise reduction, bad pixels, and scratch repair (the repaired line flashes green and the number
   of changed pixels is shown).
+- Image tab > Possible indications: marks spots inside the weld band for you to look at, numbered with the
+  strongest first. Use the sensitivity slider to see fewer or more; click an entry in the list to go to it;
+  press M to hide or show the marks. It is an aid for the interpreter only: it does not measure, accept or
+  reject anything, it can miss indications, and it marks things that are not indications. The type it shows is
+  a guess. Nothing is written to the file or to exported pictures. Best used on a cropped piece. It needs the
+  file indication-models.bin in the same folder as WeldScope.exe.
 - Mouse: wheel zooms; right-drag changes brightness and contrast with any tool (hold Shift for finer steps);
   middle-drag moves the image. The − and + buttons beside Level and Width make small steps.
 - The ? button (top right) lists all shortcuts.

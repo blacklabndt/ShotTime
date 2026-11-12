@@ -114,6 +114,7 @@ fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     if f != app.cur().unwrap().work.frame { app.cur_mut().unwrap().work.frame = f; app.edge_cache = None; app.raw_auto_width = None; app.invalidate(); if app.edge.on { app.update_edge(false); } }
                 }
             }
+            if app.ind.is_some() { if ui.selectable_label(app.ind_show, "Indication marks").on_hover_text("Show or hide the possible-indication marks (M). Display only; for the interpreter to check, not an acceptance decision.").clicked() { app.ind_show = !app.ind_show; } }
             if app.edge.on { ui.label(RichText::new("EDGE-style view").color(ACCENT)).on_hover_text("Display only until Apply to pixels. An approximation, not INDUSTREX's EDGE."); }
         });
     });
@@ -181,6 +182,24 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         painter.line_segment([a, b], Stroke::new(2.0_f32, Color32::from_rgb(0, 220, 255)));
         painter.text(a + Vec2::new(4.0, 2.0), egui::Align2::LEFT_TOP, format!("S{}", i + 1), egui::FontId::proportional(13.0), Color32::from_rgb(0, 220, 255));
     }
+    // possible indications (display only): the weld band and a numbered box per candidate, strongest = 1
+    if app.ind_show { if let Some(f) = &app.ind {
+        for (line, sure) in f.bands.outlines() {
+            let pts: Vec<Pos2> = line.iter().map(|(x, y)| xf.to_screen(*x, *y)).collect();
+            painter.add(egui::Shape::line(pts, Stroke::new(1.0_f32, if sure { Color32::from_rgba_unmultiplied(90, 230, 120, 150) } else { Color32::from_rgba_unmultiplied(255, 180, 60, 150) })));
+        }
+        let cuts = weldscope_core::indications::CUTS;
+        for (rank, (n, it)) in app.indications_shown().iter().enumerate() {
+            let col = if it.score > cuts[1] { Color32::from_rgb(255, 70, 70) } else if it.score > cuts[2] { Color32::from_rgb(255, 160, 40) } else { Color32::from_rgb(240, 230, 70) };
+            let r = ERect::from_two_pos(xf.to_screen(it.x0, it.y0), xf.to_screen(it.x1, it.y1)).expand(4.0);
+            let picked = app.ind_sel == Some(*n);
+            if picked { painter.rect_stroke(r.expand(3.0), 2.0, Stroke::new(2.0_f32, Color32::WHITE)); }
+            painter.rect_stroke(r, 2.0, Stroke::new(if picked { 2.5_f32 } else { 1.5_f32 }, col));
+            let label = (rank + 1).to_string();
+            for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] { painter.text(r.left_top() + Vec2::new(dx, dy - 2.0), egui::Align2::LEFT_BOTTOM, &label, egui::FontId::proportional(13.0), Color32::BLACK); }
+            painter.text(r.left_top() + Vec2::new(0.0, -2.0), egui::Align2::LEFT_BOTTOM, &label, egui::FontId::proportional(13.0), col);
+        }
+    } }
     // a repaired scratch flashes green for a moment, so it is clear where pixels changed
     if let Some((segs, t)) = &app.flash {
         let age = t.elapsed().as_secs_f32();
