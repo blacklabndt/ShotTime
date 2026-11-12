@@ -113,3 +113,28 @@ Checked by eye only; there is no marked ground truth for the band.
   edges). This says nothing yet about real indications kept; that needs the technicians' marked plates.
 
 Not in WeldScope. Input must be in film sense (weld lighter than the plate beside it).
+
+## Sensitivity retune: ranked candidates (rank.py, froc.py, rank_real.py, 2026-11-12)
+
+The owner asked to be shown the indications and make the call themselves. So no retraining and no single cut-off:
+`rank.candidates` lists every local peak of the round 4 finder map above 0.1 (about 72 per SWRD film), the naming
+step scores each, and candidates are ordered by finder peak x naming-step "is a defect" probability (better than
+either alone). The cut-off is then a reader's sensitivity setting.
+
+Held-out SWRD films (644), found % of marked indications against candidates not on a marked indication per film:
+
+| per film | 0.5 | 1 | 2 | 3 | 5 | 10 | 20 |
+|---|---|---|---|---|---|---|---|
+| found | 76 | 84 | 89 | 91 | 93 | 95 | 97 |
+| cut-off | 0.79 | 0.68 | 0.52 | 0.43 | 0.31 | 0.18 | 0.10 |
+
+At 10 per film: porosity 95, slag 96, undercut 98, lack of penetration 100, lack of fusion 99, crack 96.
+
+Real plates, candidates inside the weld band (band.py), same cut-offs 0.52 / 0.31 / 0.18 / 0.10:
+
+- 144 accepted technician plates with every band sure: mean 0.9 / 3.0 / 6.2 / 12.8 per plate; none on 74 / 55 /
+  21 / 8 % of plates. Whole plate: 7.7 / 24 / 45 / 76, so the band removes most of it.
+- Owner's seven pieces: 0-3 / 0-9 / 3-22 / 7-51 per piece.
+
+Accepted does not mean free of indications (the owner: technicians can under-call), so these counts are a reading
+load, not a false-alarm rate. Recall on real CR indications is still unmeasured.
