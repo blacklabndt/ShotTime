@@ -14,6 +14,15 @@ for i in idx:
         parts=i['path'].split('/'); w=weld_of(parts[-1])
         if w: 
             for d in range(1,len(parts)): media['/'.join(parts[:d])][w].append(i['path'])
+# DICONDE files named by a long ID: the weld number is in the header (Series Description), read when they were fetched
+_mp=SP+'/tech/dcm_meta.jsonl'
+if os.path.exists(_mp):
+    for l in open(_mp):
+        r=json.loads(l)
+        if 'png' not in r or not r.get('series'): continue
+        parts=r['path'].split('/'); w=r['series'].strip().upper()
+        for d in range(1,len(parts)):
+            if r['path'] not in media['/'.join(parts[:d])][w]: media['/'.join(parts[:d])][w].append(r['path'])
 def norm(v): return re.sub(r'\s+',' ',str(v)).strip() if v is not None else ''
 DEF=['S','P','IP','IF','C','IUC','EUC','UC','IC','EP','HL','TI','HB','BT','LOF','LOP','CP','EC','RC']
 def parse(path):

@@ -6,7 +6,7 @@ sys.path.insert(0,os.path.dirname(os.path.abspath(__file__))); import odrive
 SP=os.path.dirname(os.path.dirname(os.path.abspath(__file__))); URL=open(SP+'/tech/link.txt').read().strip(); OUT=SP+'/tech/dcm'; os.makedirs(OUT,exist_ok=True)
 it=[i for i in json.load(open(SP+'/tech/index.json')) if i['path'].lower().endswith('.dcm')]
 s,base=odrive.session(URL); s.get(base,timeout=60); meta_path=SP+'/tech/dcm_meta.jsonl'; done=set()
-if os.path.exists(meta_path): done={json.loads(l)['path'] for l in open(meta_path)}
+if os.path.exists(meta_path): done={r['path'] for r in map(json.loads,open(meta_path)) if 'png' in r}   # failed ones are tried again
 mf=open(meta_path,'a'); t0=time.time(); n=0
 for k,i in enumerate(it):
     if i['path'] in done: continue
