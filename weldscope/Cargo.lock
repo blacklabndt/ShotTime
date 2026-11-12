@@ -3412,6 +3412,7 @@ dependencies = [
  "openjpeg-sys",
  "png 0.17.16",
  "regex",
+ "serde",
  "serde_json",
 ]
 

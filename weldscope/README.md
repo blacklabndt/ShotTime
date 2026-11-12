@@ -18,6 +18,7 @@ The opened files are never changed: every save writes a new file.
   - `overlay.rs`, `export.rs`, `sample.rs`.
   - `markers.rs`: location numbers (coverage).
   - `indications.rs`: possible-indication marks (see below).
+  - `review.rs`: the interpreter's calls on those marks and the review file.
 - `app/` (`WeldScope.exe`) is the interface:
   - `app.rs`: state, background jobs, undo, saving.
   - `viewer.rs`, `panels.rs`, `organize.rs`.
@@ -110,8 +111,18 @@ band finder keeps what lies in the band, and the list is ranked by finder peak x
   weld band drawn as thin lines (green = sure, amber = unsure, where the whole film is searched). A sensitivity
   slider (1 to 5, remembered) sets how far down the ranked list is shown; M or the toolbar button hides the marks.
   Picking a list entry brings that spot to the middle.
-- Display only. Marks are never written to the file, never burned into pixels and not drawn on exported pictures.
-  They are cleared when the image changes.
+- Display only. Marks are never written to the DICONDE file, never burned into pixels and not drawn on exported
+  pictures. They are cleared when the image changes.
+- Marking tool (owner request, 2026-11-12): the interpreter calls each mark Indication (with a type) or Not an
+  indication (buttons, or Y / N on the picked mark, which then moves to the next one), can add an indication the
+  finder missed (Add one it missed: drag a box), and can set the rest to not indications after looking at them.
+  `core/src/review.rs` holds the logic. Calls are saved at once to `WeldScope-indication-review.json` in the
+  folder for new files, keyed by SOP Instance UID, and come back when the file is opened again. A damaged or
+  newer review file is refused, never replaced. Calls can be made only on an image without unsaved pixel
+  changes, because the coordinates belong to a saved file; a copy saved later has a new UID and starts empty.
+  The review file records what a person judged, to measure the finder on real plates and to train it. It is not
+  an acceptance record, and it may hold client weld names: treat it like the job data.
+- Letter shortcuts now work whenever no text field is being typed in (before, a clicked button kept them off).
 - Never describe it as measuring, sizing, accepting or rejecting. The type shown is a guess (slag is often named
   porosity). It misses indications and marks things that are not indications; on reference films sensitivity 3
   found 93 % of marked indications with about 5 other marks per film. Recall on the owner's kind of CR plate has
@@ -123,6 +134,7 @@ band finder keeps what lies in the band, and the list is ranked by finder peak x
   file belongs. Make the file with `tools/defect-finder/export_weights.py`; `tools/build-windows.sh` packs it
   when `models/indication-models.bin` exists (git-ignored). The weights were trained on the SWRD reference set,
   which the owner obtained for research and education; check its licence before any wider distribution.
+- `core/tests/review.rs` covers the review rules and the review file.
 - `core/tests/indications.rs` checks the port against the research code with tiny random networks on a synthetic
   image (`make_fixture.py`), and the band finder on synthetic plates. With the real weights the port gave the same
   142 candidates as the research code on one owner piece (scores within 0.03).
@@ -132,7 +144,7 @@ band finder keeps what lies in the band, and the list is ranked by finder peak x
 ## Tests
 
 ```sh
-cargo test --release -p weldscope-core                      # 35 tests
+cargo test --release -p weldscope-core                      # 40 tests
 DICONDE_REAL_DIR=/path/to/dcm cargo test --release real_files -- --nocapture
 ```
 

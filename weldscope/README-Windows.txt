@@ -35,6 +35,13 @@ Editing
   reject anything, it can miss indications, and it marks things that are not indications. The type it shows is
   a guess. Nothing is written to the file or to exported pictures. Best used on a cropped piece. It needs the
   file indication-models.bin in the same folder as WeldScope.exe.
+- Making your calls: click a mark in the list, then press Indication or Not an indication (or the Y / N keys;
+  WeldScope moves to the next mark). For an indication, pick its type. "Add one it missed" lets you drag a box
+  around an indication that was not marked. When you have looked at every mark, "The other N are not
+  indications" finishes the rest. Your calls are saved straight away in WeldScope-indication-review.json in the
+  folder for new files (never in the DICONDE file) and come back when you open the file again. Save any image
+  changes first: calls are kept for saved files only. The review file is what lets the finder be checked and
+  improved on your own plates; it is not an acceptance record.
 - Mouse: wheel zooms; right-drag changes brightness and contrast with any tool (hold Shift for finer steps);
   middle-drag moves the image. The − and + buttons beside Level and Width make small steps.
 - The ? button (top right) lists all shortcuts.

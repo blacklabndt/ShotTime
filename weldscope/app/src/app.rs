@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use weldscope_core::compat::{self, Check, CheckOptions, Level};
 use weldscope_core::copy::{self, CopyState, PartInfo, SplitOptions};
+use weldscope_core::review::{self as rv, Review, ReviewFile, Verdict};
 use weldscope_core::dicom::{self as d, DicomFile, Image};
 use weldscope_core::imaging::{self as im, Rect, Region, Scratch, Window};
 use weldscope_core::overlay::Layout;
@@ -93,7 +94,7 @@ pub enum Mode { Edit, Organize }
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Tab { Metadata, Image, Crop, Overlay, Changes }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Tool { Pan, Window, Crop, Region, Scratch }
+pub enum Tool { Pan, Window, Crop, Region, Scratch, Mark }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeSettings { pub on: bool, pub gc: f64, pub dc: f64, pub sh: f64, pub nr: f64, pub mm: f64, pub br: f64, pub ds: bool }
@@ -191,6 +192,12 @@ pub struct App {
     pub ind_show: bool,
     pub ind_sel: Option<usize>,
     pub ind_models: Option<Arc<weldscope_core::indications::Models>>,
+    /// The interpreter's review of the marks on the image shown; `ind_sel` indexes its marks. Kept in a review
+    /// file beside the new files, never in the DICONDE file.
+    pub review: Option<Review>,
+    pub review_checked: bool,
+    pub review_store: Option<(PathBuf, ReviewFile)>,
+    pub last_kind: String,
     pub compare: bool,
     pub pieces: Option<PiecesDialog>,
     pub last_saved: Option<PathBuf>,
@@ -258,7 +265,7 @@ impl App {
         let (cov_tx, cov_rx) = channel();
         let mut app = App {
             entries: vec![], folder: String::new(), cur: None, next_id: 1, mode: Mode::Edit, prefs, tool: Tool::Pan, ts: ToolSettings::default(), view: View::default(),
-            view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![], ind: None, ind_show: true, ind_sel: None, ind_models: None,
+            view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![], ind: None, ind_show: true, ind_sel: None, ind_models: None, review: None, review_checked: false, review_store: None, last_kind: "porosity".into(),
             compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, coverage: None, job_dlg: None, progress: Default::default(), rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0, cov_tx, cov_rx,
             meta: MetaUi::default(), org: OrgState::default(), dialog: None, allow_close: false, drag: None, probe: String::new(), edge_pending: false,
         };
@@ -407,7 +414,7 @@ impl App {
         if let Some(e) = self.cur_mut() {
             if e.work.ops.is_empty() && !e.work.undo.iter().chain(&e.work.redo).any(|s| matches!(s, Step::Image { .. })) { e.work.img = None; e.work.orig_img = None; e.work.loaded = false; }
         }
-        self.edge.on = false; self.edge_cache = None; self.raw_win = None; self.raw_auto_width = None; self.scratches.clear(); self.ind = None; self.ind_sel = None; self.compare = false; self.drag = None;
+        self.edge.on = false; self.edge_cache = None; self.raw_win = None; self.raw_auto_width = None; self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.compare = false; self.drag = None;
         self.meta.edits.clear(); self.meta.errors.clear();
     }
 
@@ -601,7 +608,7 @@ impl App {
         e.work.img = Some(Arc::new(next));
         if e.work.frame >= e.work.img.as_ref().unwrap().frames.len() { e.work.frame = 0; }
         e.refresh_dirty();
-        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.raw_auto_width = None; self.edge_cache = None;
+        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.raw_auto_width = None; self.edge_cache = None;
         self.trim_undo();
         if geom { self.view.fit_pending = true; }
         self.invalidate();
@@ -612,7 +619,7 @@ impl App {
         let geom = { let cur = self.img(); match (&cur, &st.img) { (Some(a), Some(b)) => a.rows != b.rows || a.cols != b.cols, _ => true } };
         let e = self.cur_mut().unwrap();
         e.work.img = st.img; e.work.ops = st.ops; e.work.turns = st.turns; e.work.crop = st.crop; e.work.regions = st.regions;
-        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.raw_auto_width = None; self.edge_cache = None;
+        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.raw_auto_width = None; self.edge_cache = None;
         if geom { self.view.fit_pending = true; }
         self.invalidate(); self.sync_crop_inputs();
         if self.edge.on { self.update_edge(false); }
@@ -817,7 +824,7 @@ impl App {
         if let Ok(p) = std::env::var("WELDSCOPE_INDICATION_MODELS") { return PathBuf::from(p); }
         std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("indication-models.bin"))).unwrap_or_else(|| PathBuf::from("indication-models.bin"))
     }
-    /// Lists possible indications in the weld band of the image shown. Display only: nothing is written anywhere.
+    /// Lists possible indications in the weld band of the image shown. Display only: nothing is written to the image.
     pub fn find_indications(&mut self) {
         let Some((img, f)) = self.frame_data() else { return };
         let models = match &self.ind_models {
@@ -835,23 +842,111 @@ impl App {
             progress.lock().unwrap().clear();
             Box::new(move |app: &mut App, _: &egui::Context| {
                 if !app.img().map_or(false, |cur| Arc::ptr_eq(&cur, &img)) { return; } // the image changed meanwhile
-                let cut = weldscope_core::indications::CUTS[(app.prefs.ind_level.clamp(1, 5) - 1) as usize];
-                let (n, all) = (found.items.iter().filter(|i| i.score > cut).count(), found.items.len());
+                app.ensure_review();
+                if app.review.is_none() { app.review = Some(app.new_review()); }
+                let cut = app.cut();
+                let r = app.review.as_mut().unwrap();
+                r.merge_found(&found.items);
+                let (n, all) = (r.shown(cut).len(), found.items.len());
                 let sure = found.bands.films.iter().filter(|b| b.sure).count();
                 let band = if found.bands.films.is_empty() || sure == found.bands.films.len() { "" } else { " The weld band was not clear on every film, so the whole film was searched there." };
                 app.ind = Some(found); app.ind_sel = None; app.ind_show = true;
-                app.toast(if all == 0 { "No possible indications listed. That is not a finding: read the weld as usual.".to_string() } else { format!("{n} possible indication{} marked for you to check.{band}", if n == 1 { "" } else { "s" }) });
+                app.toast(if all == 0 { "No possible indications listed. That is not a finding: read the weld as usual.".to_string() } else { format!("{n} mark{} for you to check.{band}", if n == 1 { "" } else { "s" }) });
             })
         });
     }
-    /// Possible indications above the chosen sensitivity, strongest first.
-    pub fn indications_shown(&self) -> Vec<(usize, weldscope_core::indications::Indication)> {
-        let cut = weldscope_core::indications::CUTS[(self.prefs.ind_level.clamp(1, 5) - 1) as usize];
-        self.ind.as_ref().map(|f| f.items.iter().cloned().enumerate().filter(|(_, i)| i.score > cut).collect()).unwrap_or_default()
+    pub fn cut(&self) -> f32 { weldscope_core::indications::CUTS[(self.prefs.ind_level.clamp(1, 5) - 1) as usize] }
+    /// Marks belong to the pixels of a saved file, so they can be judged only while the image has no unsaved changes.
+    pub fn can_mark(&self) -> bool { self.cur().map_or(false, |e| e.work.ops.is_empty() && e.work.img.is_some() && !e.shot.path.is_empty() && !e.shot.text(0x00080018).is_empty()) }
+    fn new_review(&self) -> Review {
+        let (mut r, px) = (Review::default(), self.cur().and_then(|e| e.shot.file.ds.number(0x00181164).or_else(|| e.shot.file.ds.number(0x00280030))).filter(|v| *v > 0.0).unwrap_or(0.1));
+        if let Some(e) = self.cur() { r.file = e.shot.name.clone(); r.sop = e.shot.text(0x00080018); r.weld = e.shot.text(self.prefs.group_tag); r.px_mm = px; if let Some(i) = &e.work.img { r.cols = i.cols; r.rows = i.rows; } }
+        r
     }
-    /// Brings one possible indication to the middle of the viewer.
+    pub fn review_path(&self) -> Option<PathBuf> { let near = self.cur().map(|e| e.shot.path.clone()).filter(|p| !p.is_empty())?; self.output_dir(&near).map(|d| d.join(rv::FILE_NAME)) }
+    fn review_file(&mut self) -> Result<&mut ReviewFile, String> {
+        let path = self.review_path().ok_or("Marks can be kept only for a file opened from a folder.")?;
+        if self.review_store.as_ref().map_or(true, |(p, _)| *p != path) { let f = rv::load(&path)?; self.review_store = Some((path, f)); }
+        Ok(&mut self.review_store.as_mut().unwrap().1)
+    }
+    /// Brings back the saved review of the file shown, once per file.
+    pub fn ensure_review(&mut self) {
+        if self.review_checked || self.cur().map_or(true, |e| !e.work.loaded) { return; }
+        self.review_checked = true; self.review = None;
+        if !self.can_mark() { return; }
+        let sop = self.cur().map(|e| e.shot.text(0x00080018)).unwrap_or_default();
+        if let Ok(f) = self.review_file() { if let Some(r) = f.reviews.get(&sop) { self.review = Some(r.clone()); } }
+    }
+    pub fn marks_shown(&self) -> Vec<usize> { self.review.as_ref().map(|r| r.shown(self.cut())).unwrap_or_default() }
+    /// Writes the review of the file shown into the review file (or takes it out again when nothing is judged).
+    fn save_review(&mut self) {
+        let Some(r) = self.review.clone() else { return };
+        let (cut, level, stamp) = (self.cut(), self.prefs.ind_level, chrono::Local::now().format("%Y-%m-%d %H:%M").to_string());
+        let first = self.review_path().map_or(false, |p| !p.exists());
+        match self.review_file() {
+            Err(e) => { self.error(e); return; }
+            Ok(f) => {
+                if r.worth_saving() { let mut out = r.for_file(cut); out.sensitivity = level; out.updated = stamp; f.reviews.insert(r.sop.clone(), out); }
+                else if f.reviews.remove(&r.sop).is_none() { return; }
+            }
+        }
+        let (path, file) = self.review_store.clone().unwrap();
+        match rv::save(&path, &file) { Err(e) => self.error(e), Ok(()) => if first { self.toast(format!("Your calls are kept in {} (never in the DICONDE file).", path.display())); } }
+    }
+    fn mark_guard(&mut self) -> bool {
+        if self.can_mark() { return true; }
+        self.error("Marks are kept for saved files only. Save the image changes first, then open the new file and mark it.");
+        false
+    }
+    /// The interpreter's call on one mark; then moves on to the next mark not yet looked at.
+    pub fn judge(&mut self, n: usize, v: Verdict) {
+        if !self.mark_guard() { return; }
+        let last = self.last_kind.clone();
+        let Some(m) = self.review.as_mut().and_then(|r| r.marks.get_mut(n)) else { return };
+        if m.manual && v != Verdict::Indication { return; }
+        m.verdict = v;
+        if v == Verdict::Indication { if m.kind.is_empty() { m.kind = if rv::TYPES.contains(&m.guess.as_str()) { m.guess.clone() } else { last }; } } else { m.kind.clear(); }
+        self.save_review();
+        if v == Verdict::Unreviewed { return; }
+        let shown = self.marks_shown();
+        let at = shown.iter().position(|&i| i == n).unwrap_or(0);
+        let next = shown.iter().cycle().skip(at + 1).take(shown.len()).find(|&&i| self.review.as_ref().map_or(false, |r| r.marks[i].verdict == Verdict::Unreviewed)).copied();
+        if let Some(i) = next { self.show_indication(i); }
+    }
+    pub fn set_kind(&mut self, n: usize, kind: &str) {
+        if !self.mark_guard() { return; }
+        if let Some(m) = self.review.as_mut().and_then(|r| r.marks.get_mut(n)) { m.kind = kind.to_string(); m.verdict = Verdict::Indication; self.last_kind = kind.to_string(); self.save_review(); }
+    }
+    /// An indication the finder missed, drawn by the interpreter.
+    pub fn add_manual(&mut self, r: im::Rect) {
+        if !self.mark_guard() { return; }
+        self.ensure_review();
+        if self.review.is_none() { self.review = Some(self.new_review()); }
+        let kind = self.last_kind.clone();
+        let rev = self.review.as_mut().unwrap();
+        rev.marks.push(rv::Mark { x0: r.x as f64, y0: r.y as f64, x1: (r.x + r.w) as f64, y1: (r.y + r.h) as f64, manual: true, verdict: Verdict::Indication, kind, ..Default::default() });
+        self.ind_sel = Some(rev.marks.len() - 1); self.ind_show = true;
+        self.save_review();
+    }
+    pub fn remove_manual(&mut self, n: usize) {
+        if !self.mark_guard() { return; }
+        if let Some(r) = self.review.as_mut() { if r.marks.get(n).map_or(false, |m| m.manual) { r.marks.remove(n); self.ind_sel = None; self.save_review(); } }
+    }
+    /// Every mark shown and not yet judged becomes "not an indication".
+    pub fn rest_not(&mut self) {
+        if !self.mark_guard() { return; }
+        let shown = self.marks_shown();
+        if let Some(r) = self.review.as_mut() { for i in shown { if r.marks[i].verdict == Verdict::Unreviewed { r.marks[i].verdict = Verdict::NotIndication; } } }
+        self.save_review();
+    }
+    /// Takes the unjudged marks off the screen; calls already made stay.
+    pub fn clear_marks(&mut self) {
+        self.ind = None; self.ind_sel = None;
+        if let Some(r) = self.review.as_mut() { r.marks.retain(|m| m.judged()); if r.marks.is_empty() { self.review = None; } }
+    }
+    /// Brings one mark to the middle of the viewer.
     pub fn show_indication(&mut self, n: usize) {
-        let Some(it) = self.ind.as_ref().and_then(|f| f.items.get(n)).cloned() else { return };
+        let Some(it) = self.review.as_ref().and_then(|r| r.marks.get(n)).cloned() else { return };
         let Some(img) = self.img() else { return };
         self.ind_sel = Some(n); self.ind_show = true;
         if self.view.zoom < 0.75 { self.view.zoom = 1.0; }
@@ -1466,7 +1561,7 @@ impl eframe::App for App {
         self.status_bar(ctx);
         let busy = self.busy() || self.pieces.is_some();
         // single keys (only when not typing)
-        if !busy && self.mode == Mode::Edit && ctx.memory(|m| m.focused().is_none()) && self.dialog.is_none() {
+        if !busy && self.mode == Mode::Edit && !ctx.wants_keyboard_input() && self.dialog.is_none() {
             let key = |k: egui::Key| ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k));
             if key(egui::Key::PageDown) { self.step_file(1); }
             if key(egui::Key::PageUp) { self.step_file(-1); }
@@ -1476,7 +1571,8 @@ impl eframe::App for App {
                 if key(egui::Key::R) { self.view_rot = (self.view_rot + 90) % 360; self.view.fit_pending = true; }
                 if key(egui::Key::I) { self.invert_view = !self.invert_view; self.invalidate(); }
                 if key(egui::Key::O) { self.prefs.overlay.enabled = !self.prefs.overlay.enabled; }
-                if key(egui::Key::M) && self.ind.is_some() { self.ind_show = !self.ind_show; }
+                if key(egui::Key::M) && self.review.is_some() { self.ind_show = !self.ind_show; }
+                if let Some(n) = self.ind_sel { if key(egui::Key::Y) { self.judge(n, Verdict::Indication); } else if key(egui::Key::N) { self.judge(n, Verdict::NotIndication); } }
             }
         }
         match self.mode {
@@ -1615,7 +1711,7 @@ impl App {
             egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
                 egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
                     for (k, t) in [("Mouse wheel", "Zoom"), ("Right-drag", "Brightness and contrast (window/level), with any tool; hold Shift for finer steps"), ("Middle-drag", "Move the image, with any tool"), ("Double-click", "Fit the image"),
-                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"), ("M", "Possible-indication marks on/off"),
+                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"), ("M", "Possible-indication marks on/off"), ("Y / N", "The picked mark is an indication / not an indication"),
                         ("Ctrl+S", "Save as new file"), ("Ctrl+Z / Ctrl+Y", "Undo / redo"), ("Ctrl+O", "Add files")] {
                         ui.label(RichText::new(k).strong()); ui.label(t); ui.end_row();
                     }

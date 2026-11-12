@@ -6,9 +6,10 @@ use eframe::egui::{self, Color32, Pos2, Rect as ERect, RichText, Sense, Stroke, 
 use weldscope_core::dicom as d;
 use weldscope_core::imaging::{self as im, Axis, Rect, Region};
 use weldscope_core::overlay;
+use weldscope_core::review::Verdict;
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum DragKind { Pan, Window(Win), Crop, Region, Scratch }
+pub enum DragKind { Pan, Window(Win), Crop, Region, Scratch, Mark }
 #[derive(Clone, Copy)]
 pub struct Drag { pub kind: DragKind, pub start_img: (f64, f64), pub cur_img: (f64, f64) }
 
@@ -114,7 +115,7 @@ fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     if f != app.cur().unwrap().work.frame { app.cur_mut().unwrap().work.frame = f; app.edge_cache = None; app.raw_auto_width = None; app.invalidate(); if app.edge.on { app.update_edge(false); } }
                 }
             }
-            if app.ind.is_some() { if ui.selectable_label(app.ind_show, "Indication marks").on_hover_text("Show or hide the possible-indication marks (M). Display only; for the interpreter to check, not an acceptance decision.").clicked() { app.ind_show = !app.ind_show; } }
+            if app.review.is_some() { if ui.selectable_label(app.ind_show, "Indication marks").on_hover_text("Show or hide the possible-indication marks (M). Display only; for the interpreter to check, not an acceptance decision.").clicked() { app.ind_show = !app.ind_show; } }
             if app.edge.on { ui.label(RichText::new("EDGE-style view").color(ACCENT)).on_hover_text("Display only until Apply to pixels. An approximation, not INDUSTREX's EDGE."); }
         });
     });
@@ -152,6 +153,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     };
     if app.view.fit_pending || (size_changed && app.view.zoom == 0.0) || app.view.zoom == 0.0 { fit(app); }
     ensure_texture(app, ui);
+    app.ensure_review();
     if app.flash.as_ref().map_or(false, |(_, t)| t.elapsed().as_secs_f32() >= 2.5) { app.flash = None; }
     let xf = Xf { min: rect.min, off: app.view.off, zoom: app.view.zoom, cols: img.cols as f64, rows: img.rows as f64, rot: app.view_rot };
     // the image as a textured quad (view rotation through the texture coordinates)
@@ -182,24 +184,30 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         painter.line_segment([a, b], Stroke::new(2.0_f32, Color32::from_rgb(0, 220, 255)));
         painter.text(a + Vec2::new(4.0, 2.0), egui::Align2::LEFT_TOP, format!("S{}", i + 1), egui::FontId::proportional(13.0), Color32::from_rgb(0, 220, 255));
     }
-    // possible indications (display only): the weld band and a numbered box per candidate, strongest = 1
-    if app.ind_show { if let Some(f) = &app.ind {
-        for (line, sure) in f.bands.outlines() {
+    // possible indications (display only): the weld band and a numbered box per mark, strongest = 1
+    if app.ind_show {
+        if let Some(f) = &app.ind { for (line, sure) in f.bands.outlines() {
             let pts: Vec<Pos2> = line.iter().map(|(x, y)| xf.to_screen(*x, *y)).collect();
             painter.add(egui::Shape::line(pts, Stroke::new(1.0_f32, if sure { Color32::from_rgba_unmultiplied(90, 230, 120, 150) } else { Color32::from_rgba_unmultiplied(255, 180, 60, 150) })));
+        } }
+        if let Some(rv) = &app.review {
+            let cuts = weldscope_core::indications::CUTS;
+            for (rank, n) in app.marks_shown().iter().enumerate() {
+                let it = &rv.marks[*n];
+                let (col, label) = match it.verdict {
+                    Verdict::Indication => (Color32::from_rgb(70, 230, 110), format!("{} {}", rank + 1, it.kind)),
+                    Verdict::NotIndication => (Color32::from_gray(140), format!("{} not", rank + 1)),
+                    Verdict::Unreviewed => (if it.score > cuts[1] { Color32::from_rgb(255, 70, 70) } else if it.score > cuts[2] { Color32::from_rgb(255, 160, 40) } else { Color32::from_rgb(240, 230, 70) }, (rank + 1).to_string()),
+                };
+                let r = ERect::from_two_pos(xf.to_screen(it.x0, it.y0), xf.to_screen(it.x1, it.y1)).expand(4.0);
+                let picked = app.ind_sel == Some(*n);
+                if picked { painter.rect_stroke(r.expand(3.0), 2.0, Stroke::new(2.0_f32, Color32::WHITE)); }
+                painter.rect_stroke(r, 2.0, Stroke::new(if picked || it.verdict == Verdict::Indication { 2.5_f32 } else if it.verdict == Verdict::NotIndication { 1.0_f32 } else { 1.5_f32 }, col));
+                for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] { painter.text(r.left_top() + Vec2::new(dx, dy - 2.0), egui::Align2::LEFT_BOTTOM, &label, egui::FontId::proportional(13.0), Color32::BLACK); }
+                painter.text(r.left_top() + Vec2::new(0.0, -2.0), egui::Align2::LEFT_BOTTOM, &label, egui::FontId::proportional(13.0), col);
+            }
         }
-        let cuts = weldscope_core::indications::CUTS;
-        for (rank, (n, it)) in app.indications_shown().iter().enumerate() {
-            let col = if it.score > cuts[1] { Color32::from_rgb(255, 70, 70) } else if it.score > cuts[2] { Color32::from_rgb(255, 160, 40) } else { Color32::from_rgb(240, 230, 70) };
-            let r = ERect::from_two_pos(xf.to_screen(it.x0, it.y0), xf.to_screen(it.x1, it.y1)).expand(4.0);
-            let picked = app.ind_sel == Some(*n);
-            if picked { painter.rect_stroke(r.expand(3.0), 2.0, Stroke::new(2.0_f32, Color32::WHITE)); }
-            painter.rect_stroke(r, 2.0, Stroke::new(if picked { 2.5_f32 } else { 1.5_f32 }, col));
-            let label = (rank + 1).to_string();
-            for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] { painter.text(r.left_top() + Vec2::new(dx, dy - 2.0), egui::Align2::LEFT_BOTTOM, &label, egui::FontId::proportional(13.0), Color32::BLACK); }
-            painter.text(r.left_top() + Vec2::new(0.0, -2.0), egui::Align2::LEFT_BOTTOM, &label, egui::FontId::proportional(13.0), col);
-        }
-    } }
+    }
     // a repaired scratch flashes green for a moment, so it is clear where pixels changed
     if let Some((segs, t)) = &app.flash {
         let age = t.elapsed().as_secs_f32();
@@ -211,7 +219,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     if let Some(dr) = app.drag {
         match dr.kind {
-            DragKind::Crop | DragKind::Region => { let r = xf.rect(clamp_rect(dr.start_img, dr.cur_img, img.cols, img.rows)); painter.rect_stroke(r, 0.0, Stroke::new(1.5_f32, if dr.kind == DragKind::Crop { ACCENT } else { Color32::from_rgb(120, 200, 255) })); }
+            DragKind::Crop | DragKind::Region | DragKind::Mark => { let r = xf.rect(clamp_rect(dr.start_img, dr.cur_img, img.cols, img.rows)); painter.rect_stroke(r, 0.0, Stroke::new(1.5_f32, if dr.kind == DragKind::Crop { ACCENT } else { Color32::from_rgb(120, 200, 255) })); }
             DragKind::Scratch => { painter.line_segment([xf.to_screen(dr.start_img.0, dr.start_img.1), xf.to_screen(dr.cur_img.0, dr.cur_img.1)], Stroke::new(2.0_f32, BAD)); }
             _ => {}
         }
@@ -286,7 +294,7 @@ fn interact(app: &mut App, ui: &egui::Ui, resp: &egui::Response, xf: &Xf, img: &
         let p = resp.interact_pointer_pos().unwrap_or_default();
         let im_p = xf.to_image(p);
         // Right-drag is always window/level (as in INDUSTREX and most viewers); middle-drag always pans.
-        let kind = if pointer.button_down(egui::PointerButton::Secondary) { DragKind::Window(app.win()) } else if pointer.button_down(egui::PointerButton::Middle) { DragKind::Pan } else { match app.tool { Tool::Pan => DragKind::Pan, Tool::Window => DragKind::Window(app.win()), Tool::Crop => DragKind::Crop, Tool::Region => DragKind::Region, Tool::Scratch => DragKind::Scratch } };
+        let kind = if pointer.button_down(egui::PointerButton::Secondary) { DragKind::Window(app.win()) } else if pointer.button_down(egui::PointerButton::Middle) { DragKind::Pan } else { match app.tool { Tool::Pan => DragKind::Pan, Tool::Window => DragKind::Window(app.win()), Tool::Crop => DragKind::Crop, Tool::Region => DragKind::Region, Tool::Scratch => DragKind::Scratch, Tool::Mark => DragKind::Mark } };
         app.drag = Some(Drag { kind, start_img: im_p, cur_img: im_p });
     }
     if let Some(mut dr) = app.drag {
@@ -316,6 +324,10 @@ fn interact(app: &mut App, ui: &egui::Ui, resp: &egui::Response, xf: &Xf, img: &
                 DragKind::Region => {
                     let r = clamp_rect(dr.start_img, dr.cur_img, cols, rows);
                     if r.w >= 4 && r.h >= 4 { if let Some(e) = app.cur_mut() { let n = e.work.regions.len() + 1; e.work.regions.push(RegionItem { region: Region { rect: r, cuts: vec![] }, label: n.to_string(), tilt: None }); } }
+                }
+                DragKind::Mark => {
+                    let r = clamp_rect(dr.start_img, dr.cur_img, cols, rows);
+                    if r.w >= 3 && r.h >= 3 { app.add_manual(r); }
                 }
                 DragKind::Scratch => {
                     let (a, b) = (dr.start_img, dr.cur_img);
