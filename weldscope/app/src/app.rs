@@ -877,7 +877,7 @@ impl App {
                     if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions = items; }
                     app.sync_crop_inputs();
                     let _ = n;
-                    app.prepare_parts(SplitOptions { straighten: true, fill_slivers: false }, "Straighten & crop to film");
+                    app.prepare_parts(SplitOptions { straighten: true, fill_slivers: false, turns: 0 }, "Straighten & crop to film");
                     return;
                 }
                 match one.unwrap() {
@@ -998,7 +998,7 @@ impl App {
     }
 
     // ---- pieces: preview, then one file each
-    pub fn save_split(&mut self) { let o = SplitOptions { straighten: self.ts.straighten, fill_slivers: self.ts.fill }; self.prepare_parts(o, "Save split files"); }
+    pub fn save_split(&mut self) { let o = SplitOptions { straighten: self.ts.straighten, fill_slivers: self.ts.fill, turns: 0 }; self.prepare_parts(o, "Save split files"); }
     /// One button for the usual job: find the film pieces, straighten and crop each, preview, save one file each.
     pub fn process_plate(&mut self) {
         let Some((img, f)) = self.frame_data() else { return };
@@ -1009,7 +1009,7 @@ impl App {
                 if items.is_empty() { app.error("No film found on this plate. Try Find film pieces with High sensitivity, or draw regions by hand."); return; }
                 if let Some(e) = app.cur_mut() { e.work.crop = None; e.work.regions = items; }
                 app.sync_crop_inputs();
-                app.prepare_parts(SplitOptions { straighten: true, fill_slivers: false }, "Process this plate");
+                app.prepare_parts(SplitOptions { straighten: true, fill_slivers: false, turns: 0 }, "Process this plate");
             })
         });
     }
@@ -1066,6 +1066,7 @@ impl App {
     pub fn save_parts_to(&mut self, dir: PathBuf, split: SplitOptions, regions: Vec<RegionItem>, add_to_list: bool) {
         let Some(i) = self.cur_idx() else { return };
         if regions.is_empty() || self.entries[i].work.img.is_none() { return; }
+        let split = SplitOptions { turns: (self.view_rot / 90) as i32, ..split };   // saved the way it is viewed
         let j2k = self.want_j2k();
         let target = self.ts.label_target;
         let series = d::new_uid();
@@ -1179,7 +1180,7 @@ impl App {
                 let steep = pieces.iter().filter(|p| p.tilt.map_or(false, |t| t.abs() > 5.0)).count();
                 let series = d::new_uid();
                 let j2k = save_j2k && img.bits_allocated <= 16;
-                let job = PieceJob { file: &it.file, orig: &it.orig, img: Some(&img), ops: &[], turns: 0, orig_els: &it.orig_els, j2k, target, series: &series, base: &it.base, dir: &dir, originals: &originals, split: SplitOptions { straighten: true, fill_slivers: false } };
+                let job = PieceJob { file: &it.file, orig: &it.orig, img: Some(&img), ops: &[], turns: 0, orig_els: &it.orig_els, j2k, target, series: &series, base: &it.base, dir: &dir, originals: &originals, split: SplitOptions { straighten: true, fill_slivers: false, turns: (it.rot / 90) as i32 } };
                 let (mut files, mut problems, mut failed) = (0, 0, None);
                 for (k, r) in pieces.iter().enumerate() {
                     match App::write_piece(&job, r, k, pieces.len()) { Ok((p, bad)) => { written.push(p); files += 1; if bad { problems += 1; } } Err(m) => { failed = Some(m); break; } }

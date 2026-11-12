@@ -89,6 +89,10 @@ The opened files are never changed: every save writes a new file.
   per-plate preview. Left out (`job_candidates`): files WeldScope made, plates that already have pieces made
   from them, plates with unsaved image steps; a single film with no empty area round it is skipped. Never
   overwrites; originals untouched. Not in the frozen prototype.
+- **Pieces are stored the way they are viewed:** processed copies drop INDUSTREX's XML (and with it the viewing
+  angle), so a piece cut from a plate viewed at 270° would open on its side. `SplitOptions::turns` turns each
+  saved piece by the plate's view rotation (pixel spacing swapped, the turn recorded in Derivation Description).
+  Applies to every piece save (Process this plate, split, whole job). Not in the frozen prototype.
 - **Batch edits:** every shot is validated before any change.
 - **Saving:** never overwrites originals or existing files (`_2`, `_3` … names).
 

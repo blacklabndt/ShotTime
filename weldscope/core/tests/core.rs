@@ -281,7 +281,7 @@ fn split_parts_are_straightened_numbered_and_pass() {
     let none = shots::OrigEls::new();
     for (i, p) in pieces.iter().enumerate() {
         let part = PartInfo { series: series.clone(), index: i + 1, text: format!("Split part {} of 2", i + 1) };
-        let c = copy::build_copy(&state(&src, &src, Some(&img), &[], 0, &none, true), Some(p), Some(&part), SplitOptions { straighten: true, fill_slivers: false }).unwrap();
+        let c = copy::build_copy(&state(&src, &src, Some(&img), &[], 0, &none, true), Some(p), Some(&part), SplitOptions { straighten: true, fill_slivers: false, turns: 0 }).unwrap();
         let b = d::write(&c.file).unwrap();
         assert_eq!(fails(&compat::check(&b, Some(&src), &CheckOptions { removed: c.removed.clone(), pixels_changed: true, ..Default::default() })), Vec::<String>::new());
         let o = d::parse(&b).unwrap();
@@ -294,7 +294,7 @@ fn split_parts_are_straightened_numbered_and_pass() {
     // fill slivers instead of straightening (uses only the Pixel Padding Value)
     let p = pieces.iter().find(|p| !p.cuts.is_empty()).unwrap();
     let part = PartInfo { series, index: 1, text: "Split part 1 of 2".into() };
-    let c = copy::build_copy(&state(&src, &src, Some(&img), &[], 0, &none, false), Some(p), Some(&part), SplitOptions { straighten: false, fill_slivers: true }).unwrap();
+    let c = copy::build_copy(&state(&src, &src, Some(&img), &[], 0, &none, false), Some(p), Some(&part), SplitOptions { straighten: false, fill_slivers: true, turns: 0 }).unwrap();
     assert!(c.description.contains("Pixel Padding Value"));
     assert!(d::get_image(&c.file).unwrap().frames[0].contains(&0));
 }
@@ -503,4 +503,21 @@ fn real_files() {
     }
     assert!(n > 0, "no .dcm files in {dir}");
     eprintln!("real files: {n} passed");
+}
+
+#[test]
+fn saved_pieces_can_be_turned_to_the_viewing_angle() {
+    let src = d::parse(&fixture("industrex-j2k.dcm")).unwrap();
+    let img = decode(&src);
+    let none = shots::OrigEls::new();
+    let region = Region { rect: Rect { x: 0, y: 0, w: (img.cols / 2) as i64, h: img.rows as i64 }, cuts: vec![] };
+    let part = PartInfo { series: d::new_uid(), index: 1, text: "Split part 1 of 2".into() };
+    let plain = copy::build_copy(&state(&src, &src, Some(&img), &[], 0, &none, false), Some(&region), Some(&part), SplitOptions::default()).unwrap();
+    let turned = copy::build_copy(&state(&src, &src, Some(&img), &[], 0, &none, false), Some(&region), Some(&part), SplitOptions { turns: 3, ..Default::default() }).unwrap();
+    let (a, b) = (d::get_image(&plain.file).unwrap(), d::get_image(&turned.file).unwrap());
+    assert_eq!((b.cols, b.rows), (a.rows, a.cols));
+    assert_eq!(b.frames[0], im::rotate(&a, 3).frames[0]);
+    assert!(turned.description.contains("turned 270° clockwise to the viewing angle") && !plain.description.contains("turned"));
+    let bytes = d::write(&turned.file).unwrap();
+    assert_eq!(fails(&compat::check(&bytes, Some(&src), &CheckOptions { removed: turned.removed.clone(), pixels_changed: true, ..Default::default() })), Vec::<String>::new());
 }

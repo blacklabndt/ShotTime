@@ -26,7 +26,9 @@ pub struct CopyState<'a> {
 #[derive(Clone, Debug)]
 pub struct PartInfo { pub series: String, pub index: usize, pub text: String }
 #[derive(Clone, Copy, Debug, Default)]
-pub struct SplitOptions { pub straighten: bool, pub fill_slivers: bool }
+/// `turns`: quarter turns clockwise applied to each saved piece, so it is stored the way it is viewed (the
+/// INDUSTREX viewing angle is not carried into processed copies, so without this a piece would open on its side).
+pub struct SplitOptions { pub straighten: bool, pub fill_slivers: bool, pub turns: i32 }
 
 pub struct BuiltCopy { pub file: DicomFile, pub removed: Vec<u32>, pub synced: Vec<u32>, pub edited: Vec<u32>, pub pixels_changed: bool, pub description: String }
 
@@ -73,7 +75,12 @@ pub fn build_copy(st: &CopyState, region: Option<&Region>, part: Option<&PartInf
                 }
             }
         }
-        d::set_image(&mut copy, &out, st.turns % 2 != 0).map_err(|e| e.0)?;
+        let piece_turns = if region.is_some() { split.turns.rem_euclid(4) } else { 0 };
+        if piece_turns != 0 {
+            out = im::rotate(&out, piece_turns);
+            if let Some(t) = part_text.as_mut() { *t += format!("; turned {}° clockwise to the viewing angle", piece_turns * 90).as_str(); }
+        }
+        d::set_image(&mut copy, &out, (st.turns + piece_turns) % 2 != 0).map_err(|e| e.0)?;
         copy.transfer_syntax = d::TS_EXPLICIT_LE.into();
         if st.j2k && out.bits_allocated <= 16 { encode_j2k(&mut copy, &out, st.orig)?; }
     }

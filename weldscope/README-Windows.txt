@@ -41,6 +41,7 @@ Process whole job
 - It asks once before starting and shows a summary at the end; there is no preview for each plate. Lines in
   amber in the summary need a look. Plates that already have pieces made from them are left out, so running
   it again only does new plates. Originals are never changed and nothing is overwritten.
+- Each piece is saved turned the way the plate is shown on screen, so it reads left to right when opened.
 
 Organize shots
 - Shots are grouped by weld (Series Description by default), each showing its weld, shot number and date.
