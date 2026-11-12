@@ -62,6 +62,24 @@ be much darker. Cause on our side: `lnorm` and the crop standardisation stretche
 spread, discarding how dark an indication really is. `NORM_K` keeps real contrast and `CR_NEG` adds the flagged
 spots as not-a-defect examples (round 4).
 
+## Round 4: real contrast, and the owner's plates as not-a-defect examples
+`NORM_K=8 CR_NEG=1`. Finder alone on the 644 held-out SWRD films: 80% found at 2.8 false alarms per film (round
+3: 82% at 2.5); 90% at 10.1 (91% at 8.5). Lack of penetration named right 83% (74%). With the naming step
+retrained the same way (`NORM_K=8 FINDER=swrd_r4_keep.pt OUT=stage2b_k.pt stage2b.py`): 82% found at 0.9 false
+alarms per film, 90% at 2.3 — level with round 3 plus its naming step.
+On the owner's CR pieces, weld band only, finder at the higher sensitivity: the held-back piece went from 33
+flagged regions (round 3) to 7, and to 0 at the lower sensitivity; the five pieces used in training went from
+3–47 to 0–4. One held-back plate is thin evidence.
+Note: the CR count printed at the end of `swrd_train.py`'s own log for round 4 was taken with the net in
+training mode and is wrong; the figures above are from a separate run in evaluation mode.
+
+## Technician's job folder (private, not in the repository)
+`odrive.py` / `tech_fetch.py` / `tech_dcm.py` / `tech_reports.py` list and fetch a shared OneDrive folder of real
+jobs: about 1,000 job folders, 2,672 DICONDE files, 22,913 exported JPGs (screen exports, too small to use) and
+939 report workbooks. Reports have one row per weld (RT #, findings columns, accept/reject, remarks such as
+"LOF 12-18"); DICONDE headers carry the weld number in Series Description. In the first 394 workbooks nearly
+every weld is accepted, so the folder is mainly a source of clean welds in the target format.
+
 ## What did not work
 - A patch classifier trained on RIAWELC scored 88% on its own held-out radiographs but flagged every no-defect
   reference card and most lead letters, numbers and film edges on the owner's CR plates.

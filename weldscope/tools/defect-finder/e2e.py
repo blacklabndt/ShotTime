@@ -4,8 +4,8 @@ sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 import swrd_train as S, stage2 as T
 SP=S.SP; is_te=lambda f:int(hashlib.md5(f.encode()).hexdigest(),16)%100<15
 def models():
-    f=S.Net(); f.load_state_dict(torch.load(SP+'/ml/swrd_r3_keep.pt',weights_only=False)['net']); f.eval()
-    n=T.Net2(); n.load_state_dict(torch.load(SP+'/ml/stage2.pt',weights_only=False)['net']); n.eval(); return f,n
+    f=S.Net(); f.load_state_dict(torch.load(SP+'/ml/'+os.environ.get('FINDER','swrd_r3_keep.pt'),weights_only=False)['net']); f.eval()
+    n=T.Net2(); n.load_state_dict(torch.load(SP+'/ml/'+os.environ.get('NAMER','stage2.pt'),weights_only=False)['net']); n.eval(); return f,n
 def detect(f,n,img,thr=0.5,reject=0.5):
     """[(x0,y0,x1,y1,class,prob_defect)] in pixels: finder regions, each named (or thrown out) by the close-crop step."""
     p=S.predict(f,img); hit=((1-p[0])>thr).astype(np.uint8); k,cc,st,_=cv2.connectedComponentsWithStats(hit,connectivity=8); out=[]

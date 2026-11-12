@@ -14,7 +14,9 @@ def crop(img,a,b,aug):
         if random.random()<.5: p=p[::-1]
         if random.random()<.4: p=p+np.random.randn(N,N).astype(np.float32)*random.uniform(.5,5)
         if random.random()<.3: p=cv2.GaussianBlur(p,(0,0),random.uniform(.4,1.2))
-    p=np.ascontiguousarray(p); return np.clip((p-p.mean())/(p.std()+1.5),-4,4)
+    p=np.ascontiguousarray(p)
+    if S.NORM_K>0: return np.clip((p-np.median(p))/S.NORM_K,-6,6)     # keep how dark the indication really is
+    return np.clip((p-p.mean())/(p.std()+1.5),-4,4)
 class Net2(nn.Module):
     def __init__(s,n=7):
         super().__init__()

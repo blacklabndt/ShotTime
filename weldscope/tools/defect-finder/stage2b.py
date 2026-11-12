@@ -15,14 +15,15 @@ def label(b,objs):
     return best[1]
 if __name__=='__main__':
     steps=int(sys.argv[1]); torch.manual_seed(0); random.seed(0); np.random.seed(0); torch.set_num_threads(4); t0=time.time()
-    f,_=E.models(); D=S.load(); tr=[d for d in D if not is_te(d['film'])]; print('train films',len(tr),flush=True)
+    os.environ.setdefault('NAMER','stage2.pt'); f,_=E.models(); D=S.load(); tr=[d for d in D if not is_te(d['film'])]; print('train films',len(tr),flush=True)
     byc=collections.defaultdict(list)
     for k,d in enumerate(tr):
         for b in regions(f,d['img']): byc[label(b,d['objs'])].append((d['img'],(b[0],b[1]),(b[2],b[3])))
         for c,a,e in d['objs']: byc[c].append((d['img'],a,e))
         if k%500==499: print('regions for',k+1,'films',round(time.time()-t0),'s',flush=True)
     print('samples',{T.NAMES[c]:len(v) for c,v in sorted(byc.items())},flush=True)
-    net=T.Net2(); net.load_state_dict(torch.load(SP+'/ml/stage2.pt',weights_only=False)['net'])
+    net=T.Net2(); OUT=SP+'/ml/'+os.environ.get('OUT','stage2b.pt')
+    if S.NORM_K<=0: net.load_state_dict(torch.load(SP+'/ml/stage2.pt',weights_only=False)['net'])
     opt=torch.optim.AdamW(net.parameters(),1e-3,weight_decay=1e-4); sched=torch.optim.lr_scheduler.OneCycleLR(opt,2e-3,total_steps=steps); B=96; cl=list(byc)
     # labels travel with the items: rebuild as (item, class) lists to keep the loop simple
     pool=[(it,c) for c,v in byc.items() for it in v]; idx=collections.defaultdict(list)
@@ -31,8 +32,8 @@ if __name__=='__main__':
         js=[random.choice(idx[random.choice(cl+[1,1,0,0])]) for _ in range(B)]
         x=torch.from_numpy(np.stack([T.crop(pool[j][0][0],pool[j][0][1],pool[j][0][2],True) for j in js]))[:,None]; y=torch.tensor([pool[j][1] for j in js])
         loss=F.cross_entropy(net(x),y,label_smoothing=0.05); opt.zero_grad(); loss.backward(); opt.step(); sched.step()
-        if st%500==499: print('step',st+1,'loss %.3f'%loss.item(),round(time.time()-t0),'s',flush=True); torch.save({'net':net.state_dict()},SP+'/ml/stage2b.pt')
-    torch.save({'net':net.state_dict()},SP+'/ml/stage2b.pt'); net.eval(); del pool,byc,tr
+        if st%500==499: print('step',st+1,'loss %.3f'%loss.item(),round(time.time()-t0),'s',flush=True); torch.save({'net':net.state_dict()},OUT)
+    torch.save({'net':net.state_dict()},OUT); net.eval(); del pool,byc,tr
     te=[d for d in D if is_te(d['film'])]
     for thr,rej in ((0.5,0.5),(0.8,0.5),(0.5,0.7)):
         tot=collections.Counter(); found=collections.Counter(); right=collections.Counter(); fa=0
