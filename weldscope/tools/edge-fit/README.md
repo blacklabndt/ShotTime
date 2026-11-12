@@ -11,7 +11,8 @@ data and are never committed; `common.py` and `evaluate.py` are the method.
   EDGE settings stored in the file: Image Class HD 1, all sliders 1.0, Noise Reduction 0.
 - **Pair B:** one split piece of the same plate (a WeldScope copy opened in INDUSTREX), at 0.2365 screen pixels per
   raw pixel. Its EDGE screenshot is dark (grey 17–57), so it is coarser evidence.
-- A third pair (the other split piece) arrived as an inline image only and was not used.
+- **Pair C:** the other split piece (35–70), same scale as pair B. It arrived after the defaults were set, so it
+  was used only as a held-out check.
 
 ## Method
 
@@ -59,6 +60,10 @@ Correlation with the EDGE screenshots, with empty area left out of the model (al
 | **Current defaults**, fitted to pair B (20 mm kernel, fine scale 1.5 mm, kG 1.2, kD 2.4, kS 6.0, limit 1.1) | 0.82 | **0.96** |
 
 (Without leaving empty area out, the first two rows scored 0.75/0.78 and 0.84/0.86.)
+
+**Held-out check (pair C, not used for fitting):** current defaults 0.96, old defaults 0.93, first refit 0.92. Pair
+C's own best settings (kernel 20–24 mm, kG/kD 0.5, no limit) score 0.97, essentially the current defaults, so
+nothing was changed.
 
 The optimum on pair B is flat (0.955–0.963 over kernels of 16–24 mm and kG/kD 0.5–0.65), and its EDGE screenshot is
 dark (grey 17–57), so these values are approximate. The lower score on pair A is expected: it measures agreement
