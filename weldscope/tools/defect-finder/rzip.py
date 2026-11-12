@@ -12,7 +12,7 @@ class Remote(io.RawIOBase):
     def seek(s,o,w=0):
         s.pos = o if w==0 else s.pos+o if w==1 else s.size+o; return s.pos
     def _get(s,a,b):
-        for t in range(6):
+        for t in range(3):
             try:
                 r=s.s.get(s.url,headers={'Range':'bytes=%d-%d'%(a,b)},timeout=300)
                 if r.status_code==206 and len(r.content)==b-a+1: return r.content
@@ -43,3 +43,21 @@ if __name__=='__main__':
     for i in il:
         d='/'.join(i.filename.split('/')[:3]); c[d]+=1; sz[d]+=i.file_size
     for d,n in sorted(c.items())[:60]: print('%7d %8.1f GB  %s'%(n,sz[d]/1e9,d))
+
+# ---- reading members from a saved index: no need to fetch the archive's directory again
+import pickle, struct, zlib
+INDEX=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','swrd','zipindex.pkl')
+def save_index():
+    z=open_zip(); pickle.dump({i.filename:(i.header_offset,i.compress_size,i.file_size,i.compress_type) for i in z.infolist()},open(INDEX,'wb')); return len(z.infolist())
+class Indexed:
+    def __init__(s): s.idx=pickle.load(open(INDEX,'rb')); s.r=Remote(block=1<<20)
+    def names(s): return list(s.idx)
+    def read(s,name):
+        off,csize,size,method=s.idx[name]
+        h=s.r._get(off,off+29)
+        if h[:4]!=b'PK\x03\x04': raise IOError('not a zip member (download refused?)')
+        n,m=struct.unpack('<HH',h[26:30]); start=off+30+n+m
+        data=s.r._get(start,start+csize-1) if csize else b''
+        if method==0: return data
+        if method==8: return zlib.decompress(data,-15)
+        raise IOError('unsupported compression %d'%method)
