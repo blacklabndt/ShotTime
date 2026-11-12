@@ -88,3 +88,28 @@ every weld is accepted, so the folder is mainly a source of clean welds in the t
 ## Not done
 - No scoring on the owner's CR plates (no located answers for them yet). Scale and noise differ from SWRD.
 - "Found" is generous for long linear defects. Slag naming is poor. Full-resolution crops are untried.
+
+## Weld band finder (band.py, 2026-11-12)
+
+The owner said technicians only look inside the weld band, so anything marked outside it is useless. `band.py`
+replaces the crude "brightest row ± 15 %" band:
+
+- `films` splits a plate into films along the unexposed gap (saturated rows, or a thin light line), and uses the gap
+  direction to decide which way the films run.
+- `band` follows the lighter (less radiation) ridge of the weld along each film in eight chunks, ignoring rows taken
+  up by lead numbers, measuring contrast on the middle of the film (the ends are often burn-off past the pipe).
+- It reports `sure` only when the ridge is strong, present in most chunks, straight and of even width. Otherwise the
+  caller should show the whole film: no guessing.
+
+Checked by eye only; there is no marked ground truth for the band.
+
+- Technician plates (compact copies): sure on 367 of 629 films in a 400-plate sample. Girth-weld strips are found
+  well; small-bore shots and fittings are mostly reported unsure. Bands judged right on the three sample sheets
+  viewed wherever it said sure.
+- Owner's seven cropped pieces: six sure and on the weld, one unsure.
+- `band_test.py`, round 4 pair on the 256 accepted plates, flags per plate at higher sensitivity: whole plate 10.4,
+  old band 4.7. On the 144 plates where every film was sure: old band 4.5, new band 1.4 (no flags on 63 % of
+  plates); at lower sensitivity 0.6 -> 0.2 (none on 88 %). Most flags were outside the weld (number belt, film
+  edges). This says nothing yet about real indications kept; that needs the technicians' marked plates.
+
+Not in WeldScope. Input must be in film sense (weld lighter than the plate beside it).
