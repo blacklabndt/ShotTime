@@ -21,7 +21,7 @@ fn main() {
         let img = match d::get_image(&file) { Ok(i) => i, Err(_) => { let Some(fr) = file.ds.get(d::PIXEL).and_then(|p| p.fragments()) else { continue }; let Ok(fb) = codec::decode_frames(fr, &d::image_geometry(&file)) else { continue }; let Ok(i) = d::image_from_frames(&file, &fb) else { continue }; i } };
         let px = file.ds.number(0x00181164).or_else(|| file.ds.number(0x00280030)).unwrap_or(0.1);
         let t = std::time::Instant::now();
-        let f = ind::find(&m, &img.frames[0], img.cols, img.rows, img.padding, px, &|_| {});
+        let f = ind::find(&m, &img.frames[0], img.cols, img.rows, img.padding, px, &[], &|_| {});
         println!("{:<28} {}x{} {:>6} ms  films {} (sure {})  at each sensitivity {:?}", p.file_name().unwrap().to_string_lossy().chars().take(26).collect::<String>(), img.cols, img.rows, t.elapsed().as_millis(),
             f.bands.films.len(), f.bands.films.iter().filter(|b| b.sure).count(), ind::CUTS.iter().map(|c| f.items.iter().filter(|i| i.score > *c).count()).collect::<Vec<_>>());
     }

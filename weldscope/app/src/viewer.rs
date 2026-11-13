@@ -9,7 +9,7 @@ use weldscope_core::overlay;
 use weldscope_core::review::Verdict;
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum DragKind { Pan, Window(Win), Crop, Region, Scratch, Mark }
+pub enum DragKind { Pan, Window(Win), Crop, Region, Scratch, Mark, Band, Measure }
 #[derive(Clone, Copy)]
 pub struct Drag { pub kind: DragKind, pub start_img: (f64, f64), pub cur_img: (f64, f64) }
 
@@ -91,7 +91,7 @@ fn toolbar(app: &mut App, ui: &mut egui::Ui) {
         let has = app.img().is_some();
         ui.add_enabled_ui(has && !app.busy(), |ui| {
             for (t, label, tip) in [(Tool::Pan, "Pan", "Drag to move the image; the wheel zooms. Right-drag changes brightness and contrast with any tool; middle-drag moves."), (Tool::Window, "W/L", "Drag sideways for contrast, up/down for brightness; hold Shift for finer steps. Right-drag does the same with any tool."),
-                (Tool::Crop, "Crop", "Drag a crop box"), (Tool::Region, "Region", "Drag a region to save as a split file"), (Tool::Scratch, "Scratch", "Drag along a thin scratch to repair it")] {
+                (Tool::Crop, "Crop", "Drag a crop box"), (Tool::Region, "Region", "Drag a region to save as a split file"), (Tool::Scratch, "Scratch", "Drag along a thin scratch to repair it"), (Tool::Measure, "Measure", "Drag a line to measure a length (L). Display only.")] {
                 if ui.selectable_label(app.tool == t, label).on_hover_text(tip).clicked() { app.tool = t; }
             }
             ui.separator();
@@ -115,6 +115,7 @@ fn toolbar(app: &mut App, ui: &mut egui::Ui) {
                     if f != app.cur().unwrap().work.frame { app.cur_mut().unwrap().work.frame = f; app.edge_cache = None; app.raw_auto_width = None; app.invalidate(); if app.edge.on { app.update_edge(false); } }
                 }
             }
+            if !app.measures.is_empty() && ui.button("Clear lengths").on_hover_text("Remove the ruler lines").clicked() { app.measures.clear(); }
             if app.review.is_some() { if ui.selectable_label(app.ind_show, "Indication marks").on_hover_text("Show or hide the possible-indication marks (M). Display only; for the interpreter to check, not an acceptance decision.").clicked() { app.ind_show = !app.ind_show; } }
             if app.edge.on { ui.label(RichText::new("EDGE-style view").color(ACCENT)).on_hover_text("Display only until Apply to pixels. An approximation, not INDUSTREX's EDGE."); }
         });
@@ -184,6 +185,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         painter.line_segment([a, b], Stroke::new(2.0_f32, Color32::from_rgb(0, 220, 255)));
         painter.text(a + Vec2::new(4.0, 2.0), egui::Align2::LEFT_TOP, format!("S{}", i + 1), egui::FontId::proportional(13.0), Color32::from_rgb(0, 220, 255));
     }
+    // ruler lines (display only)
+    for m in &app.measures { draw_measure(&painter, &xf, m, app); }
+    // the weld band drawn by hand, shown at once (before the finder has run again)
+    if app.ind_show && app.ind.as_ref().map_or(true, |f| f.bands.manual.is_empty()) { for b in &app.band_boxes { painter.rect_stroke(xf.rect(*b), 0.0, Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(90, 230, 120, 150))); } }
     // possible indications (display only): the weld band and a numbered box per mark, strongest = 1
     if app.ind_show {
         if let Some(f) = &app.ind { for (line, sure) in f.bands.outlines() {
@@ -219,7 +224,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     if let Some(dr) = app.drag {
         match dr.kind {
-            DragKind::Crop | DragKind::Region | DragKind::Mark => { let r = xf.rect(clamp_rect(dr.start_img, dr.cur_img, img.cols, img.rows)); painter.rect_stroke(r, 0.0, Stroke::new(1.5_f32, if dr.kind == DragKind::Crop { ACCENT } else { Color32::from_rgb(120, 200, 255) })); }
+            DragKind::Measure => { draw_measure(&painter, &xf, &im::Segment { x0: dr.start_img.0, y0: dr.start_img.1, x1: dr.cur_img.0, y1: dr.cur_img.1 }, app); }
+            DragKind::Crop | DragKind::Region | DragKind::Mark | DragKind::Band => { let r = xf.rect(clamp_rect(dr.start_img, dr.cur_img, img.cols, img.rows)); painter.rect_stroke(r, 0.0, Stroke::new(1.5_f32, if dr.kind == DragKind::Crop { ACCENT } else { Color32::from_rgb(120, 200, 255) })); }
             DragKind::Scratch => { painter.line_segment([xf.to_screen(dr.start_img.0, dr.start_img.1), xf.to_screen(dr.cur_img.0, dr.cur_img.1)], Stroke::new(2.0_f32, BAD)); }
             _ => {}
         }
@@ -231,6 +237,22 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         draw_overlay(&painter, rect, &lines, overlay_px(app.prefs.overlay.size));
     }
     interact(app, ui, &resp, &xf, &img);
+}
+
+/// A ruler line with end ticks and its length, readable on light and dark parts of the image.
+fn draw_measure(p: &egui::Painter, xf: &Xf, m: &im::Segment, app: &App) {
+    let (a, b) = (xf.to_screen(m.x0, m.y0), xf.to_screen(m.x1, m.y1));
+    let col = Color32::from_rgb(90, 220, 255);
+    let d = b - a;
+    let n = if d.length() > 0.5 { Vec2::new(-d.y, d.x) / d.length() * 6.0 } else { Vec2::new(0.0, 6.0) };
+    for (w, c) in [(4.0_f32, Color32::from_black_alpha(200)), (1.5_f32, col)] {
+        p.line_segment([a, b], Stroke::new(w, c));
+        p.line_segment([a - n, a + n], Stroke::new(w, c)); p.line_segment([b - n, b + n], Stroke::new(w, c));
+    }
+    let text = app.measure_text(m);
+    let at = a + d * 0.5 + n * 2.2;
+    for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] { p.text(at + Vec2::new(dx, dy), egui::Align2::CENTER_CENTER, &text, egui::FontId::proportional(14.0), Color32::BLACK); }
+    p.text(at, egui::Align2::CENTER_CENTER, &text, egui::FontId::proportional(14.0), col);
 }
 
 fn draw_region(p: &egui::Painter, xf: &Xf, ri: &RegionItem, i: usize) {
@@ -294,7 +316,7 @@ fn interact(app: &mut App, ui: &egui::Ui, resp: &egui::Response, xf: &Xf, img: &
         let p = resp.interact_pointer_pos().unwrap_or_default();
         let im_p = xf.to_image(p);
         // Right-drag is always window/level (as in INDUSTREX and most viewers); middle-drag always pans.
-        let kind = if pointer.button_down(egui::PointerButton::Secondary) { DragKind::Window(app.win()) } else if pointer.button_down(egui::PointerButton::Middle) { DragKind::Pan } else { match app.tool { Tool::Pan => DragKind::Pan, Tool::Window => DragKind::Window(app.win()), Tool::Crop => DragKind::Crop, Tool::Region => DragKind::Region, Tool::Scratch => DragKind::Scratch, Tool::Mark => DragKind::Mark } };
+        let kind = if pointer.button_down(egui::PointerButton::Secondary) { DragKind::Window(app.win()) } else if pointer.button_down(egui::PointerButton::Middle) { DragKind::Pan } else { match app.tool { Tool::Pan => DragKind::Pan, Tool::Window => DragKind::Window(app.win()), Tool::Crop => DragKind::Crop, Tool::Region => DragKind::Region, Tool::Scratch => DragKind::Scratch, Tool::Mark => DragKind::Mark, Tool::Band => DragKind::Band, Tool::Measure => DragKind::Measure } };
         app.drag = Some(Drag { kind, start_img: im_p, cur_img: im_p });
     }
     if let Some(mut dr) = app.drag {
@@ -324,6 +346,14 @@ fn interact(app: &mut App, ui: &egui::Ui, resp: &egui::Response, xf: &Xf, img: &
                 DragKind::Region => {
                     let r = clamp_rect(dr.start_img, dr.cur_img, cols, rows);
                     if r.w >= 4 && r.h >= 4 { if let Some(e) = app.cur_mut() { let n = e.work.regions.len() + 1; e.work.regions.push(RegionItem { region: Region { rect: r, cuts: vec![] }, label: n.to_string(), tilt: None }); } }
+                }
+                DragKind::Band => {
+                    let r = clamp_rect(dr.start_img, dr.cur_img, cols, rows);
+                    if r.w >= 8 && r.h >= 8 { app.add_band(r); app.tool = Tool::Pan; }
+                }
+                DragKind::Measure => {
+                    let (a, b) = (dr.start_img, dr.cur_img);
+                    if ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt() >= 2.0 { app.measures.push(im::Segment { x0: a.0, y0: a.1, x1: b.0, y1: b.1 }); }
                 }
                 DragKind::Mark => {
                     let r = clamp_rect(dr.start_img, dr.cur_img, cols, rows);

@@ -44,6 +44,8 @@ pub struct Review {
     pub cols: usize, pub rows: usize, pub px_mm: f64,
     /// Sensitivity (1 to 5) the marks were looked at with, and whether the finder has run on this image.
     pub sensitivity: u8, pub searched: bool,
+    /// Weld band drawn by the interpreter (boxes x0, y0, x1, y1), if any.
+    pub band: Vec<[f64; 4]>,
     pub marks: Vec<Mark>,
     pub updated: String,
 }

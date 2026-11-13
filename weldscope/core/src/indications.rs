@@ -301,13 +301,17 @@ fn runs(sep: &[bool]) -> Vec<(usize, usize)> {
 #[derive(Clone, Debug)]
 pub struct FilmBand { pub y0: f64, pub y1: f64, pub x0: f64, pub x1: f64, pub xs: Vec<f64>, pub top: Vec<f64>, pub bot: Vec<f64>, pub sure: bool, pub score: f64 }
 #[derive(Clone, Debug, Default)]
-pub struct Bands { pub films: Vec<FilmBand>, pub turned: bool, pub w: f64, pub h: f64 }
+pub struct Bands { pub films: Vec<FilmBand>, pub turned: bool, pub w: f64, pub h: f64,
+    /// Weld band drawn by the user as boxes (x0, y0, x1, y1) in image coordinates. When present it replaces the found band.
+    pub manual: Vec<(f64, f64, f64, f64)> }
 
 fn interp(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     if x <= xs[0] { return ys[0]; }
     for i in 1..xs.len() { if x <= xs[i] { let t = (x - xs[i - 1]) / (xs[i] - xs[i - 1]).max(1e-9); return ys[i - 1] + t * (ys[i] - ys[i - 1]); } }
     ys[ys.len() - 1]
 }
+/// Below this ridge score a film has no band worth using and is searched whole.
+pub const NO_RIDGE: f64 = 0.02;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Where { Band, UnsureFilm, Outside }
 impl Bands {
@@ -315,10 +319,13 @@ impl Bands {
     fn back(&self, x: f64, y: f64) -> (f64, f64) { if self.turned { (self.w - 1.0 - y, x) } else { (x, y) } }
     /// Where an image point lies: inside a sure weld band, on a film whose band is unsure, or outside.
     pub fn locate(&self, x: f64, y: f64) -> Where {
+        if !self.manual.is_empty() { return if self.manual.iter().any(|b| b.0 <= x && x <= b.2 && b.1 <= y && y <= b.3) { Where::Band } else { Where::Outside }; }
         let (tx, ty) = self.turn(x, y);
         for f in &self.films {
             if !(f.y0 <= ty && ty < f.y1 && f.x0 <= tx && tx < f.x1) { continue; }
-            if !f.sure { return Where::UnsureFilm; }
+            // An unsure band is still used (the owner: marks outside the weld are useless); only with no ridge at all
+            // is the whole film searched. The user can see the band and redraw it.
+            if !f.sure && f.score <= NO_RIDGE { return Where::UnsureFilm; }
             let (t, b) = (interp(tx - f.x0, &f.xs, &f.top) + f.y0, interp(tx - f.x0, &f.xs, &f.bot) + f.y0);
             return if t <= ty && ty <= b { Where::Band } else { Where::Outside };
         }
@@ -327,6 +334,7 @@ impl Bands {
     /// The two edges of each band as lines in image coordinates, with whether the band is sure.
     pub fn outlines(&self) -> Vec<(Vec<(f64, f64)>, bool)> {
         let mut out = Vec::new();
+        if !self.manual.is_empty() { return self.manual.iter().map(|b| (vec![(b.0, b.1), (b.2, b.1), (b.2, b.3), (b.0, b.3), (b.0, b.1)], true)).collect(); }
         for f in &self.films { for edge in [&f.top, &f.bot] {
             let mut line: Vec<(f64, f64)> = vec![self.back(f.x0, f.y0 + edge[0])];
             line.extend(f.xs.iter().zip(edge.iter()).map(|(x, y)| self.back(f.x0 + x, f.y0 + y)));
@@ -337,6 +345,7 @@ impl Bands {
     }
     fn scaled(mut self, k: f64) -> Bands {
         self.w *= k; self.h *= k;
+        for b in self.manual.iter_mut() { *b = (b.0 * k, b.1 * k, b.2 * k, b.3 * k); }
         for f in self.films.iter_mut() { f.y0 *= k; f.y1 *= k; f.x0 *= k; f.x1 *= k; for v in f.xs.iter_mut().chain(f.top.iter_mut()).chain(f.bot.iter_mut()) { *v *= k; } }
         self
     }
@@ -432,7 +441,7 @@ pub fn find_bands(g: &[u8], w: usize, h: usize) -> Bands {
     // work on a smaller copy: the band is a large feature
     let k = ((w.max(h) + 2199) / 2200).max(1);
     let (sw, sh) = (w / k, h / k);
-    if sw < 40 || sh < 40 { return Bands { films: vec![], turned: false, w: w as f64, h: h as f64 }; }
+    if sw < 40 || sh < 40 { return Bands { films: vec![], turned: false, w: w as f64, h: h as f64, manual: vec![] }; }
     let mut s = vec![0u8; sw * sh];
     for y in 0..sh { for x in 0..sw { let mut acc = 0u32; for yy in 0..k { for xx in 0..k { acc += g[(y * k + yy) * w + x * k + xx] as u32; } } s[y * sw + x] = (acc / (k * k) as u32) as u8; } }
     let mut hist = [0usize; 256];
@@ -468,7 +477,7 @@ pub fn find_bands(g: &[u8], w: usize, h: usize) -> Bands {
     } else { (s, sw, sh, rows) };
     let spans = if spans.is_empty() { vec![(0, th)] } else { spans };
     let films = spans.iter().map(|(a, b)| film_band(&t, tw, *a, *b)).collect();
-    Bands { films, turned, w: sw as f64, h: sh as f64 }.scaled(k as f64)
+    Bands { films, turned, w: sw as f64, h: sh as f64, manual: vec![] }.scaled(k as f64)
 }
 
 // ---------------------------------------------------------------- the whole thing
@@ -510,9 +519,10 @@ fn resize(g: &[u8], w: usize, h: usize, nw: usize, nh: usize) -> Vec<u8> {
 /// Most candidates the second network will look at on one image (the strongest finder peaks are kept).
 pub const MAX_CANDIDATES: usize = 600;
 
-/// Ranked possible indications inside the weld band of one frame. On a film whose band is unsure the whole film is
-/// searched. `progress` gets 0..1.
-pub fn find(m: &Models, a: &[i32], w: usize, h: usize, pad: Option<i32>, px_mm: f64, progress: &(dyn Fn(f32) + Sync)) -> Found {
+/// Ranked possible indications inside the weld band of one frame. An unsure band is still used; a film with no
+/// band at all is searched whole. `manual` is a weld band drawn by the user (boxes in image coordinates); when given, only spots inside
+/// it are listed. `progress` gets 0..1.
+pub fn find(m: &Models, a: &[i32], w: usize, h: usize, pad: Option<i32>, px_mm: f64, manual: &[(f64, f64, f64, f64)], progress: &(dyn Fn(f32) + Sync)) -> Found {
     let g0 = film_sense(a, w, h, pad);
     let k = if px_mm > 0.0 { px_mm / MODEL_PX_MM } else { 1.0 };
     let k = if (0.8..=1.25).contains(&k) { 1.0 } else { k.clamp(0.2, 5.0) };
@@ -520,7 +530,8 @@ pub fn find(m: &Models, a: &[i32], w: usize, h: usize, pad: Option<i32>, px_mm: 
     let g = if k == 1.0 { g0 } else { resize(&g0, w, h, gw_, gh_) };
     let (w2, h2) = (gw_, gh_);
     if w2 < 64 || h2 < 64 { return Found::default(); }
-    let bands = find_bands(&g, w2, h2);
+    let mut bands = find_bands(&g, w2, h2);
+    bands.manual = manual.iter().map(|b| (b.0 * k, b.1 * k, b.2 * k, b.3 * k)).collect();
     let (d, gw, gh) = finder_map(m, &g, w2, h2, &|p| progress(p * 0.85));
     let mut c: Vec<_> = peaks(&d, gw, gh, 0.1).into_iter().filter(|b| bands.locate((b.0 + b.2) / 2.0, (b.1 + b.3) / 2.0) != Where::Outside).collect();
     c.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap());

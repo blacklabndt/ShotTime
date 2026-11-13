@@ -122,6 +122,16 @@ band finder keeps what lies in the band, and the list is ranked by finder peak x
   changes, because the coordinates belong to a saved file; a copy saved later has a new UID and starts empty.
   The review file records what a person judged, to measure the finder on real plates and to train it. It is not
   an acceptance record, and it may hold client weld names: treat it like the job data.
+- Weld band (owner feedback 2026-11-13: marks were still landing outside the weld). An unsure band is now used
+  as found, shown in amber, instead of searching the whole film; only a film with no ridge at all
+  (`indications::NO_RIDGE`) is searched whole. On the owner's one unsure piece this took the marks at
+  sensitivity 3 from 8 (all on lead letters and the IQI) to 0. Set weld band lets the user drag one or more boxes
+  over the weld; they replace the found band, the finder runs again, and the boxes are kept in the review.
+  Found band goes back. A wrong unsure band can hide spots, so the lines are always drawn while marks are shown.
+- Measure tool (toolbar, or L): drag a line to read its length. Millimetres come from the file's pixel spacing,
+  so it is a length on the plate, not corrected for magnification or for a shot taken at an angle; without a
+  pixel spacing it shows pixels. Lines are display only, never written to the file or exports, and are cleared
+  when the file changes. This is the user's own ruler; the finder still never sizes anything.
 - Letter shortcuts now work whenever no text field is being typed in (before, a clicked button kept them off).
 - Never describe it as measuring, sizing, accepting or rejecting. The type shown is a guess (slag is often named
   porosity). It misses indications and marks things that are not indications; on reference films sensitivity 3
@@ -144,7 +154,7 @@ band finder keeps what lies in the band, and the list is ranked by finder peak x
 ## Tests
 
 ```sh
-cargo test --release -p weldscope-core                      # 40 tests
+cargo test --release -p weldscope-core                      # 42 tests
 DICONDE_REAL_DIR=/path/to/dcm cargo test --release real_files -- --nocapture
 ```
 

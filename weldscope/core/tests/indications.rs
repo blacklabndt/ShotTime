@@ -113,6 +113,30 @@ fn two_films_side_by_side_get_a_band_each_whichever_way_they_run() {
 }
 
 #[test]
+fn a_band_drawn_by_hand_replaces_the_found_one() {
+    let (w, h) = (1200, 300);
+    let g = plate(w, h, &[(0, 300, 120, 18)], false);
+    let mut b = ind::find_bands(&g, w, h);
+    assert_eq!(b.locate(600.0, 126.0), ind::Where::Band);
+    b.manual = vec![(100.0, 180.0, 500.0, 220.0)];
+    assert_eq!(b.locate(600.0, 126.0), ind::Where::Outside, "only the drawn band counts");
+    assert_eq!(b.locate(300.0, 200.0), ind::Where::Band);
+    assert_eq!(b.outlines().len(), 1);
+}
+
+#[test]
+fn an_unsure_band_is_still_used() {
+    let (w, h) = (1200, 300);
+    let g = plate(w, h, &[(0, 300, 120, 18)], false);
+    let mut b = ind::find_bands(&g, w, h);
+    b.films[0].sure = false;
+    assert_eq!(b.locate(600.0, 126.0), ind::Where::Band);
+    assert_eq!(b.locate(600.0, 255.0), ind::Where::Outside, "the number belt stays out even when the band is unsure");
+    b.films[0].score = 0.0;
+    assert_eq!(b.locate(600.0, 255.0), ind::Where::UnsureFilm, "no ridge at all: the whole film");
+}
+
+#[test]
 fn a_plate_with_no_clear_weld_is_reported_unsure_not_guessed() {
     let (w, h) = (900, 300);
     let g: Vec<u8> = (0..w * h).map(|i| 90 + ((i % w * 3 + i / w * 7) % 9) as u8).collect();

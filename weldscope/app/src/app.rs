@@ -94,7 +94,7 @@ pub enum Mode { Edit, Organize }
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Tab { Metadata, Image, Crop, Overlay, Changes }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Tool { Pan, Window, Crop, Region, Scratch, Mark }
+pub enum Tool { Pan, Window, Crop, Region, Scratch, Mark, Band, Measure }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EdgeSettings { pub on: bool, pub gc: f64, pub dc: f64, pub sh: f64, pub nr: f64, pub mm: f64, pub br: f64, pub ds: bool }
@@ -198,6 +198,9 @@ pub struct App {
     pub review_checked: bool,
     pub review_store: Option<(PathBuf, ReviewFile)>,
     pub last_kind: String,
+    /// Weld band drawn by hand for the image shown (replaces the found band), and ruler lines (display only).
+    pub band_boxes: Vec<im::Rect>,
+    pub measures: Vec<im::Segment>,
     pub compare: bool,
     pub pieces: Option<PiecesDialog>,
     pub last_saved: Option<PathBuf>,
@@ -265,7 +268,7 @@ impl App {
         let (cov_tx, cov_rx) = channel();
         let mut app = App {
             entries: vec![], folder: String::new(), cur: None, next_id: 1, mode: Mode::Edit, prefs, tool: Tool::Pan, ts: ToolSettings::default(), view: View::default(),
-            view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![], ind: None, ind_show: true, ind_sel: None, ind_models: None, review: None, review_checked: false, review_store: None, last_kind: "porosity".into(),
+            view_rot: 0, view_rot_industrex: false, invert_view: false, edge: EdgeSettings::default(), edge_cache: None, raw_win: None, raw_auto_width: None, scratches: vec![], ind: None, ind_show: true, ind_sel: None, ind_models: None, review: None, review_checked: false, review_store: None, last_kind: "porosity".into(), band_boxes: vec![], measures: vec![],
             compare: false, pieces: None, last_saved: None, flash: None, show_keys: false, coverage: None, job_dlg: None, progress: Default::default(), rename_weld: None, texture: None, tex_key: String::new(), logo, toast: None, job: None, queue: vec![], thumb_tx, thumb_rx, thumbs_running: 0, cov_tx, cov_rx,
             meta: MetaUi::default(), org: OrgState::default(), dialog: None, allow_close: false, drag: None, probe: String::new(), edge_pending: false,
         };
@@ -414,7 +417,7 @@ impl App {
         if let Some(e) = self.cur_mut() {
             if e.work.ops.is_empty() && !e.work.undo.iter().chain(&e.work.redo).any(|s| matches!(s, Step::Image { .. })) { e.work.img = None; e.work.orig_img = None; e.work.loaded = false; }
         }
-        self.edge.on = false; self.edge_cache = None; self.raw_win = None; self.raw_auto_width = None; self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.compare = false; self.drag = None;
+        self.edge.on = false; self.edge_cache = None; self.raw_win = None; self.raw_auto_width = None; self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.band_boxes.clear(); self.measures.clear(); self.compare = false; self.drag = None;
         self.meta.edits.clear(); self.meta.errors.clear();
     }
 
@@ -608,7 +611,7 @@ impl App {
         e.work.img = Some(Arc::new(next));
         if e.work.frame >= e.work.img.as_ref().unwrap().frames.len() { e.work.frame = 0; }
         e.refresh_dirty();
-        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.raw_auto_width = None; self.edge_cache = None;
+        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.band_boxes.clear(); self.measures.clear(); self.raw_auto_width = None; self.edge_cache = None;
         self.trim_undo();
         if geom { self.view.fit_pending = true; }
         self.invalidate();
@@ -619,7 +622,7 @@ impl App {
         let geom = { let cur = self.img(); match (&cur, &st.img) { (Some(a), Some(b)) => a.rows != b.rows || a.cols != b.cols, _ => true } };
         let e = self.cur_mut().unwrap();
         e.work.img = st.img; e.work.ops = st.ops; e.work.turns = st.turns; e.work.crop = st.crop; e.work.regions = st.regions;
-        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.raw_auto_width = None; self.edge_cache = None;
+        self.scratches.clear(); self.ind = None; self.ind_sel = None; self.review = None; self.review_checked = false; self.band_boxes.clear(); self.measures.clear(); self.raw_auto_width = None; self.edge_cache = None;
         if geom { self.view.fit_pending = true; }
         self.invalidate(); self.sync_crop_inputs();
         if self.edge.on { self.update_edge(false); }
@@ -837,8 +840,9 @@ impl App {
         };
         let px = self.cur().and_then(|e| e.shot.file.ds.number(0x00181164).or_else(|| e.shot.file.ds.number(0x00280030))).filter(|v| *v > 0.0).unwrap_or(0.1);
         let progress = self.progress.clone();
+        let manual: Vec<(f64, f64, f64, f64)> = self.band_boxes.iter().map(|r| (r.x as f64, r.y as f64, (r.x + r.w) as f64, (r.y + r.h) as f64)).collect();
         self.run("Looking for possible indications…", move || {
-            let found = weldscope_core::indications::find(&models, &img.frames[f], img.cols, img.rows, img.padding, px, &|p| { *progress.lock().unwrap() = format!("{:.0}%", p * 100.0); });
+            let found = weldscope_core::indications::find(&models, &img.frames[f], img.cols, img.rows, img.padding, px, &manual, &|p| { *progress.lock().unwrap() = format!("{:.0}%", p * 100.0); });
             progress.lock().unwrap().clear();
             Box::new(move |app: &mut App, _: &egui::Context| {
                 if !app.img().map_or(false, |cur| Arc::ptr_eq(&cur, &img)) { return; } // the image changed meanwhile
@@ -847,9 +851,10 @@ impl App {
                 let cut = app.cut();
                 let r = app.review.as_mut().unwrap();
                 r.merge_found(&found.items);
+                r.band = app.band_boxes.iter().map(|b| [b.x as f64, b.y as f64, (b.x + b.w) as f64, (b.y + b.h) as f64]).collect();
                 let (n, all) = (r.shown(cut).len(), found.items.len());
                 let sure = found.bands.films.iter().filter(|b| b.sure).count();
-                let band = if found.bands.films.is_empty() || sure == found.bands.films.len() { "" } else { " The weld band was not clear on every film, so the whole film was searched there." };
+                let band = if !found.bands.manual.is_empty() || found.bands.films.is_empty() || sure == found.bands.films.len() { "" } else { " The weld band is not certain: check the amber lines, and use Set weld band to draw it if they are off." };
                 app.ind = Some(found); app.ind_sel = None; app.ind_show = true;
                 app.toast(if all == 0 { "No possible indications listed. That is not a finding: read the weld as usual.".to_string() } else { format!("{n} mark{} for you to check.{band}", if n == 1 { "" } else { "s" }) });
             })
@@ -876,6 +881,7 @@ impl App {
         if !self.can_mark() { return; }
         let sop = self.cur().map(|e| e.shot.text(0x00080018)).unwrap_or_default();
         if let Ok(f) = self.review_file() { if let Some(r) = f.reviews.get(&sop) { self.review = Some(r.clone()); } }
+        if let Some(r) = &self.review { self.band_boxes = r.band.iter().map(|b| im::Rect::new(b[0] as i64, b[1] as i64, (b[2] - b[0]) as i64, (b[3] - b[1]) as i64)).collect(); }
     }
     pub fn marks_shown(&self) -> Vec<usize> { self.review.as_ref().map(|r| r.shown(self.cut())).unwrap_or_default() }
     /// Writes the review of the file shown into the review file (or takes it out again when nothing is judged).
@@ -938,6 +944,25 @@ impl App {
         let shown = self.marks_shown();
         if let Some(r) = self.review.as_mut() { for i in shown { if r.marks[i].verdict == Verdict::Unreviewed { r.marks[i].verdict = Verdict::NotIndication; } } }
         self.save_review();
+    }
+    /// A weld band drawn by hand: from now on only spots inside the drawn boxes are listed.
+    pub fn add_band(&mut self, r: im::Rect) {
+        self.band_boxes.push(r);
+        self.rerun_for_band();
+    }
+    pub fn clear_band(&mut self) { self.band_boxes.clear(); self.rerun_for_band(); }
+    fn rerun_for_band(&mut self) {
+        let boxes: Vec<[f64; 4]> = self.band_boxes.iter().map(|b| [b.x as f64, b.y as f64, (b.x + b.w) as f64, (b.y + b.h) as f64]).collect();
+        if let Some(r) = self.review.as_mut() { r.band = boxes; }
+        if self.review.as_ref().map_or(false, |r| r.searched) && (self.ind_models.is_some() || Self::indication_model_path().is_file()) { self.find_indications(); }
+        if self.review.as_ref().map_or(false, |r| r.worth_saving()) && self.can_mark() { self.save_review(); }
+    }
+    /// Pixel size from the file, if it states one.
+    pub fn px_mm(&self) -> Option<f64> { self.cur().and_then(|e| e.shot.file.ds.number(0x00181164).or_else(|| e.shot.file.ds.number(0x00280030))).filter(|v| *v > 0.0) }
+    /// Length of a ruler line as text: millimetres on the plate when the file gives a pixel size, else pixels.
+    pub fn measure_text(&self, m: &im::Segment) -> String {
+        let px = ((m.x1 - m.x0).powi(2) + (m.y1 - m.y0).powi(2)).sqrt();
+        match self.px_mm() { Some(k) => format!("{:.1} mm", px * k), None => format!("{px:.0} px") }
     }
     /// Takes the unjudged marks off the screen; calls already made stay.
     pub fn clear_marks(&mut self) {
@@ -1571,6 +1596,7 @@ impl eframe::App for App {
                 if key(egui::Key::R) { self.view_rot = (self.view_rot + 90) % 360; self.view.fit_pending = true; }
                 if key(egui::Key::I) { self.invert_view = !self.invert_view; self.invalidate(); }
                 if key(egui::Key::O) { self.prefs.overlay.enabled = !self.prefs.overlay.enabled; }
+                if key(egui::Key::L) { self.tool = if self.tool == Tool::Measure { Tool::Pan } else { Tool::Measure }; }
                 if key(egui::Key::M) && self.review.is_some() { self.ind_show = !self.ind_show; }
                 if let Some(n) = self.ind_sel { if key(egui::Key::Y) { self.judge(n, Verdict::Indication); } else if key(egui::Key::N) { self.judge(n, Verdict::NotIndication); } }
             }
@@ -1711,7 +1737,7 @@ impl App {
             egui::Window::new("Shortcuts").open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::RIGHT_TOP, [-12.0, 48.0]).show(ctx, |ui| {
                 egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
                     for (k, t) in [("Mouse wheel", "Zoom"), ("Right-drag", "Brightness and contrast (window/level), with any tool; hold Shift for finer steps"), ("Middle-drag", "Move the image, with any tool"), ("Double-click", "Fit the image"),
-                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"), ("M", "Possible-indication marks on/off"), ("Y / N", "The picked mark is an indication / not an indication"),
+                        ("Page Down / Page Up", "Next / previous file"), ("F", "Fit the image"), ("1", "Actual pixels (1:1)"), ("R", "Turn the view 90°"), ("I", "Invert the view"), ("O", "Information overlay on/off"), ("M", "Possible-indication marks on/off"), ("Y / N", "The picked mark is an indication / not an indication"), ("L", "Measure a length (drag a line)"),
                         ("Ctrl+S", "Save as new file"), ("Ctrl+Z / Ctrl+Y", "Undo / redo"), ("Ctrl+O", "Add files")] {
                         ui.label(RichText::new(k).strong()); ui.label(t); ui.end_row();
                     }

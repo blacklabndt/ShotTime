@@ -344,6 +344,8 @@ fn image_tab(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         if ui.add_enabled(have_model, egui::Button::new("Find possible indications")).on_hover_text("Works best on a cropped piece. Takes a few seconds for a piece and longer for a whole plate.").clicked() { app.find_indications(); }
         if ui.selectable_label(app.tool == crate::app::Tool::Mark, "Add one it missed").on_hover_text("Drag a box around an indication the finder did not mark.").clicked() { app.tool = if app.tool == crate::app::Tool::Mark { crate::app::Tool::Pan } else { crate::app::Tool::Mark }; }
+        if ui.selectable_label(app.tool == crate::app::Tool::Band, "Set weld band").on_hover_text("Drag a box over the weld. Only spots inside your box are marked, instead of the band WeldScope found. Add a second box for a second film.").clicked() { app.tool = if app.tool == crate::app::Tool::Band { crate::app::Tool::Pan } else { crate::app::Tool::Band }; }
+        if !app.band_boxes.is_empty() && ui.button("Found band").on_hover_text("Drop the band you drew and go back to the one WeldScope finds.").clicked() { app.clear_band(); }
         if app.review.is_some() {
             ui.checkbox(&mut app.ind_show, "Show marks").on_hover_text("M");
             if ui.button("Clear").on_hover_text("Takes the marks you have not judged off the screen. Your calls stay.").clicked() { app.clear_marks(); }
@@ -355,8 +357,8 @@ fn image_tab(app: &mut App, ui: &mut egui::Ui) {
         if lv != app.prefs.ind_level { app.prefs.ind_level = lv; app.ind_sel = None; }
         let shown = app.marks_shown();
         let (yes, no, todo) = app.review.as_ref().unwrap().counts(app.cut());
-        let band = match &app.ind { None => String::new(), Some(f) => { let (films, sure) = (f.bands.films.len(), f.bands.films.iter().filter(|b| b.sure).count());
-            format!("{}{}", if films == 0 { String::new() } else if sure == films { " Weld band found (green lines).".to_string() } else { format!(" Weld band clear on {sure} of {films} film{}; the whole film is searched where it is not (amber lines).", if films == 1 { "" } else { "s" }) }, if f.limited { " Only the strongest candidates were kept on this large image." } else { "" }) } };
+        let band = match &app.ind { None => String::new(), Some(_) if !app.band_boxes.is_empty() => " Using the weld band you drew.".to_string(), Some(f) => { let (films, sure) = (f.bands.films.len(), f.bands.films.iter().filter(|b| b.sure).count());
+            format!("{}{}", if films == 0 { String::new() } else if sure == films { " Weld band found (green lines).".to_string() } else { format!(" Weld band certain on {sure} of {films} film{}; check the amber lines and use Set weld band if they are off.", if films == 1 { "" } else { "s" }) }, if f.limited { " Only the strongest candidates were kept on this large image." } else { "" }) } };
         note(ui, &format!("{} mark{}: {yes} indication{}, {no} not, {todo} to look at.{band}", shown.len(), if shown.len() == 1 { "" } else { "s" }, if yes == 1 { "" } else { "s" }));
         let mut go = None;
         egui::ScrollArea::vertical().id_salt("ind_list").max_height(170.0).min_scrolled_height(130.0).show(ui, |ui| {

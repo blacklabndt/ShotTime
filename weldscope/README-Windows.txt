@@ -35,6 +35,12 @@ Editing
   reject anything, it can miss indications, and it marks things that are not indications. The type it shows is
   a guess. Nothing is written to the file or to exported pictures. Best used on a cropped piece. It needs the
   file indication-models.bin in the same folder as WeldScope.exe.
+- Weld band: only spots inside the weld band are marked. Green lines mean WeldScope is sure of the band; amber
+  lines mean it is not, so check them. If the lines are off, press "Set weld band" and drag a box over the weld
+  (add a second box for a second film); "Found band" goes back to WeldScope's own.
+- Measure (toolbar, or the L key): drag a line to read a length in millimetres. It uses the pixel size stored in
+  the file, so it is the length on the plate, not corrected for magnification. "Clear lengths" removes the
+  lines. Nothing is written to the file.
 - Making your calls: click a mark in the list, then press Indication or Not an indication (or the Y / N keys;
   WeldScope moves to the next mark). For an indication, pick its type. "Add one it missed" lets you drag a box
   around an indication that was not marked. When you have looked at every mark, "The other N are not
